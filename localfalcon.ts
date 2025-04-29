@@ -50,7 +50,9 @@ export interface LocalFalconReportsResponse {
  * @param nextToken Optional pagination token for additional results.
  */
 export async function fetchLocalFalconReports(apiKey: string, nextToken?: string): Promise<LocalFalconReportsResponse> {
-  const url = new URL("https://www.localfalcon.com/api/v1/reports");
+  const url = new URL("https://api.localfalcon.com/v1/reports");
+  url.searchParams.set("api_key", apiKey);
+  
   if (nextToken) {
     url.searchParams.set("next_token", nextToken);
   }
@@ -58,7 +60,6 @@ export async function fetchLocalFalconReports(apiKey: string, nextToken?: string
   const res = await fetch(url.toString(), {
     method: "GET",
     headers: {
-      "Authorization": `Bearer ${apiKey}`,
       "Accept": "application/json"
     }
   });
@@ -67,6 +68,13 @@ export async function fetchLocalFalconReports(apiKey: string, nextToken?: string
     throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
   }
 
-  const data = await res.json();
+  const raw = await res.text();
+  let data: any;
+  try {
+    data = JSON.parse(raw);
+  } catch (err) {
+    console.error('Raw response from Local Falcon API:', raw);
+    throw new Error('Failed to parse JSON from Local Falcon API. See raw response above.');
+  }
   return data as LocalFalconReportsResponse;
 }
