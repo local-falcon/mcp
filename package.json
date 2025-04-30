@@ -6,6 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "bun run mcp-server.ts",
+    "build": "tsc",
     "inspector": "npx @modelcontextprotocol/inspector bun start"
   },
   "author": "",

@@ -21,9 +21,9 @@ const server = new McpServer({
 server.tool(
   "fetchLocalFalconReports",
   "Fetches Local Falcon reports for the authenticated user.",
-  { nextToken: z.string().optional() },
+  { nextToken: z.string().optional().nullable() },
   async ({ nextToken }) => {
-    const resp = await fetchLocalFalconReports(apiKey, nextToken);
+    const resp = await fetchLocalFalconReports(apiKey, nextToken ?? undefined);
     // You may want to transform resp to match fetchReportsOutput if needed
     return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
   }
@@ -31,7 +31,25 @@ server.tool(
 
 // Start the MCP server using stdio transport
 const transport = new StdioServerTransport();
-server.connect(transport).then(() => {
-  // TODO: Logging to STDOUT here breaks the inspector.
-  console.warn("MCP server for Local Falcon is running (stdio mode)");
+server
+  .connect(transport)
+  .then(() => {
+    // Using stderr for logging to avoid breaking stdin/stdout communication
+    console.error("MCP server for Local Falcon is running (stdio mode)");
+  })
+  .catch((err) => {
+    console.error("Failed to start MCP server:", err);
+    process.exit(1);
+  });
+
+// Add a simple uncaught exception handler
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught exception:", err);
+  process.exit(1);
+});
+
+// Add a simple unhandled rejection handler
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+  process.exit(1);
 });
