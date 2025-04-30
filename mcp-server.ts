@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import dotenv from "dotenv";
-import { fetchLocalFalconAutoScans, fetchLocalFalconKeywordReport, fetchLocalFalconKeywordReports, fetchLocalFalconLocationReport, fetchLocalFalconLocationReports, fetchLocalFalconLocations, fetchLocalFalconReport, fetchLocalFalconReports, fetchLocalFalconTrendReport, fetchLocalFalconTrendReports } from "./localfalcon.js";
+import { fetchLocalFalconAutoScans, fetchLocalFalconFullGridSearch, fetchLocalFalconGoogleBusinessLocations, fetchLocalFalconGrid, fetchLocalFalconKeywordAtCoordinate, fetchLocalFalconKeywordReport, fetchLocalFalconKeywordReports, fetchLocalFalconLocationReport, fetchLocalFalconLocationReports, fetchLocalFalconLocations, fetchLocalFalconRankingAtCoordinate, fetchLocalFalconReport, fetchLocalFalconReports, fetchLocalFalconTrendReport, fetchLocalFalconTrendReports } from "./localfalcon.js";
 
 dotenv.config({ path: ".env.local" });
 
@@ -132,6 +132,84 @@ server.tool(
   { reportKey: z.string() },
   async ({ reportKey }) => {
     const resp = await fetchLocalFalconKeywordReport(apiKey, reportKey);
+    return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+  }
+)
+
+server.tool(
+  "fetchLocalFalconGrid",
+  "Fetches a Local Falcon grid for the authenticated user.",
+  {
+    lat: z.number().describe("The latitude of the center of the grid."),
+    lng: z.number().describe("The longitude of the center of the grid."),
+    gridSize: z.number().describe("Expects 3, 5, 7, 9, 11, 13, or 15."),
+    radius: z.number().describe("The radius of the grid in meters. From 0.1 to 100."),
+    measurement: z.enum(['mi', 'km']).describe("Expects 'mi' or 'km'."),
+  },
+  async ({ lat, lng, gridSize, radius, measurement }) => {
+    const resp = await fetchLocalFalconGrid(apiKey, lat, lng, gridSize, radius, measurement);
+    return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+  }
+)
+
+server.tool(
+  "fetchLocalFalconGoogleBusinessLocations",
+  "Fetches Local Falcon Google Business locations for the authenticated user.",
+  {
+    nextToken: z.string().optional().nullable(),
+    query: z.string().describe("The query to search for."),
+    near: z.string().optional().nullable().describe("Narrow results by location. City, state, country, etc."),
+  },
+  async ({ nextToken, query, near }) => {
+    const resp = await fetchLocalFalconGoogleBusinessLocations(apiKey, nextToken ?? undefined, query ?? undefined, near ?? undefined);
+    return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+  }
+)
+
+server.tool(
+  "fetchLocalFalconRankingAtCoordinate",
+  "Fetches a Local Falcon ranking at a coordinate for the authenticated user.",
+  {
+    lat: z.number().describe("The latitude of the coordinate."),
+    lng: z.number().describe("The longitude of the coordinate."),
+    keyword: z.string().describe("The keyword to search for."),
+    zoom: z.number().optional().nullable().describe("The zoom level of the map. From 0 to 18.").default(13),
+  },
+  async ({ lat, lng, keyword, zoom }) => {
+    const resp = await fetchLocalFalconRankingAtCoordinate(apiKey, lat, lng, keyword, zoom);
+    return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+  }
+)
+
+server.tool(
+  "fetchLocalFalconKeywordAtCoordinate",
+  "Fetches a Local Falcon keyword at a coordinate for the authenticated user.",
+  {
+    lat: z.number().describe("The latitude of the coordinate."),
+    lng: z.number().describe("The longitude of the coordinate."),
+    keyword: z.string().describe("The desired search term or keyword."),
+    zoom: z.number().describe("The desired zoom level of the map. From 0 to 18.").default(13),
+  },
+  async ({ lat, lng, keyword, zoom }) => {
+    const resp = await fetchLocalFalconKeywordAtCoordinate(apiKey, lat, lng, keyword, zoom);
+    return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+  }
+)
+
+server.tool(
+  "fetchLocalFalconFullGridSearch",
+  "Fetches a Local Falcon full grid search for the authenticated user.",
+  {
+    placeId: z.string().describe("The Google Place ID of the business to match against in results.").nonempty(),
+    keyword: z.string().describe("The desired search term or keyword.").nonempty(),
+    lat: z.number().describe("The center point latitude value."),
+    lng: z.number().describe("The center point longitude value."),
+    gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15']).describe("The size of your desired grid."),
+    radius: z.number().describe("The radius of your grid from center point to outer most north/east/south/west point."),
+    measurement: z.enum(['mi', 'km']).describe("The measurement unit of your radius."),
+  },
+  async ({ placeId, keyword, lat, lng, gridSize, radius, measurement }) => {
+    const resp = await fetchLocalFalconFullGridSearch(apiKey, placeId, keyword, lat, lng, gridSize, radius, measurement);
     return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
   }
 )

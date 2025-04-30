@@ -386,3 +386,142 @@ export async function fetchLocalFalconKeywordReport(apiKey: string, reportKey: s
   }
   return data;
 }
+
+export async function fetchLocalFalconGrid(apiKey: string, lat: number, lng: number, gridSize: number, radius: number, measurement: string): Promise<any> {
+  const url = new URL(`${API_BASE}/grid`);
+  url.searchParams.set("api_key", apiKey);
+
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    headers: HEADERS,
+  });
+
+  if (!res.ok) {
+    throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
+  }
+
+  const raw = await res.text();
+  let data: any;
+  try {
+    data = JSON.parse(raw);
+  } catch (err) {
+    console.error('Raw response from Local Falcon API:', raw);
+    throw new Error('Failed to parse JSON from Local Falcon API. See raw response above.');
+  }
+  return data;
+}
+
+export async function fetchLocalFalconGoogleBusinessLocations(apiKey: string, nextToken?: string, query?: string, near?: string): Promise<any> {
+  const url = new URL(`${API_BASE}/places`);
+  url.searchParams.set("api_key", apiKey);
+
+  if (nextToken) url.searchParams.set("next_token", nextToken);
+  if (query) url.searchParams.set("query", query);
+  if (near) url.searchParams.set("near", near);
+
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    headers: HEADERS,
+  });
+
+  if (!res.ok) {
+    throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
+  }
+
+  const raw = await res.text();
+  let data: any;
+  try {
+    data = JSON.parse(raw);
+  } catch (err) {
+    console.error('Raw response from Local Falcon API:', raw);
+    throw new Error('Failed to parse JSON from Local Falcon API. See raw response above.');
+  }
+  return data;
+}
+
+export async function fetchLocalFalconRankingAtCoordinate(apiKey: string, lat: number, lng: number, keyword: string, zoom: number): Promise<any> {
+  const url = new URL(`${API_BASE}/result`);
+  url.searchParams.set("api_key", apiKey);
+  url.searchParams.set("lat", lat.toString());
+  url.searchParams.set("lng", lng.toString());
+  url.searchParams.set("keyword", keyword);
+  url.searchParams.set("zoom", zoom.toString());
+
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    headers: HEADERS,
+  });
+
+  if (!res.ok) {
+    throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
+  }
+
+  const raw = await res.text();
+  let data: any;
+  try {
+    data = JSON.parse(raw);
+  } catch (err) {
+    console.error('Raw response from Local Falcon API:', raw);
+    throw new Error('Failed to parse JSON from Local Falcon API. See raw response above.');
+  }
+  return data;
+}
+
+export async function fetchLocalFalconKeywordAtCoordinate(apiKey: string, lat: number, lng: number, keyword: string, zoom: number): Promise<any> {
+  const url = new URL(`${API_BASE}/search`);
+  url.searchParams.set("api_key", apiKey);
+  url.searchParams.set("lat", lat.toString());
+  url.searchParams.set("lng", lng.toString());
+  url.searchParams.set("keyword", keyword);
+  url.searchParams.set("zoom", zoom.toString());
+
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    headers: HEADERS,
+  });
+
+  if (!res.ok) {
+    throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
+  }
+
+  const raw = await res.text();
+  let data: any;
+  try {
+    data = JSON.parse(raw);
+  } catch (err) {
+    console.error('Raw response from Local Falcon API:', raw);
+    throw new Error('Failed to parse JSON from Local Falcon API. See raw response above.');
+  }
+  return data;
+}
+
+export async function fetchLocalFalconFullGridSearch(apiKey: string, placeId: string, keyword: string, lat: number, lng: number, gridSize: string, radius: number, measurement: string): Promise<any> {
+  const url = new URL(`${API_BASE}/scan`);
+  url.searchParams.set("api_key", apiKey);
+  url.searchParams.set("place_id", placeId);
+  url.searchParams.set("keyword", keyword);
+  url.searchParams.set("lat", lat.toString());
+  url.searchParams.set("lng", lng.toString());
+  url.searchParams.set("grid_size", gridSize);
+  url.searchParams.set("radius", radius.toString());
+  url.searchParams.set("measurement", measurement);
+
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    headers: HEADERS,
+  });
+
+  if (!res.ok) {
+    throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
+  }
+
+  const raw = await res.text();
+  let data: any;
+  try {
+    data = JSON.parse(raw);
+  } catch (err) {
+    console.error('Raw response from Local Falcon API:', raw);
+    throw new Error('Failed to parse JSON from Local Falcon API. See raw response above.');
+  }
+  return data;
+}
