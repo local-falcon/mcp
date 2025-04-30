@@ -1,0 +1,4 @@
+We are building an MCP server for the Local Falcon API.
+
+* This project uses bun, rather than npm
+* This project uses TypeScript
