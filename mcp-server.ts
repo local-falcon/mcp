@@ -176,7 +176,7 @@ server.tool(
     zoom: z.number().optional().nullable().describe("The zoom level of the map. From 0 to 18.").default(13),
   },
   async ({ lat, lng, keyword, zoom }) => {
-    const resp = await fetchLocalFalconRankingAtCoordinate(apiKey, lat, lng, keyword, zoom);
+    const resp = await fetchLocalFalconRankingAtCoordinate(apiKey, lat, lng, keyword, zoom ?? 13);
     return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
   }
 )
