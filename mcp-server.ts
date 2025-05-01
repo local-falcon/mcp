@@ -144,7 +144,7 @@ server.tool(
 
 server.tool(
   "getLocalFalconGrid",
-  "Retrieves a Local Falcon grid.",
+  "A helper method to create a Local Falcon grid.",
   {
     lat: z.string().describe("The latitude of the center of the grid."),
     lng: z.string().describe("The longitude of the center of the grid."),
@@ -203,7 +203,7 @@ server.tool(
 )
 
 server.tool(
-  "getLocalFalconFullGridSearch",
+  "runLocalFalconFullGridSearch",
   "Retrieves a full grid search using the passed keyword or search term to match against the specified business.",
   {
     placeId: z.string().describe("The Google Place ID of the business to match against in results."),

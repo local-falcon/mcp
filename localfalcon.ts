@@ -625,24 +625,15 @@ export async function fetchLocalFalconFullGridSearch(apiKey: string, placeId: st
   url.searchParams.set("measurement", measurement);
 
   try {
-    const res = await fetch(url.toString(), {
+    // kick off the request
+    const res = fetch(url.toString(), {
       method: "GET",
       headers: HEADERS,
     });
 
-    if (!res.ok) {
-      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
+    return {
+      message: `Local Falcon full grid search started with params ${JSON.stringify({ placeId, keyword, lat, lng, gridSize, radius, measurement })}`,
     }
-
-    const raw = await res.text();
-    let data: any;
-    try {
-      data = JSON.parse(raw);
-    } catch (err) {
-      console.error('Raw response from Local Falcon API:', raw);
-      throw new Error('Failed to parse JSON from Local Falcon API. See raw response above.');
-    }
-    return data;
   } catch (err) {
     throw new Error(`Failed to fetch Local Falcon full grid search: ${err}`);
   }
