@@ -82,6 +82,19 @@ export interface LocalFalconAutoScan {
 
 }
 
+export interface Place {
+  place_id: string;
+  name: string;
+  address: string;
+  phone: string;
+  display_url: string;
+  rating: string;
+  reviews: string;
+  arp: string;
+  atrp: string;
+  solv: string;
+}
+
 export interface LocalFalconReportsResponse {
   code: number;
   success: boolean;
@@ -90,7 +103,8 @@ export interface LocalFalconReportsResponse {
   data: {
     count: number;
     next_token?: string;
-    reports: LocalFalconReport[];
+    ai_analysis: any;
+    places: Record<string, Place>;
   };
 }
 
@@ -300,15 +314,58 @@ export async function fetchLocalFalconReport(apiKey: string, reportKey: string):
     throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
   }
 
-  const raw = await res.text();
-  let data: any;
+  const data = await res.json() as any;
   try {
-    data = JSON.parse(raw);
+    // trim response
+    const report = data.data;
+    // const aiAnalysis = report.ai_analysis;
+    // const places = Object.values(report.places).map((place: any) => {
+    //   return {
+    //     place_id: place.place_id,
+    //     name: place.name,
+    //     address: place.address,
+    //     phone: place.phone,
+    //     display_url: place.display_url,
+    //     rating: place.rating,
+    //     reviews: place.reviews,
+    //     arp: place.arp,
+    //     atrp: place.atrp,
+    //     solv: place.solv,
+    //   };
+    // });
+
+    // return {
+    //   report_key: report.report_key,
+    //   timestamp: report.timestamp,
+    //   date: report.date,
+    //   place_id: report.place_id,
+    //   location: report.location,
+    //   keyword: report.keyword,
+    //   lat: report.lat,
+    //   lng: report.lng,
+    //   grid_size: report.grid_size,
+    //   radius: report.radius,
+    //   measurement: report.measurement,
+    //   ai_analysis: aiAnalysis,
+    //   places: places,
+    // };
+    return {
+      report_key: report.report_key,
+      timestamp: report.timestamp,
+      date: report.date,
+      place_id: report.place_id,
+      location: report.location,
+      keyword: report.keyword,
+      lat: report.lat,
+      lng: report.lng,
+      grid_size: report.grid_size,
+      radius: report.radius,
+      measurement: report.measurement,
+      ai_analysis: report.ai_analysis,
+    }
   } catch (err) {
-    console.error('Raw response from Local Falcon API:', raw);
-    throw new Error('Failed to parse JSON from Local Falcon API. See raw response above.');
+    throw new Error(`Failed to parse JSON from Local Falcon API. ${err}`);
   }
-  return data;
 }
 
 export async function fetchLocalFalconTrendReport(apiKey: string, reportKey: string): Promise<any> {

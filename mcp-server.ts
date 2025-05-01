@@ -19,8 +19,8 @@ const server = new McpServer({
 });
 
 server.tool(
-  "fetchLocalFalconReports",
-  "Fetches Local Falcon reports for the authenticated user.",
+  "List Local Falcon Scan Reports",
+  "Retrieves a list of all Scan Reports performed by your Local Falcon account.",
   { nextToken: z.string().optional().nullable() },
   async ({ nextToken }) => {
     const resp = await fetchLocalFalconReports(apiKey, nextToken ?? undefined);
@@ -29,8 +29,8 @@ server.tool(
 );
 
 server.tool(
-  "fetchLocalFalconTrendReports",
-  "Fetches Local Falcon trend reports for the authenticated user.",
+  "List Local Falcon Trend Reports",
+  "Retrieves a list of all Trend Reports performed by your Local Falcon account.",
   {
     nextToken: z.string().optional().nullable(),
     limit: z.string().optional().nullable().default("10"),
@@ -44,8 +44,8 @@ server.tool(
 );
 
 server.tool(
-  "fetchLocalFalconAutoScans",
-  "Fetches Local Falcon auto scans for the authenticated user.",
+  "List Local Falcon Auto Scans",
+  "Retrieves a list of all Auto Scans associated with your Local Falcon account.",
   {
     nextToken: z.string().optional().nullable(),
     placeId: z.string().optional().nullable(),
@@ -61,8 +61,8 @@ server.tool(
 )
 
 server.tool(
-  "fetchLocalFalconLocations",
-  "Fetches Local Falcon locations for the authenticated user.",
+  "List Local Falcon Locations",
+  "Retrieves a list of all locations connected to your Local Falcon account.",
   {
     query: z.string().optional().nullable()
   },
@@ -73,8 +73,8 @@ server.tool(
 )
 
 server.tool(
-  "fetchLocalFalconLocationReports",
-  "Fetches Local Falcon location reports for the authenticated user.",
+  "List Local Falcon Location Reports",
+  "Retrieves a list of all location reports associated with your Local Falcon account.",
   { limit: z.string().optional().nullable().default("10"), placeId: z.string().optional().nullable(), keyword: z.string().optional().nullable(), nextToken: z.string().optional().nullable() },
   async ({ limit, placeId, keyword, nextToken }) => {
     const resp = await fetchLocalFalconLocationReports(apiKey, limit ?? undefined, placeId ?? undefined, keyword ?? undefined, nextToken ?? undefined);
@@ -83,8 +83,8 @@ server.tool(
 )
 
 server.tool(
-  "fetchLocalFalconLocationReport",
-  "Fetches a Local Falcon location report for the authenticated user.",
+  "Get Local Falcon Location Report",
+  "Retrieves a single location report associated with your Local Falcon account.",
   { reportKey: z.string() },
   async ({ reportKey }) => {
     const resp = await fetchLocalFalconLocationReport(apiKey, reportKey);
@@ -93,8 +93,8 @@ server.tool(
 )
 
 server.tool(
-  "fetchLocalFalconReport",
-  "Fetches a Local Falcon report for the authenticated user.",
+  "Get Local Falcon Report",
+  "Retrieves a single Local Falcon scan report. Only reads the ai analysis of the returned report. Otherwise report the ai analysis is not present.",
   { reportKey: z.string() },
   async ({ reportKey }) => {
     const resp = await fetchLocalFalconReport(apiKey, reportKey);
@@ -103,8 +103,8 @@ server.tool(
 )
 
 server.tool(
-  "fetchLocalFalconTrendReport",
-  "Fetches a Local Falcon trend report for the authenticated user.",
+  "Get Local Falcon Trend Report",
+  "Retrieves a single Local Falcon trend report.",
   { reportKey: z.string() },
   async ({ reportKey }) => {
     const resp = await fetchLocalFalconTrendReport(apiKey, reportKey);
@@ -113,8 +113,8 @@ server.tool(
 )
 
 server.tool(
-  "fetchLocalFalconKeywordReports",
-  "Fetches Local Falcon keyword reports for the authenticated user.",
+  "List Local Falcon Keyword Reports",
+  "Retrieves a list of all keyword reports associated with your Local Falcon account.",
   {
     nextToken: z.string().optional().nullable(),
     limit: z.string().optional().nullable().default("10"),
@@ -127,8 +127,8 @@ server.tool(
 )
 
 server.tool(
-  "fetchLocalFalconKeywordReport",
-  "Fetches a Local Falcon keyword report for the authenticated user.",
+  "Get Local Falcon Keyword Report",
+  "Retrieves a single Local Falcon keyword report.",
   { reportKey: z.string() },
   async ({ reportKey }) => {
     const resp = await fetchLocalFalconKeywordReport(apiKey, reportKey);
@@ -137,8 +137,8 @@ server.tool(
 )
 
 server.tool(
-  "fetchLocalFalconGrid",
-  "Fetches a Local Falcon grid for the authenticated user.",
+  "Get Local Falcon Grid",
+  "Retrieves a Local Falcon grid for the authenticated user.",
   {
     lat: z.string().describe("The latitude of the center of the grid."),
     lng: z.string().describe("The longitude of the center of the grid."),
@@ -153,7 +153,7 @@ server.tool(
 )
 
 server.tool(
-  "fetchLocalFalconGoogleBusinessLocations",
+  "List Local Falcon Google Business Locations",
   "Fetches Local Falcon Google Business locations for the authenticated user.",
   {
     nextToken: z.string().optional().nullable(),
@@ -167,8 +167,8 @@ server.tool(
 )
 
 server.tool(
-  "fetchLocalFalconRankingAtCoordinate",
-  "Fetches a Local Falcon ranking at a coordinate for the authenticated user.",
+  "Get Local Falcon Ranking At Coordinate",
+  "Retrieves search results at the specified coordinate point and gets ranking data for specified business.",
   {
     lat: z.string().describe("The latitude of the coordinate."),
     lng: z.string().describe("The longitude of the coordinate."),
@@ -182,8 +182,8 @@ server.tool(
 )
 
 server.tool(
-  "fetchLocalFalconKeywordAtCoordinate",
-  "Fetches a Local Falcon keyword at a coordinate for the authenticated user.",
+  "Get Local Falcon Keyword At Coordinate",
+  "Retrieves search results at the specified coordinate point without any rank comparison data.",
   {
     lat: z.string().describe("The latitude of the coordinate."),
     lng: z.string().describe("The longitude of the coordinate."),
@@ -197,8 +197,8 @@ server.tool(
 )
 
 server.tool(
-  "fetchLocalFalconFullGridSearch",
-  "Fetches a Local Falcon full grid search for the authenticated user.",
+  "Get Local Falcon Full Grid Search",
+  "Retrieves a full grid search using the passed keyword or search term to match against the specified business.",
   {
     placeId: z.string().describe("The Google Place ID of the business to match against in results."),
     keyword: z.string().describe("The desired search term or keyword."),
