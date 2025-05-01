@@ -147,12 +147,12 @@ export async function fetchLocalFalconReports(apiKey: string, nextToken?: string
  * @param apiKey Your Local Falcon API key.
  * @param nextToken Optional pagination token for additional results.
  */
-export async function fetchLocalFalconTrendReports(apiKey: string, nextToken?: string, limit?: number, placeId?: string, keyword?: string): Promise<LocalFalconTrendReportsResponse> {
+export async function fetchLocalFalconTrendReports(apiKey: string, nextToken?: string, limit?: string, placeId?: string, keyword?: string): Promise<LocalFalconTrendReportsResponse> {
   const url = new URL(`${API_BASE}/trend-reports`);
   url.searchParams.set("api_key", apiKey);
 
   if (nextToken) url.searchParams.set("next_token", nextToken);
-  if (limit) url.searchParams.set("limit", limit.toString());
+  if (limit) url.searchParams.set("limit", limit);
   if (placeId) url.searchParams.set("place_id", placeId);
   if (keyword) url.searchParams.set("keyword", keyword);
 
@@ -208,11 +208,11 @@ export async function fetchLocalFalconAutoScans(apiKey: string, nextToken?: stri
 }
 
 
-export async function fetchLocalFalconLocationReports(apiKey: string, limit?: number, placeId?: string, keyword?: string, nextToken?: string): Promise<any> {
+export async function fetchLocalFalconLocationReports(apiKey: string, limit?: string, placeId?: string, keyword?: string, nextToken?: string): Promise<any> {
   const url = new URL(`${API_BASE}/location-reports`);
   url.searchParams.set("api_key", apiKey);
 
-  if (limit) url.searchParams.set("limit", limit.toString());
+  if (limit) url.searchParams.set("limit", limit);
   if (placeId) url.searchParams.set("place_id", placeId);
   if (keyword) url.searchParams.set("keyword", keyword);
   if (nextToken) url.searchParams.set("next_token", nextToken);
@@ -335,12 +335,12 @@ export async function fetchLocalFalconTrendReport(apiKey: string, reportKey: str
   return data;
 }
 
-export async function fetchLocalFalconKeywordReports(apiKey: string, nextToken?: string, limit?: number, keyword?: string): Promise<any> {
+export async function fetchLocalFalconKeywordReports(apiKey: string, nextToken?: string, limit?: string, keyword?: string): Promise<any> {
   const url = new URL(`${API_BASE}/keyword-reports`);
   url.searchParams.set("api_key", apiKey);
 
   if (nextToken) url.searchParams.set("next_token", nextToken);
-  if (limit) url.searchParams.set("limit", limit.toString());
+  if (limit) url.searchParams.set("limit", limit);
   if (keyword) url.searchParams.set("keyword", keyword);
 
   const res = await fetch(url.toString(), {
@@ -387,9 +387,15 @@ export async function fetchLocalFalconKeywordReport(apiKey: string, reportKey: s
   return data;
 }
 
-export async function fetchLocalFalconGrid(apiKey: string, lat: number, lng: number, gridSize: number, radius: number, measurement: string): Promise<any> {
+export async function fetchLocalFalconGrid(apiKey: string, lat?: string, lng?: string, gridSize?: string, radius?: string, measurement?: string): Promise<any> {
   const url = new URL(`${API_BASE}/grid`);
   url.searchParams.set("api_key", apiKey);
+
+  if (lat) url.searchParams.set("lat", lat);
+  if (lng) url.searchParams.set("lng", lng);
+  if (gridSize) url.searchParams.set("grid_size", gridSize.toString());
+  if (radius) url.searchParams.set("radius", radius.toString());
+  if (measurement) url.searchParams.set("measurement", measurement);
 
   const res = await fetch(url.toString(), {
     method: "GET",
@@ -439,13 +445,13 @@ export async function fetchLocalFalconGoogleBusinessLocations(apiKey: string, ne
   return data;
 }
 
-export async function fetchLocalFalconRankingAtCoordinate(apiKey: string, lat: number, lng: number, keyword: string, zoom: number): Promise<any> {
+export async function fetchLocalFalconRankingAtCoordinate(apiKey: string, lat: string, lng: string, keyword: string, zoom: string): Promise<any> {
   const url = new URL(`${API_BASE}/result`);
   url.searchParams.set("api_key", apiKey);
-  url.searchParams.set("lat", lat.toString());
-  url.searchParams.set("lng", lng.toString());
+  url.searchParams.set("lat", lat);
+  url.searchParams.set("lng", lng);
   url.searchParams.set("keyword", keyword);
-  url.searchParams.set("zoom", zoom.toString());
+  url.searchParams.set("zoom", zoom);
 
   const res = await fetch(url.toString(), {
     method: "GET",
@@ -467,61 +473,69 @@ export async function fetchLocalFalconRankingAtCoordinate(apiKey: string, lat: n
   return data;
 }
 
-export async function fetchLocalFalconKeywordAtCoordinate(apiKey: string, lat: number, lng: number, keyword: string, zoom: number): Promise<any> {
+export async function fetchLocalFalconKeywordAtCoordinate(apiKey: string, lat: string, lng: string, keyword: string, zoom: string): Promise<any> {
   const url = new URL(`${API_BASE}/search`);
   url.searchParams.set("api_key", apiKey);
-  url.searchParams.set("lat", lat.toString());
-  url.searchParams.set("lng", lng.toString());
+  url.searchParams.set("lat", lat);
+  url.searchParams.set("lng", lng);
   url.searchParams.set("keyword", keyword);
   url.searchParams.set("zoom", zoom.toString());
 
-  const res = await fetch(url.toString(), {
-    method: "GET",
-    headers: HEADERS,
-  });
-
-  if (!res.ok) {
-    throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
-  }
-
-  const raw = await res.text();
-  let data: any;
   try {
-    data = JSON.parse(raw);
+    const res = await fetch(url.toString(), {
+      method: "GET",
+      headers: HEADERS,
+    });
+
+    if (!res.ok) {
+      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
+    }
+
+    const raw = await res.text();
+    let data: any;
+    try {
+      data = JSON.parse(raw);
+    } catch (err) {
+      console.error('Raw response from Local Falcon API:', raw);
+      throw new Error('Failed to parse JSON from Local Falcon API. See raw response above.');
+    }
+    return data;
   } catch (err) {
-    console.error('Raw response from Local Falcon API:', raw);
-    throw new Error('Failed to parse JSON from Local Falcon API. See raw response above.');
+    throw new Error(`Failed to fetch Local Falcon keyword at coordinate: ${err}`);
   }
-  return data;
 }
 
-export async function fetchLocalFalconFullGridSearch(apiKey: string, placeId: string, keyword: string, lat: number, lng: number, gridSize: string, radius: number, measurement: string): Promise<any> {
+export async function fetchLocalFalconFullGridSearch(apiKey: string, placeId: string, keyword: string, lat: string, lng: string, gridSize: string, radius: string, measurement: string): Promise<any> {
   const url = new URL(`${API_BASE}/scan`);
   url.searchParams.set("api_key", apiKey);
   url.searchParams.set("place_id", placeId);
   url.searchParams.set("keyword", keyword);
-  url.searchParams.set("lat", lat.toString());
-  url.searchParams.set("lng", lng.toString());
+  url.searchParams.set("lat", lat);
+  url.searchParams.set("lng", lng);
   url.searchParams.set("grid_size", gridSize);
-  url.searchParams.set("radius", radius.toString());
+  url.searchParams.set("radius", radius);
   url.searchParams.set("measurement", measurement);
 
-  const res = await fetch(url.toString(), {
-    method: "GET",
-    headers: HEADERS,
-  });
-
-  if (!res.ok) {
-    throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
-  }
-
-  const raw = await res.text();
-  let data: any;
   try {
-    data = JSON.parse(raw);
+    const res = await fetch(url.toString(), {
+      method: "GET",
+      headers: HEADERS,
+    });
+
+    if (!res.ok) {
+      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
+    }
+
+    const raw = await res.text();
+    let data: any;
+    try {
+      data = JSON.parse(raw);
+    } catch (err) {
+      console.error('Raw response from Local Falcon API:', raw);
+      throw new Error('Failed to parse JSON from Local Falcon API. See raw response above.');
+    }
+    return data;
   } catch (err) {
-    console.error('Raw response from Local Falcon API:', raw);
-    throw new Error('Failed to parse JSON from Local Falcon API. See raw response above.');
+    throw new Error(`Failed to fetch Local Falcon full grid search: ${err}`);
   }
-  return data;
 }

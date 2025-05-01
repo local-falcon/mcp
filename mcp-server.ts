@@ -33,7 +33,7 @@ server.tool(
   "Fetches Local Falcon trend reports for the authenticated user.",
   {
     nextToken: z.string().optional().nullable(),
-    limit: z.number().optional().nullable(),
+    limit: z.string().optional().nullable().default("10"),
     placeId: z.string().optional().nullable(),
     keyword: z.string().optional().nullable(),
   },
@@ -75,7 +75,7 @@ server.tool(
 server.tool(
   "fetchLocalFalconLocationReports",
   "Fetches Local Falcon location reports for the authenticated user.",
-  { limit: z.number().optional().nullable(), placeId: z.string().optional().nullable(), keyword: z.string().optional().nullable(), nextToken: z.string().optional().nullable() },
+  { limit: z.string().optional().nullable().default("10"), placeId: z.string().optional().nullable(), keyword: z.string().optional().nullable(), nextToken: z.string().optional().nullable() },
   async ({ limit, placeId, keyword, nextToken }) => {
     const resp = await fetchLocalFalconLocationReports(apiKey, limit ?? undefined, placeId ?? undefined, keyword ?? undefined, nextToken ?? undefined);
     return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
@@ -117,7 +117,7 @@ server.tool(
   "Fetches Local Falcon keyword reports for the authenticated user.",
   {
     nextToken: z.string().optional().nullable(),
-    limit: z.number().optional().nullable(),
+    limit: z.string().optional().nullable().default("10"),
     keyword: z.string().optional().nullable(),
   },
   async ({ nextToken, limit, keyword }) => {
@@ -140,10 +140,10 @@ server.tool(
   "fetchLocalFalconGrid",
   "Fetches a Local Falcon grid for the authenticated user.",
   {
-    lat: z.number().describe("The latitude of the center of the grid."),
-    lng: z.number().describe("The longitude of the center of the grid."),
-    gridSize: z.number().describe("Expects 3, 5, 7, 9, 11, 13, or 15."),
-    radius: z.number().describe("The radius of the grid in meters. From 0.1 to 100."),
+    lat: z.string().describe("The latitude of the center of the grid."),
+    lng: z.string().describe("The longitude of the center of the grid."),
+    gridSize: z.string().describe("Expects 3, 5, 7, 9, 11, 13, or 15."),
+    radius: z.string().describe("The radius of the grid in meters. From 0.1 to 100."),
     measurement: z.enum(['mi', 'km']).describe("Expects 'mi' or 'km'."),
   },
   async ({ lat, lng, gridSize, radius, measurement }) => {
@@ -161,7 +161,7 @@ server.tool(
     near: z.string().optional().nullable().describe("Narrow results by location. City, state, country, etc."),
   },
   async ({ nextToken, query, near }) => {
-    const resp = await fetchLocalFalconGoogleBusinessLocations(apiKey, nextToken ?? undefined, query ?? undefined, near ?? undefined);
+    const resp = await fetchLocalFalconGoogleBusinessLocations(apiKey, nextToken ?? undefined, query, near ?? undefined);
     return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
   }
 )
@@ -170,13 +170,13 @@ server.tool(
   "fetchLocalFalconRankingAtCoordinate",
   "Fetches a Local Falcon ranking at a coordinate for the authenticated user.",
   {
-    lat: z.number().describe("The latitude of the coordinate."),
-    lng: z.number().describe("The longitude of the coordinate."),
+    lat: z.string().describe("The latitude of the coordinate."),
+    lng: z.string().describe("The longitude of the coordinate."),
     keyword: z.string().describe("The keyword to search for."),
-    zoom: z.number().optional().nullable().describe("The zoom level of the map. From 0 to 18.").default(13),
+    zoom: z.string().optional().nullable().describe("The zoom level of the map. From 0 to 18.").default("13"),
   },
   async ({ lat, lng, keyword, zoom }) => {
-    const resp = await fetchLocalFalconRankingAtCoordinate(apiKey, lat, lng, keyword, zoom ?? 13);
+    const resp = await fetchLocalFalconRankingAtCoordinate(apiKey, lat, lng, keyword, zoom ?? "13");
     return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
   }
 )
@@ -185,10 +185,10 @@ server.tool(
   "fetchLocalFalconKeywordAtCoordinate",
   "Fetches a Local Falcon keyword at a coordinate for the authenticated user.",
   {
-    lat: z.number().describe("The latitude of the coordinate."),
-    lng: z.number().describe("The longitude of the coordinate."),
+    lat: z.string().describe("The latitude of the coordinate."),
+    lng: z.string().describe("The longitude of the coordinate."),
     keyword: z.string().describe("The desired search term or keyword."),
-    zoom: z.number().describe("The desired zoom level of the map. From 0 to 18.").default(13),
+    zoom: z.string().describe("The desired zoom level of the map. From 0 to 18.").default("13"),
   },
   async ({ lat, lng, keyword, zoom }) => {
     const resp = await fetchLocalFalconKeywordAtCoordinate(apiKey, lat, lng, keyword, zoom);
@@ -200,18 +200,18 @@ server.tool(
   "fetchLocalFalconFullGridSearch",
   "Fetches a Local Falcon full grid search for the authenticated user.",
   {
-    placeId: z.string().describe("The Google Place ID of the business to match against in results.").nonempty(),
-    keyword: z.string().describe("The desired search term or keyword.").nonempty(),
-    lat: z.number().describe("The center point latitude value."),
-    lng: z.number().describe("The center point longitude value."),
+    placeId: z.string().describe("The Google Place ID of the business to match against in results."),
+    keyword: z.string().describe("The desired search term or keyword."),
+    lat: z.string().describe("The center point latitude value."),
+    lng: z.string().describe("The center point longitude value."),
     gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15']).describe("The size of your desired grid."),
-    radius: z.number().describe("The radius of your grid from center point to outer most north/east/south/west point."),
+    radius: z.string().describe("The radius of your grid from center point to outer most north/east/south/west point."),
     measurement: z.enum(['mi', 'km']).describe("The measurement unit of your radius."),
   },
   async ({ placeId, keyword, lat, lng, gridSize, radius, measurement }) => {
     const resp = await fetchLocalFalconFullGridSearch(apiKey, placeId, keyword, lat, lng, gridSize, radius, measurement);
     return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
-  }
+  },
 )
 
 // Start the MCP server using stdio transport
