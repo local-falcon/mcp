@@ -19,7 +19,7 @@ const server = new McpServer({
 });
 
 server.tool(
-  "List Local Falcon Scan Reports",
+  "listLocalFalconScanReports",
   "Retrieves a list of all Scan Reports performed by your Local Falcon account.",
   { nextToken: z.string().optional().nullable() },
   async ({ nextToken }) => {
@@ -29,7 +29,7 @@ server.tool(
 );
 
 server.tool(
-  "List Local Falcon Trend Reports",
+  "listLocalFalconTrendReports",
   "Retrieves a list of all Trend Reports performed by your Local Falcon account.",
   {
     nextToken: z.string().optional().nullable(),
@@ -44,7 +44,7 @@ server.tool(
 );
 
 server.tool(
-  "List Local Falcon Auto Scans",
+  "listLocalFalconAutoScans",
   "Retrieves a list of all Auto Scans.",
   {
     nextToken: z.string().optional().nullable(),
@@ -61,7 +61,7 @@ server.tool(
 )
 
 server.tool(
-  "List Local Falcon Locations",
+  "listLocalFalconLocations",
   "Retrieves a list of all locations.",
   {
     query: z.string().optional().nullable()
@@ -73,7 +73,7 @@ server.tool(
 )
 
 server.tool(
-  "List Local Falcon Location Reports",
+  "listLocalFalconLocationReports",
   "Retrieves a list of all location reports.",
   { limit: z.string().optional().nullable().default("10"), placeId: z.string().optional().nullable(), keyword: z.string().optional().nullable(), nextToken: z.string().optional().nullable() },
   async ({ limit, placeId, keyword, nextToken }) => {
@@ -83,7 +83,7 @@ server.tool(
 )
 
 server.tool(
-  "Get Local Falcon Location Report",
+  "getLocalFalconLocationReport",
   "Retrieves a single location report.",
   { reportKey: z.string() },
   async ({ reportKey }) => {
@@ -93,7 +93,7 @@ server.tool(
 )
 
 server.tool(
-  "Get Local Falcon Report",
+  "getLocalFalconReport",
   "Retrieves a single Local Falcon scan report. Only reads the ai analysis of the returned report. Otherwise report the ai analysis is not present.",
   { reportKey: z.string() },
   async ({ reportKey }) => {
@@ -103,7 +103,7 @@ server.tool(
 )
 
 server.tool(
-  "Get Local Falcon Trend Report",
+  "getLocalFalconTrendReport",
   "Retrieves a single Local Falcon trend report.",
   { reportKey: z.string() },
   async ({ reportKey }) => {
@@ -113,7 +113,7 @@ server.tool(
 )
 
 server.tool(
-  "List Local Falcon Keyword Reports",
+  "listLocalFalconKeywordReports",
   "Retrieves a list of all keyword reports.",
   {
     nextToken: z.string().optional().nullable(),
@@ -127,7 +127,7 @@ server.tool(
 )
 
 server.tool(
-  "Get Local Falcon Keyword Report",
+  "getLocalFalconKeywordReport",
   "Retrieves a single Local Falcon keyword report.",
   { reportKey: z.string() },
   async ({ reportKey }) => {
@@ -137,7 +137,7 @@ server.tool(
 )
 
 server.tool(
-  "Get Local Falcon Grid",
+  "getLocalFalconGrid",
   "Retrieves a Local Falcon grid.",
   {
     lat: z.string().describe("The latitude of the center of the grid."),
@@ -153,7 +153,7 @@ server.tool(
 )
 
 server.tool(
-  "List Local Falcon Google Business Locations",
+  "getLocalFalconGoogleBusinessLocations",
   "Fetches Local Falcon Google Business locations.",
   {
     nextToken: z.string().optional().nullable(),
@@ -167,7 +167,7 @@ server.tool(
 )
 
 server.tool(
-  "Get Local Falcon Ranking At Coordinate",
+  "getLocalFalconRankingAtCoordinate",
   "Retrieves search results at the specified coordinate point and gets ranking data for specified business.",
   {
     lat: z.string().describe("The latitude of the coordinate."),
@@ -182,7 +182,7 @@ server.tool(
 )
 
 server.tool(
-  "Get Local Falcon Keyword At Coordinate",
+  "getLocalFalconKeywordAtCoordinate",
   "Retrieves search results at the specified coordinate point without any rank comparison data.",
   {
     lat: z.string().describe("The latitude of the coordinate."),
@@ -197,7 +197,7 @@ server.tool(
 )
 
 server.tool(
-  "Get Local Falcon Full Grid Search",
+  "getLocalFalconFullGridSearch",
   "Retrieves a full grid search using the passed keyword or search term to match against the specified business.",
   {
     placeId: z.string().describe("The Google Place ID of the business to match against in results."),
