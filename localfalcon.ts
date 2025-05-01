@@ -240,18 +240,27 @@ export async function fetchLocalFalconLocationReports(apiKey: string, limit?: st
     throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
   }
 
-  const raw = await res.text();
-  let data: any;
-  try {
-    data = JSON.parse(raw);
-  } catch (err) {
-    console.error('Raw response from Local Falcon API:', raw);
-    throw new Error('Failed to parse JSON from Local Falcon API. See raw response above.');
+  const data = await res.json() as any;
+  const report = data.data
+  return {
+    next_token: report.next_token,
+    ai_analysis: report.ai_analysis,
+    reports: report.reports.map((report: any) => {
+      return {
+        report_key: report.report_key,
+        last_date: report.last_date,
+        location: report.location,
+        keywords: report.keywords,
+        pdf: report.pdf,
+        avg_arp: report.avg_arp,
+        avg_atrp: report.avg_atrp,
+        avg_solv: report.avg_solv,
+      }
+    }),
   }
-  return data;
 }
 
-export async function fetchLocalFalconLocations(apiKey: string, query?: string): Promise<any> {
+export async function fetchAllLocalFalconLocations(apiKey: string, query?: string): Promise<any> {
   const url = new URL(`${API_BASE}/locations`);
   url.searchParams.set("api_key", apiKey);
 
@@ -381,14 +390,56 @@ export async function fetchLocalFalconTrendReport(apiKey: string, reportKey: str
     throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
   }
 
-  const raw = await res.text();
-  let data: any;
-  try {
-    data = JSON.parse(raw);
-  } catch (err) {
-    console.error('Raw response from Local Falcon API:', raw);
-    throw new Error('Failed to parse JSON from Local Falcon API. See raw response above.');
+  const data = await res.json() as any;
+  const report = data.data
+
+  // get the most number of locations from one of the scans to save context space
+  let locations = report.scans.reduce((most: any, current: any) => {
+    return current.locations.length > most.length ? current.locations : most;
+  }, [] as any[])
+  locations = locations.map((location: any) => {
+    return {
+      place_id: location.place_id,
+      name: location.name,
+      address: location.address,
+      phone: location.phone,
+      display_url: location.display_url,
+      rating: location.rating,
+      reviews: location.reviews,
+      arp: location.arp,
+      atrp: location.atrp,
+      solv: location.solv,
+    };
+  });
+
+  return {
+    id: report.id,
+    last_date: report.last_date,
+    keyword: report.keyword,
+    location: report.location,
+    ai_analysis: report.ai_analysis,
+    lat: report.lat,
+    lng: report.lng,
+    grid_size: report.grid_size,
+    radius: report.radius,
+    measurement: report.measurement,
+    scan_count: report.scan_count,
+    points: report.points,
+    pdf: report.pdf,
+    locations,
+    scans: report.scans.map((scan: any) => {
+      return {
+        report_key: scan.report_key,
+        date: scan.date,
+        arp: scan.arp,
+        atrp: scan.atrp,
+        solv: scan.solv,
+        image: scan.image,
+        heatmap: scan.heatmap
+      }
+    }),
   }
+
   return data;
 }
 

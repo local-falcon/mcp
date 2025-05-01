@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import dotenv from "dotenv";
-import { fetchLocalFalconAutoScans, fetchLocalFalconFullGridSearch, fetchLocalFalconGoogleBusinessLocations, fetchLocalFalconGrid, fetchLocalFalconKeywordAtCoordinate, fetchLocalFalconKeywordReport, fetchLocalFalconKeywordReports, fetchLocalFalconLocationReport, fetchLocalFalconLocationReports, fetchLocalFalconLocations, fetchLocalFalconRankingAtCoordinate, fetchLocalFalconReport, fetchLocalFalconReports, fetchLocalFalconTrendReport, fetchLocalFalconTrendReports } from "./localfalcon.js";
+import { fetchLocalFalconAutoScans, fetchLocalFalconFullGridSearch, fetchLocalFalconGoogleBusinessLocations, fetchLocalFalconGrid, fetchLocalFalconKeywordAtCoordinate, fetchLocalFalconKeywordReport, fetchLocalFalconKeywordReports, fetchLocalFalconLocationReport, fetchLocalFalconLocationReports, fetchAllLocalFalconLocations as fetchAllLocalFalconLocations, fetchLocalFalconRankingAtCoordinate, fetchLocalFalconReport, fetchLocalFalconReports, fetchLocalFalconTrendReport, fetchLocalFalconTrendReports } from "./localfalcon.js";
 
 dotenv.config({ path: ".env.local" });
 
@@ -61,13 +61,13 @@ server.tool(
 )
 
 server.tool(
-  "listLocalFalconLocations",
+  "listAllLocalFalconLocations",
   "Retrieves a list of all locations.",
   {
-    query: z.string().optional().nullable()
+    query: z.string().optional().nullable().describe("Search query. Matches against location name, address, Place ID, or store code.")
   },
   async ({ query }) => {
-    const resp = await fetchLocalFalconLocations(apiKey, query ?? undefined);
+    const resp = await fetchAllLocalFalconLocations(apiKey, query ?? undefined);
     return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
   }
 )
@@ -75,7 +75,12 @@ server.tool(
 server.tool(
   "listLocalFalconLocationReports",
   "Retrieves a list of all location reports.",
-  { limit: z.string().optional().nullable().default("10"), placeId: z.string().optional().nullable(), keyword: z.string().optional().nullable(), nextToken: z.string().optional().nullable() },
+  {
+    limit: z.string().optional().nullable().default("10"),
+    placeId: z.string().optional().nullable().describe("The Place ID of the location."),
+    keyword: z.string().optional().nullable().describe("The keyword to search for."),
+    nextToken: z.string().optional().nullable().describe("Pagination token for additional results.")
+  },
   async ({ limit, placeId, keyword, nextToken }) => {
     const resp = await fetchLocalFalconLocationReports(apiKey, limit ?? undefined, placeId ?? undefined, keyword ?? undefined, nextToken ?? undefined);
     return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
@@ -84,8 +89,8 @@ server.tool(
 
 server.tool(
   "getLocalFalconLocationReport",
-  "Retrieves a single location report.",
-  { reportKey: z.string() },
+  "Retrieves a single location report. A location report looks like https://www.localfalcon.com/reports/location/view/c60c325a8665c4a where c60c325a8665c4a is the report key.",
+  { reportKey: z.string().describe("The report key of the location report.") },
   async ({ reportKey }) => {
     const resp = await fetchLocalFalconLocationReport(apiKey, reportKey);
     return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
@@ -94,8 +99,9 @@ server.tool(
 
 server.tool(
   "getLocalFalconReport",
-  "Retrieves a single Local Falcon scan report. Only reads the ai analysis of the returned report. Otherwise report the ai analysis is not present.",
-  { reportKey: z.string() },
+  `Retrieves a single Local Falcon scan report given a report key. Only reads the ai analysis of the returned report. Otherwise report the ai analysis is not present.
+  Users can also enter the report key in the format of https://www.localfalcon.com/reports/view/0b38313fa35c37f where 0b38313fa35c37f is the report key.`,
+  { reportKey: z.string().describe("The report key of the scan report.") },
   async ({ reportKey }) => {
     const resp = await fetchLocalFalconReport(apiKey, reportKey);
     return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
@@ -104,8 +110,8 @@ server.tool(
 
 server.tool(
   "getLocalFalconTrendReport",
-  "Retrieves a single Local Falcon trend report.",
-  { reportKey: z.string() },
+  "Retrieves a single Local Falcon trend report. A trend report looks like https://www.localfalcon.com/reports/trend/view/95290829819f6e8 where 95290829819f6e8 is the report key.",
+  { reportKey: z.string().describe("The report key of the trend report.") },
   async ({ reportKey }) => {
     const resp = await fetchLocalFalconTrendReport(apiKey, reportKey);
     return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
@@ -114,11 +120,11 @@ server.tool(
 
 server.tool(
   "listLocalFalconKeywordReports",
-  "Retrieves a list of all keyword reports.",
+  "Retrieves a list of all keyword reports. A keyword report looks like https://www.localfalcon.com/reports/keyword/view/754ffcb0f309938 where 754ffcb0f309938 is the report key.",
   {
-    nextToken: z.string().optional().nullable(),
-    limit: z.string().optional().nullable().default("10"),
-    keyword: z.string().optional().nullable(),
+    nextToken: z.string().optional().nullable().describe("Pagination token for additional results."),
+    limit: z.string().optional().nullable().default("10").describe("Number of results to return."),
+    keyword: z.string().optional().nullable().describe("The keyword to search for."),
   },
   async ({ nextToken, limit, keyword }) => {
     const resp = await fetchLocalFalconKeywordReports(apiKey, nextToken ?? undefined, limit ?? undefined, keyword ?? undefined);
@@ -156,7 +162,7 @@ server.tool(
   "getLocalFalconGoogleBusinessLocations",
   "Fetches Local Falcon Google Business locations.",
   {
-    nextToken: z.string().optional().nullable(),
+    nextToken: z.string().optional().nullable().describe("Pagination token for additional results."),
     query: z.string().describe("The query to search for."),
     near: z.string().optional().nullable().describe("Narrow results by location. City, state, country, etc."),
   },
