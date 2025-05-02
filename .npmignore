@@ -1,0 +1,19 @@
+# Don't publish environment files
+.env
+.env.*
+
+# Don't publish TypeScript source files
+*.ts
+
+# Don't publish test files
+test.ts
+*.test.ts
+*.spec.ts
+
+# Don't publish config and metadata not needed by users
+tsconfig.json
+.gitignore
+.npmignore
+
+# Don't publish node_modules (npm does this by default anyway)
+node_modules/

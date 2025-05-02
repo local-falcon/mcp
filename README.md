@@ -39,7 +39,7 @@ An MCP (Model Context Protocol) server for the [Local Falcon API](https://www.lo
 ### Start the MCP Server
 
 ```bash
-bun run mcp-server.ts
+bun run index.ts
 ```
 
 The server will start in stdio mode, ready to communicate via the MCP protocol.

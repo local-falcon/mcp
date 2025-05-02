@@ -5,9 +5,11 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "bun run mcp-server.ts",
-    "build": "tsc",
-    "inspector": "npx @modelcontextprotocol/inspector bun start"
+    "start": "bun run index.ts",
+    "build": "rm -rf dist && tsc",
+    "inspector": "npx @modelcontextprotocol/inspector bun start",
+    "docker:build": "docker build -t local-falcon-mcp .",
+    "docker:run": "docker run -it --rm --env-file .env local-falcon-mcp"
   },
   "author": "",
   "license": "MIT",

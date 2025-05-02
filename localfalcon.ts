@@ -1,6 +1,5 @@
 import fetch from "node-fetch";
 
-// Types for the API response
 export interface LocalFalconLocation {
   place_id: string;
   name: string;
