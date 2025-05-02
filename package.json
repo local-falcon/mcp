@@ -1,5 +1,5 @@
 {
-  "name": "local-falcon-mcp",
+  "name": "@local-falcon/mcp",
   "version": "0.0.1",
   "description": "An MCP server for the Local Falcon API.",
   "main": "index.js",
@@ -9,7 +9,7 @@
     "build": "rm -rf dist && tsc",
     "inspector": "npx @modelcontextprotocol/inspector bun start",
     "docker:build": "docker build -t local-falcon-mcp .",
-    "docker:run": "docker run -it --rm --env-file .env local-falcon-mcp"
+    "docker:run": "docker run -it --rm --env-file .env --name local-falcon-mcp local-falcon-mcp"
   },
   "author": "",
   "license": "MIT",
