@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import dotenv from "dotenv";
-import { fetchLocalFalconAutoScans, fetchLocalFalconFullGridSearch, fetchLocalFalconGoogleBusinessLocations, fetchLocalFalconGrid, fetchLocalFalconKeywordAtCoordinate, fetchLocalFalconKeywordReport, fetchLocalFalconKeywordReports, fetchLocalFalconLocationReport, fetchLocalFalconLocationReports, fetchAllLocalFalconLocations as fetchAllLocalFalconLocations, fetchLocalFalconRankingAtCoordinate, fetchLocalFalconReport, fetchLocalFalconReports, fetchLocalFalconTrendReport, fetchLocalFalconTrendReports } from "./localfalcon.js";
+import { fetchLocalFalconAutoScans, fetchLocalFalconFullGridSearch, fetchLocalFalconGoogleBusinessLocations, fetchLocalFalconGrid, fetchLocalFalconKeywordAtCoordinate, fetchLocalFalconKeywordReport, fetchLocalFalconKeywordReports, fetchLocalFalconLocationReport, fetchLocalFalconLocationReports, fetchAllLocalFalconLocations as fetchAllLocalFalconLocations, fetchLocalFalconRankingAtCoordinate, fetchLocalFalconReport, fetchLocalFalconReports, fetchLocalFalconTrendReport, fetchLocalFalconTrendReports, fetchLocalFalconCompetitorReports, fetchLocalFalconCompetitorReport, fetchLocalFalconCampaignReports, fetchLocalFalconCampaignReport, fetchLocalFalconGuardReports, fetchLocalFalconGuardReport } from "./localfalcon.js";
 
 dotenv.config({ path: ".env.local" });
 
@@ -219,6 +219,93 @@ server.tool(
     return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
   },
 )
+
+server.tool(
+  "getLocalFalconCompetitorReports",
+  "Retrieves a list of all Competitor Reports within your Local Falcon account.",
+  {
+    limit: z.string().optional().nullable().default("10").describe("The number of results you wish to retrieve. Expects 10 to 100."),
+    startDate: z.string().optional().nullable().describe("A lower limit (oldest) date you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
+    endDate: z.string().optional().nullable().describe("Upper limit (newest) date you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
+    placeId: z.string().optional().nullable().describe("Filter only results for specific Google Place ID. Supports multiple Google Place IDs, seperated by commas."),
+    keyword: z.string().optional().nullable().describe("Filter only results similar to specified keyword (loose match)."),
+    gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15']).optional().nullable().default("3").describe("Filter only for specific grid sizes. Expects 3, 5, 7, 9, 11, 13, or 15."),
+    nextToken: z.string().optional().nullable().describe("This parameter is used to get the next 'page' of results. The value used with the parameter is provided from a previous response by this endpoint if more 'pages' of results exist."),
+  },
+  async ({ limit, startDate, endDate, placeId, keyword, gridSize, nextToken }) => {
+    const resp = await fetchLocalFalconCompetitorReports(apiKey, limit ?? undefined, startDate ?? undefined, endDate ?? undefined, placeId ?? undefined, keyword ?? undefined, gridSize ?? undefined, nextToken ?? undefined);
+    return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+  }
+)
+
+server.tool(
+  "getLocalFalconCompetitorReport",
+  "Retrieves up to 20 competitor businesses from a specific Competitor Report from your Local Falcon account. Competitor reports look like https://www.localfalcon.com/reports/competitor/view/08116fb5331e258 where 08116fb5331e258 is the report_key.",
+  {
+    reportKey: z.string().describe("The report_key of the Competitor Report you wish to retrieve."),
+  },
+  async ({ reportKey }) => {
+    const resp = await fetchLocalFalconCompetitorReport(apiKey, reportKey);
+    return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+  },
+)
+
+
+server.tool(
+  "listLocalFalconCampaignReports",
+  "Retrieves a list of all Location Reports within your Local Falcon account.",
+  {
+    limit: z.string().default("10").describe("The number of results you wish to retrieve. Expects 10 to 100."),
+    startDate: z.string().optional().nullable().describe("A lower limit date of a Campaign run you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
+    endDate: z.string().optional().nullable().describe("Upper limit date of a Campaign run or schedule you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
+    placeId: z.string().optional().nullable().describe("Filter only results for specific Google Place ID. Supports multiple Google Place IDs, seperated by commas."),
+    nextToken: z.string().optional().nullable().describe("This parameter is used to get the next 'page' of results. The value used with the parameter is provided from a previous response by this endpoint if more 'pages' of results exist."),
+  },
+  async ({ limit, startDate, endDate, placeId, nextToken }) => {
+    const resp = await fetchLocalFalconCampaignReports(apiKey, limit ?? undefined, startDate ?? undefined, endDate ?? undefined, placeId ?? undefined, nextToken ?? undefined);
+    return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+  }
+)
+
+server.tool(
+  "getLocalFalconCampaignReport",
+  "Retrieves a full report of a Campaign from your Local Falcon account. Campaign reports look like https://www.localfalcon.com/campaigns/view/0ee3c5869f3fa13 where 0ee3c5869f3fa13 is the report_key.",
+  {
+    reportKey: z.string().describe("The report_key of the Campaign Report you wish to retrieve."),
+  },
+  async ({ reportKey }) => {
+    const resp = await fetchLocalFalconCampaignReport(apiKey, reportKey);
+    return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+  },
+)
+
+server.tool(
+  "listLocalFalconGuardReports",
+  "Retrieves a list of all Falcon Guard Reports within your Local Falcon account.",
+  {
+    startDate: z.string().optional().nullable().describe("A lower limit date you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
+    endDate: z.string().optional().nullable().describe("Upper limit date you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
+  },
+  async ({ startDate, endDate }) => {
+    const resp = await fetchLocalFalconGuardReports(apiKey, startDate ?? undefined, endDate ?? undefined);
+    return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+  }
+)
+
+server.tool(
+  "getLocalFalconGuardReport",
+  "Retrieves a full report of a Falcon Guard Report from your Local Falcon account given a place_id.",
+  {
+    placeId: z.string().describe("The place_id of the Falcon Guard Report you wish to retrieve."),
+  },
+  async ({ placeId }) => {
+    const resp = await fetchLocalFalconGuardReport(apiKey, placeId);
+    return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+  },
+)
+
+
+
 
 // Start the MCP server using stdio transport
 const transport = new StdioServerTransport();

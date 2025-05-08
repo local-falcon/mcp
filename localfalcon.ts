@@ -136,7 +136,7 @@ export async function fetchLocalFalconReports(apiKey: string, nextToken?: string
   if (nextToken) url.searchParams.set("next_token", nextToken);
 
   const res = await fetch(url.toString(), {
-    method: "GET",
+    method: "POST",
     headers: HEADERS,
   });
 
@@ -170,7 +170,7 @@ export async function fetchLocalFalconTrendReports(apiKey: string, nextToken?: s
   if (keyword) url.searchParams.set("keyword", keyword);
 
   const res = await fetch(url.toString(), {
-    method: "GET",
+    method: "POST",
     headers: HEADERS,
   });
 
@@ -201,7 +201,7 @@ export async function fetchLocalFalconAutoScans(apiKey: string, nextToken?: stri
   if (status) url.searchParams.set("status", status);
 
   const res = await fetch(url.toString(), {
-    method: "GET",
+    method: "POST",
     headers: HEADERS,
   });
 
@@ -231,7 +231,7 @@ export async function fetchLocalFalconLocationReports(apiKey: string, limit?: st
   if (nextToken) url.searchParams.set("next_token", nextToken);
 
   const res = await fetch(url.toString(), {
-    method: "GET",
+    method: "POST",
     headers: HEADERS,
   });
 
@@ -266,7 +266,7 @@ export async function fetchAllLocalFalconLocations(apiKey: string, query?: strin
   if (query) url.searchParams.set("query", query);
 
   const res = await fetch(url.toString(), {
-    method: "GET",
+    method: "POST",
     headers: HEADERS,
   });
 
@@ -290,7 +290,7 @@ export async function fetchLocalFalconLocationReport(apiKey: string, reportKey: 
   url.searchParams.set("api_key", apiKey);
 
   const res = await fetch(url.toString(), {
-    method: "GET",
+    method: "POST",
     headers: HEADERS,
   });
 
@@ -314,7 +314,7 @@ export async function fetchLocalFalconReport(apiKey: string, reportKey: string):
   url.searchParams.set("api_key", apiKey);
 
   const res = await fetch(url.toString(), {
-    method: "GET",
+    method: "POST",
     headers: HEADERS,
   });
 
@@ -324,39 +324,7 @@ export async function fetchLocalFalconReport(apiKey: string, reportKey: string):
 
   const data = await res.json() as any;
   try {
-    // trim response
     const report = data.data;
-    // const aiAnalysis = report.ai_analysis;
-    // const places = Object.values(report.places).map((place: any) => {
-    //   return {
-    //     place_id: place.place_id,
-    //     name: place.name,
-    //     address: place.address,
-    //     phone: place.phone,
-    //     display_url: place.display_url,
-    //     rating: place.rating,
-    //     reviews: place.reviews,
-    //     arp: place.arp,
-    //     atrp: place.atrp,
-    //     solv: place.solv,
-    //   };
-    // });
-
-    // return {
-    //   report_key: report.report_key,
-    //   timestamp: report.timestamp,
-    //   date: report.date,
-    //   place_id: report.place_id,
-    //   location: report.location,
-    //   keyword: report.keyword,
-    //   lat: report.lat,
-    //   lng: report.lng,
-    //   grid_size: report.grid_size,
-    //   radius: report.radius,
-    //   measurement: report.measurement,
-    //   ai_analysis: aiAnalysis,
-    //   places: places,
-    // };
     return {
       report_key: report.report_key,
       timestamp: report.timestamp,
@@ -381,7 +349,7 @@ export async function fetchLocalFalconTrendReport(apiKey: string, reportKey: str
   url.searchParams.set("api_key", apiKey);
 
   const res = await fetch(url.toString(), {
-    method: "GET",
+    method: "POST",
     headers: HEADERS,
   });
 
@@ -451,7 +419,7 @@ export async function fetchLocalFalconKeywordReports(apiKey: string, nextToken?:
   if (keyword) url.searchParams.set("keyword", keyword);
 
   const res = await fetch(url.toString(), {
-    method: "GET",
+    method: "POST",
     headers: HEADERS,
   });
 
@@ -475,7 +443,7 @@ export async function fetchLocalFalconKeywordReport(apiKey: string, reportKey: s
   url.searchParams.set("api_key", apiKey);
 
   const res = await fetch(url.toString(), {
-    method: "GET",
+    method: "POST",
     headers: HEADERS,
   });
 
@@ -505,7 +473,7 @@ export async function fetchLocalFalconGrid(apiKey: string, lat?: string, lng?: s
   if (measurement) url.searchParams.set("measurement", measurement);
 
   const res = await fetch(url.toString(), {
-    method: "GET",
+    method: "POST",
     headers: HEADERS,
   });
 
@@ -533,7 +501,7 @@ export async function fetchLocalFalconGoogleBusinessLocations(apiKey: string, ne
   if (near) url.searchParams.set("near", near);
 
   const res = await fetch(url.toString(), {
-    method: "GET",
+    method: "POST",
     headers: HEADERS,
   });
 
@@ -561,7 +529,7 @@ export async function fetchLocalFalconRankingAtCoordinate(apiKey: string, lat: s
   url.searchParams.set("zoom", zoom);
 
   const res = await fetch(url.toString(), {
-    method: "GET",
+    method: "POST",
     headers: HEADERS,
   });
 
@@ -590,7 +558,7 @@ export async function fetchLocalFalconKeywordAtCoordinate(apiKey: string, lat: s
 
   try {
     const res = await fetch(url.toString(), {
-      method: "GET",
+      method: "POST",
       headers: HEADERS,
     });
 
@@ -626,7 +594,7 @@ export async function fetchLocalFalconFullGridSearch(apiKey: string, placeId: st
   try {
     // kick off the request
     const res = fetch(url.toString(), {
-      method: "GET",
+      method: "POST",
       headers: HEADERS,
     });
 
@@ -637,3 +605,195 @@ export async function fetchLocalFalconFullGridSearch(apiKey: string, placeId: st
     throw new Error(`Failed to fetch Local Falcon full grid search: ${err}`);
   }
 }
+
+export async function fetchLocalFalconCompetitorReports(apiKey: string, limit?: string, startDate?: string, endDate?: string, placeId?: string, keyword?: string, gridSize?: string, nextToken?: string): Promise<any> {
+  const url = new URL(`${API_BASE}/competitor-reports`);
+  url.searchParams.set("api_key", apiKey);
+
+  if (limit) url.searchParams.set("limit", limit);
+  if (startDate) url.searchParams.set("start_date", startDate);
+  if (endDate) url.searchParams.set("end_date", endDate);
+  if (placeId) url.searchParams.set("place_id", placeId);
+  if (keyword) url.searchParams.set("keyword", keyword);
+  if (gridSize) url.searchParams.set("grid_size", gridSize);
+  if (nextToken) url.searchParams.set("next_token", nextToken);
+
+  try {
+    const res = await fetch(url.toString(), {
+      method: "POST",
+      headers: HEADERS,
+    });
+
+    if (!res.ok) {
+      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
+    }
+
+    const raw = await res.text();
+    let data: any;
+    try {
+      data = JSON.parse(raw);
+    } catch (err) {
+      console.error('Raw response from Local Falcon API:', raw);
+      throw new Error('Failed to parse JSON from Local Falcon API. See raw response above.');
+    }
+    return data;
+  } catch (err) {
+    throw new Error(`Failed to fetch Local Falcon competitor reports: ${err}`);
+  }
+}
+
+export async function fetchLocalFalconCompetitorReport(apiKey: string, reportKey: string): Promise<any> {
+  const url = new URL(`${API_BASE}/competitor-reports/${reportKey}`);
+  url.searchParams.set("api_key", apiKey);
+
+  const res = await fetch(url.toString(), {
+    method: "POST",
+    headers: HEADERS,
+  });
+
+  if (!res.ok) {
+    throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
+  }
+
+  try {
+    const data: any = await res.json();
+    return {
+      date: data.data.date,
+      keyword: data.data.keyword,
+      grid_size: data.data.grid_size,
+      radius: data.data.radius,
+      measurement: data.data.measurement,
+      businesses: data.data.businesses.slice(0, 20).map((business: any) => {
+        delete business.data_points;
+        delete business.url;
+        delete business.lat;
+        delete business.lng;
+        delete business.claimed;
+        delete business.display_url;
+        delete business.platform;
+        delete business.phone;
+        return business;
+      })
+    }
+  } catch (err) {
+    throw new Error(`Failed to parse JSON from Local Falcon API. ${err}`);
+  }
+}
+
+
+export async function fetchLocalFalconCampaignReports(apiKey: string, limit?: string, startDate?: string, endDate?: string, placeId?: string, nextToken?: string): Promise<any> {
+  const url = new URL(`${API_BASE}/campaigns`);
+  url.searchParams.set("api_key", apiKey);
+
+  if (limit) url.searchParams.set("limit", limit);
+  if (startDate) url.searchParams.set("start_date", startDate);
+  if (endDate) url.searchParams.set("end_date", endDate);
+  if (placeId) url.searchParams.set("place_id", placeId);
+  if (nextToken) url.searchParams.set("next_token", nextToken);
+
+  try {
+    const res = await fetch(url.toString(), {
+      method: "POST",
+      headers: HEADERS,
+    });
+
+    if (!res.ok) {
+      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
+    }
+
+    const raw = await res.text();
+    let data: any;
+    try {
+      data = JSON.parse(raw);
+    } catch (err) {
+      console.error('Raw response from Local Falcon API:', raw);
+      throw new Error('Failed to parse JSON from Local Falcon API. See raw response above.');
+    }
+    return data;
+  } catch (err) {
+    throw new Error(`Failed to fetch Local Falcon campaign reports: ${err}`);
+  }
+}
+
+export async function fetchLocalFalconCampaignReport(apiKey: string, reportKey: string): Promise<any> {
+  const url = new URL(`${API_BASE}/campaigns/${reportKey}`);
+  url.searchParams.set("api_key", apiKey);
+
+  try {
+    const res = await fetch(url.toString(), {
+      method: "POST",
+      headers: HEADERS,
+    });
+
+    if (!res.ok) {
+      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
+    }
+
+    const raw = await res.text();
+    let data: any;
+    try {
+      data = JSON.parse(raw);
+    } catch (err) {
+      console.error('Raw response from Local Falcon API:', raw);
+      throw new Error('Failed to parse JSON from Local Falcon API. See raw response above.');
+    }
+    return data;
+  } catch (err) {
+    throw new Error(`Failed to fetch Local Falcon campaign report: ${err}`);
+  }
+}
+
+export async function fetchLocalFalconGuardReports(apiKey: string, limit?: string, startDate?: string, endDate?: string): Promise<any> {
+  const url = new URL(`${API_BASE}/guard`);
+  url.searchParams.set("api_key", apiKey);
+
+  if (limit) url.searchParams.set("limit", limit);
+  if (startDate) url.searchParams.set("start_date", startDate);
+  if (endDate) url.searchParams.set("end_date", endDate);
+
+  try {
+    const res = await fetch(url.toString(), {
+      method: "POST",
+      headers: HEADERS,
+    });
+
+    if (!res.ok) {
+      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
+    }
+
+    const raw = await res.text();
+    let data: any;
+    try {
+      data = JSON.parse(raw);
+    } catch (err) {
+      console.error('Raw response from Local Falcon API:', raw);
+      throw new Error('Failed to parse JSON from Local Falcon API. See raw response above.');
+    }
+    return data;
+  } catch (err) {
+    throw new Error(`Failed to fetch Local Falcon guard reports: ${err}`);
+  }
+}
+
+export async function fetchLocalFalconGuardReport(apiKey: string, placeId: string): Promise<any> {
+  const url = new URL(`${API_BASE}/guard/${placeId}`);
+  url.searchParams.set("api_key", apiKey);
+
+  try {
+    const res = await fetch(url.toString(), {
+      method: "POST",
+      headers: HEADERS,
+    });
+
+    if (!res.ok) {
+      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
+    }
+
+    const data: any = await res.json();
+    delete data.data.metrics
+    return data;
+  } catch (err) {
+    throw new Error(`Failed to fetch Local Falcon guard report: ${err}`);
+  }
+}
+
