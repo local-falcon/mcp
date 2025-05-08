@@ -19,12 +19,29 @@ npm i @local-falcon/mcp
 
 2. Copy the path to the installed npm module and add it to the args in the mcp.json file making sure to point to the index.js file under /dist.
 3. Add your API key to the env in the mcp.json file.
+
+For MacOS/Unix use the following format:
 ```json
 {
   "mcpServers": {
     "local-falcon-mcp": {
       "command": "node",
       "args": ["/Users/YOUR_USERNAME/lf-mcp/node_modules/@local-falcon/mcp/dist/index.js"],
+      "env": {
+        "LOCALFALCON_API_KEY": "INSERT_YOUR_API_KEY_HERE"
+      }
+    }
+  }
+}
+```
+
+For Windows use the following format:
+```json
+{
+  "mcpServers": {
+    "local-falcon-mcp": {
+      "command": "node",
+      "args": ["C:\\Users\\YOUR_USERNAME\\lf-mcp\\node_modules\\@local-falcon\\mcp\\dist\\index.js"],
       "env": {
         "LOCALFALCON_API_KEY": "INSERT_YOUR_API_KEY_HERE"
       }
