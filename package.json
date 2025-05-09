@@ -6,6 +6,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "bun run index.ts",
+    "start:sse": "bun run index.ts sse",
+    "start:stdio": "bun run index.ts stdio",
     "build": "rm -rf dist && tsc",
     "inspector": "npx @modelcontextprotocol/inspector bun start",
     "docker:build": "docker build -t local-falcon-mcp .",
@@ -17,10 +19,12 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.10.2",
     "dotenv": "^16.5.0",
+    "express": "^5.1.0",
     "node-fetch": "^3.3.2",
     "zod": "^3.24.3"
   },
   "devDependencies": {
+    "@types/express": "^5.0.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
   }
