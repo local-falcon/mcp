@@ -18,12 +18,14 @@
   "type": "module",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.10.2",
+    "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "node-fetch": "^3.3.2",
     "zod": "^3.24.3"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.18",
     "@types/express": "^5.0.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"

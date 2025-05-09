@@ -6,6 +6,7 @@ import { z } from "zod";
 import dotenv from "dotenv";
 import { fetchLocalFalconAutoScans, fetchLocalFalconFullGridSearch, fetchLocalFalconGoogleBusinessLocations, fetchLocalFalconGrid, fetchLocalFalconKeywordAtCoordinate, fetchLocalFalconKeywordReport, fetchLocalFalconKeywordReports, fetchLocalFalconLocationReport, fetchLocalFalconLocationReports, fetchAllLocalFalconLocations, fetchLocalFalconRankingAtCoordinate, fetchLocalFalconReport, fetchLocalFalconReports, fetchLocalFalconTrendReport, fetchLocalFalconTrendReports, fetchLocalFalconCompetitorReports, fetchLocalFalconCompetitorReport, fetchLocalFalconCampaignReports, fetchLocalFalconCampaignReport, fetchLocalFalconGuardReports, fetchLocalFalconGuardReport } from "./localfalcon.js";
 import express, { Request, Response } from "express";
+import cors from "cors";
 
 dotenv.config({ path: ".env.local" });
 
@@ -402,6 +403,7 @@ let transport: SSEServerTransport | StdioServerTransport;
 if (serverMode === 'sse') {
   try {
     const app = express();
+    app.use(cors());
 
     app.get("/sse", (req: Request, res: Response) => {
       transport = new SSEServerTransport("/messages", res);

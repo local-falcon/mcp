@@ -5,12 +5,14 @@
       "name": "@local-falcon/mcp",
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.10.2",
+        "cors": "^2.8.5",
         "dotenv": "^16.5.0",
         "express": "^5.1.0",
         "node-fetch": "^3.3.2",
         "zod": "^3.24.3",
       },
       "devDependencies": {
+        "@types/cors": "^2.8.18",
         "@types/express": "^5.0.1",
         "ts-node": "^10.9.2",
         "typescript": "^5.8.3",
@@ -39,6 +41,8 @@
     "@types/body-parser": ["@types/body-parser@1.19.5", "", { "dependencies": { "@types/connect": "*", "@types/node": "*" } }, "sha512-fB3Zu92ucau0iQ0JMCFQE7b/dv8Ot07NI3KaZIkIUNXq82k4eBAqUaneXfleGY9JWskeS9y+u0nXMyspcuQrCg=="],
 
     "@types/connect": ["@types/connect@3.4.38", "", { "dependencies": { "@types/node": "*" } }, "sha512-K6uROf1LD88uDQqJCktA4yzL1YYAK6NgfsI0v/mTgyPKWsX1CnJ0XPSDhViejru1GcRkLWb8RlzFYJRqGUbaug=="],
+
+    "@types/cors": ["@types/cors@2.8.18", "", { "dependencies": { "@types/node": "*" } }, "sha512-nX3d0sxJW41CqQvfOzVG1NCTXfFDrDWIghCZncpHeWlVFd81zxB/DLhg7avFg6eHLCRX7ckBmoIIcqa++upvJA=="],
 
     "@types/express": ["@types/express@5.0.1", "", { "dependencies": { "@types/body-parser": "*", "@types/express-serve-static-core": "^5.0.0", "@types/serve-static": "*" } }, "sha512-UZUw8vjpWFXuDnjFTh7/5c2TWDlQqeXHi6hcN7F2XSVT5P+WmUnnbFS3KA6Jnc6IsEqI2qCVu2bK0R0J4A8ZQQ=="],
 
