@@ -20,6 +20,8 @@ npm i @local-falcon/mcp
 2. Copy the path to the installed npm module and add it to the args in the mcp.json file making sure to point to the index.js file under /dist.
 3. Add your API key to the env in the mcp.json file.
 
+## Running via STDIO
+
 For MacOS/Unix use the following format:
 ```json
 {
@@ -48,6 +50,28 @@ For Windows use the following format:
     }
   }
 }
+```
+
+## Running via SSE
+
+For all platforms use the following format:
+
+```json
+{
+    "mcpServers": {
+      "local-falcon-mcp": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "supergateway",
+          "--sse",
+          "https://local-falcon-mcp.onrender.com/sse",
+          "--header",
+          "localfalcon_api_key: INSERT_API_KEY_HERE"
+        ]
+      }
+    }
+  }
 ```
 
 ## Tools List
@@ -87,6 +111,19 @@ For Windows use the following format:
   ```bash
   bun run inspector
   ```
+
+- Run MCP Server:
+
+  Run one of the following:
+
+  ```bash
+  bun run start
+  bun run start:sse
+  bun run start:stdio
+  ```
+
+  Note: if sse is not specified, the server will default to stdio.
+
 
 ---
 
