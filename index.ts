@@ -15,7 +15,7 @@ const defaultApiKey = process.env.LOCALFALCON_API_KEY;
 
 // Get API key for a specific request, prioritizing the header if available
 const getApiKey = (ctx: any) => {
-  return ctx?.headers?.['LOCALFALCON_API_KEY'] || defaultApiKey;
+  return ctx?.headers?.['localfalcon_api_key'] || defaultApiKey;
 };
 
 const PORT = process.env.PORT || 8000;
