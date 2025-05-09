@@ -403,7 +403,9 @@ let transport: SSEServerTransport | StdioServerTransport;
 if (serverMode === 'sse') {
   try {
     const app = express();
-    app.use(cors());
+    app.use(cors({
+      allowedHeaders: ['Content-Type', 'LOCALFALCON_API_KEY']
+    }));
 
     app.get("/sse", (req: Request, res: Response) => {
       transport = new SSEServerTransport("/messages", res);
