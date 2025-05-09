@@ -12,12 +12,12 @@ dotenv.config({ path: ".env.local" });
 
 // Backup key if no session header is found (optional)
 const defaultApiKey = process.env.LOCALFALCON_API_KEY;
-const sessionHeaders = new Map();
+const sessionApiKeyMapping = new Map();
 
 const getApiKey = (ctx: any) => {
   const sessionId = ctx?.sessionId;
-  const headers = sessionHeaders.get(sessionId) || {};
-  return headers['localfalcon_api_key'] || defaultApiKey;
+  const apiKey = sessionApiKeyMapping.get(sessionId) || {};
+  return apiKey || defaultApiKey;
 };
 
 const PORT = process.env.PORT || 8000;
@@ -410,8 +410,14 @@ if (serverMode === 'sse') {
     }));
 
     app.get("/sse", (req: Request, res: Response) => {
+      // ge the api key from the request headers
+      const apiKey = req.query["local_falcon_api_key"] as string;
+      if (!apiKey) {
+        console.error(`Didn't find api key in query params ${JSON.stringify(req.query)}`);
+        throw new Error("Missing LOCALFALCON_API_KEY in environment variables or request headers");
+      }
       transport = new SSEServerTransport("/messages", res);
-      sessionHeaders.set(transport.sessionId, req.headers);
+      sessionApiKeyMapping.set(transport.sessionId, apiKey);
       server.connect(transport);
     });
 
