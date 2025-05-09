@@ -52,27 +52,31 @@ For Windows use the following format:
 }
 ```
 
-## Running via SSE
+## Running via SSE via a STDIO Gateway
 
 For all platforms use the following format:
 
 ```json
 {
-    "mcpServers": {
-      "local-falcon-mcp": {
-        "command": "npx",
-        "args": [
-          "-y",
-          "supergateway",
-          "--sse",
-          "https://local-falcon-mcp.onrender.com/sse",
-          "--header",
-          "localfalcon_api_key: INSERT_API_KEY_HERE"
-        ]
-      }
+  "mcpServers": {
+    "local-falcon-mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "supergateway",
+        "--sse",
+        "https://mcp.localfalcon.com/sse?local_falcon_api_key=YOUR_API_KEY_HERE"
+      ]
     }
   }
+}
 ```
+
+## Running via Claude Integrations (SSE)
+
+If connecting to Claude integrations:
+1. name the server `Local Falcon MCP`
+2. add the following url: https://mcp.localfalcon.com/sse?local_falcon_api_key=YOUR_API_KEY_HERE
 
 ## Tools List
 * listLocalFalconScanReports: Retrieves a list of all Scan Reports performed by your Local Falcon account.
