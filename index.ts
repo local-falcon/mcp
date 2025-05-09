@@ -10,12 +10,14 @@ import cors from "cors";
 
 dotenv.config({ path: ".env.local" });
 
-// Default API key from environment variables
+// Backup key if no session header is found (optional)
 const defaultApiKey = process.env.LOCALFALCON_API_KEY;
+const sessionHeaders = new Map();
 
-// Get API key for a specific request, prioritizing the header if available
 const getApiKey = (ctx: any) => {
-  return ctx?.headers?.['localfalcon_api_key'] || defaultApiKey;
+  const sessionId = ctx?.sessionId;
+  const headers = sessionHeaders.get(sessionId) || {};
+  return headers['localfalcon_api_key'] || defaultApiKey;
 };
 
 const PORT = process.env.PORT || 8000;
@@ -409,6 +411,7 @@ if (serverMode === 'sse') {
 
     app.get("/sse", (req: Request, res: Response) => {
       transport = new SSEServerTransport("/messages", res);
+      sessionHeaders.set(transport.sessionId, req.headers);
       server.connect(transport);
     });
 
