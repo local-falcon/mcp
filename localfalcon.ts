@@ -129,11 +129,12 @@ const HEADERS = {
  * @param apiKey Your Local Falcon API key.
  * @param nextToken Optional pagination token for additional results.
  */
-export async function fetchLocalFalconReports(apiKey: string, nextToken?: string): Promise<LocalFalconReportsResponse> {
+export async function fetchLocalFalconReports(apiKey: string, limit: string, nextToken?: string): Promise<LocalFalconReportsResponse> {
   const url = new URL(`${API_BASE}/reports`);
   url.searchParams.set("api_key", apiKey);
-
   if (nextToken) url.searchParams.set("next_token", nextToken);
+
+  console.error(`Making request to ${url.toString()}`)
 
   const res = await fetch(url.toString(), {
     method: "POST",
@@ -144,15 +145,11 @@ export async function fetchLocalFalconReports(apiKey: string, nextToken?: string
     throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
   }
 
-  const raw = await res.text();
-  let data: any;
-  try {
-    data = JSON.parse(raw);
-  } catch (err) {
-    console.error('Raw response from Local Falcon API:', raw);
-    throw new Error('Failed to parse JSON from Local Falcon API. See raw response above.');
+  const data: any = await res.json()
+  return {
+    ...data.data,
+    reports: data.data.reports.slice(0, limit)
   }
-  return data as LocalFalconReportsResponse;
 }
 
 /**
@@ -160,12 +157,11 @@ export async function fetchLocalFalconReports(apiKey: string, nextToken?: string
  * @param apiKey Your Local Falcon API key.
  * @param nextToken Optional pagination token for additional results.
  */
-export async function fetchLocalFalconTrendReports(apiKey: string, nextToken?: string, limit?: string, placeId?: string, keyword?: string): Promise<LocalFalconTrendReportsResponse> {
+export async function fetchLocalFalconTrendReports(apiKey: string, limit: string, nextToken?: string, placeId?: string, keyword?: string): Promise<LocalFalconTrendReportsResponse> {
   const url = new URL(`${API_BASE}/trend-reports`);
   url.searchParams.set("api_key", apiKey);
 
   if (nextToken) url.searchParams.set("next_token", nextToken);
-  if (limit) url.searchParams.set("limit", limit);
   if (placeId) url.searchParams.set("place_id", placeId);
   if (keyword) url.searchParams.set("keyword", keyword);
 
@@ -178,15 +174,11 @@ export async function fetchLocalFalconTrendReports(apiKey: string, nextToken?: s
     throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
   }
 
-  const raw = await res.text();
-  let data: any;
-  try {
-    data = JSON.parse(raw);
-  } catch (err) {
-    console.error('Raw response from Local Falcon API:', raw);
-    throw new Error('Failed to parse JSON from Local Falcon API. See raw response above.');
+  const data: any = await res.json()
+  return {
+    ...data.data,
+    reports: data.data.reports.slice(0, limit)
   }
-  return data as LocalFalconTrendReportsResponse;
 }
 
 export async function fetchLocalFalconAutoScans(apiKey: string, nextToken?: string, placeId?: string, keyword?: string, grid_size?: string, frequency?: string, status?: string): Promise<any> {
@@ -225,7 +217,6 @@ export async function fetchLocalFalconLocationReports(apiKey: string, limit?: st
   const url = new URL(`${API_BASE}/location-reports`);
   url.searchParams.set("api_key", apiKey);
 
-  if (limit) url.searchParams.set("limit", limit);
   if (placeId) url.searchParams.set("place_id", placeId);
   if (keyword) url.searchParams.set("keyword", keyword);
   if (nextToken) url.searchParams.set("next_token", nextToken);
@@ -244,7 +235,7 @@ export async function fetchLocalFalconLocationReports(apiKey: string, limit?: st
   return {
     next_token: report.next_token,
     ai_analysis: report.ai_analysis,
-    reports: report.reports.map((report: any) => {
+    reports: report.reports.slice(0, limit).map((report: any) => {
       return {
         report_key: report.report_key,
         last_date: report.last_date,
@@ -410,12 +401,11 @@ export async function fetchLocalFalconTrendReport(apiKey: string, reportKey: str
   return data;
 }
 
-export async function fetchLocalFalconKeywordReports(apiKey: string, nextToken?: string, limit?: string, keyword?: string): Promise<any> {
+export async function fetchLocalFalconKeywordReports(apiKey: string, limit?: string, nextToken?: string, keyword?: string): Promise<any> {
   const url = new URL(`${API_BASE}/keyword-reports`);
   url.searchParams.set("api_key", apiKey);
 
   if (nextToken) url.searchParams.set("next_token", nextToken);
-  if (limit) url.searchParams.set("limit", limit);
   if (keyword) url.searchParams.set("keyword", keyword);
 
   const res = await fetch(url.toString(), {
@@ -427,15 +417,17 @@ export async function fetchLocalFalconKeywordReports(apiKey: string, nextToken?:
     throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
   }
 
-  const raw = await res.text();
-  let data: any;
-  try {
-    data = JSON.parse(raw);
-  } catch (err) {
-    console.error('Raw response from Local Falcon API:', raw);
-    throw new Error('Failed to parse JSON from Local Falcon API. See raw response above.');
+  const data: any = await res.json()
+  return {
+    ...data.data,
+    reports: data.data.reports.slice(0, limit).map((report: any) => {
+      delete report.last_timestamp;
+      delete report.looker_last_date;
+      delete report.scan_count;
+      delete report.pdf;
+      return report
+    })
   }
-  return data;
 }
 
 export async function fetchLocalFalconKeywordReport(apiKey: string, reportKey: string): Promise<any> {
@@ -606,11 +598,10 @@ export async function fetchLocalFalconFullGridSearch(apiKey: string, placeId: st
   }
 }
 
-export async function fetchLocalFalconCompetitorReports(apiKey: string, limit?: string, startDate?: string, endDate?: string, placeId?: string, keyword?: string, gridSize?: string, nextToken?: string): Promise<any> {
+export async function fetchLocalFalconCompetitorReports(apiKey: string, limit: string, startDate?: string, endDate?: string, placeId?: string, keyword?: string, gridSize?: string, nextToken?: string): Promise<any> {
   const url = new URL(`${API_BASE}/competitor-reports`);
   url.searchParams.set("api_key", apiKey);
 
-  if (limit) url.searchParams.set("limit", limit);
   if (startDate) url.searchParams.set("start_date", startDate);
   if (endDate) url.searchParams.set("end_date", endDate);
   if (placeId) url.searchParams.set("place_id", placeId);
@@ -628,15 +619,18 @@ export async function fetchLocalFalconCompetitorReports(apiKey: string, limit?: 
       throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
     }
 
-    const raw = await res.text();
-    let data: any;
-    try {
-      data = JSON.parse(raw);
-    } catch (err) {
-      console.error('Raw response from Local Falcon API:', raw);
-      throw new Error('Failed to parse JSON from Local Falcon API. See raw response above.');
+    const data: any = await res.json()
+    return {
+      ...data.data,
+      reports: data.data.reports.slice(0, limit).map((report: any) => {
+        delete report.data_points;
+        delete report.checksum;
+        delete report.timestamp;
+        delete report.looker_date;
+        delete report.pdf;
+        return report;
+      })
     }
-    return data;
   } catch (err) {
     throw new Error(`Failed to fetch Local Falcon competitor reports: ${err}`);
   }
@@ -681,11 +675,10 @@ export async function fetchLocalFalconCompetitorReport(apiKey: string, reportKey
 }
 
 
-export async function fetchLocalFalconCampaignReports(apiKey: string, limit?: string, startDate?: string, endDate?: string, placeId?: string, nextToken?: string): Promise<any> {
+export async function fetchLocalFalconCampaignReports(apiKey: string, limit: string, startDate?: string, endDate?: string, placeId?: string, nextToken?: string): Promise<any> {
   const url = new URL(`${API_BASE}/campaigns`);
   url.searchParams.set("api_key", apiKey);
 
-  if (limit) url.searchParams.set("limit", limit);
   if (startDate) url.searchParams.set("start_date", startDate);
   if (endDate) url.searchParams.set("end_date", endDate);
   if (placeId) url.searchParams.set("place_id", placeId);
@@ -757,7 +750,6 @@ export async function fetchLocalFalconGuardReports(apiKey: string, limit?: strin
   const url = new URL(`${API_BASE}/guard`);
   url.searchParams.set("api_key", apiKey);
 
-  if (limit) url.searchParams.set("limit", limit);
   if (startDate) url.searchParams.set("start_date", startDate);
   if (endDate) url.searchParams.set("end_date", endDate);
 
@@ -771,15 +763,16 @@ export async function fetchLocalFalconGuardReports(apiKey: string, limit?: strin
       throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
     }
 
-    const raw = await res.text();
-    let data: any;
-    try {
-      data = JSON.parse(raw);
-    } catch (err) {
-      console.error('Raw response from Local Falcon API:', raw);
-      throw new Error('Failed to parse JSON from Local Falcon API. See raw response above.');
+    const data: any = await res.json()
+    return {
+      ...data.data,
+      reports: data.data.reports.slice(0, limit).map((report: any) => {
+        delete report.date_last;
+        delete report.date_next;
+        delete report.status;
+        return report;
+      })
     }
-    return data;
   } catch (err) {
     throw new Error(`Failed to fetch Local Falcon guard reports: ${err}`);
   }

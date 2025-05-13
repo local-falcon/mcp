@@ -10,14 +10,23 @@ import cors from "cors";
 
 dotenv.config({ path: ".env.local" });
 
+const LOW_LIMIT = "3"
+const HIGH_LIMIT = "7"
+
 // Backup key if no session header is found (optional)
 const defaultApiKey = process.env.LOCALFALCON_API_KEY;
-const sessionApiKeyMapping = new Map();
+const sessionMapping = new Map();
 
 const getApiKey = (ctx: any) => {
   const sessionId = ctx?.sessionId;
-  const apiKey = sessionApiKeyMapping.get(sessionId) || {};
-  return apiKey || defaultApiKey;
+  const sessionHeaders = sessionMapping.get(sessionId) || {};
+  return sessionHeaders.apiKey || defaultApiKey;
+};
+
+const isProUser = (ctx: any) => {
+  const sessionId = ctx?.sessionId;
+  const sessionHeaders = sessionMapping.get(sessionId) || {};
+  return sessionHeaders.isProUser;
 };
 
 const PORT = process.env.PORT || 8000;
@@ -26,9 +35,7 @@ const server = new McpServer({
   name: "Local Falcon MCP Server",
   version: "1.0.0",
   instructions: `You are a Local Falcon MCP Server. You are able to interact with the Local Falcon API to retrieve information about your Local Falcon reports and locations.
-  Note that sometimes you will run into an issue where responses are too verbose. If this happens use the lowDateMode option by default. If the user seems to be unsatisfied with the quanity of data returned, set lowDataMode to false. 
-  Try to use limits of 5 and then iterate the next token rather than using a larger limit.
-  If you are running into issues with larger limits then reduce the limit and continue on.`
+  Note that sometimes you will run into an issue where responses are too verbose. If this happens use the lowDateMode option by default. If the user seems to be unsatisfied with the quanity of data returned, set lowDataMode to false. `
 });
 
 server.tool(
@@ -37,10 +44,11 @@ server.tool(
   { nextToken: z.string().optional().nullable() },
   async ({ nextToken }, ctx) => {
     const apiKey = getApiKey(ctx);
+    const limit = isProUser(ctx) ? HIGH_LIMIT : LOW_LIMIT;
     if (!apiKey) {
       return { content: [{ type: "text", text: "Missing LOCALFALCON_API_KEY in environment variables or request headers" }] };
     }
-    const resp = await fetchLocalFalconReports(apiKey, nextToken ?? undefined);
+    const resp = await fetchLocalFalconReports(apiKey, limit, nextToken ?? undefined);
     return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
   }
 );
@@ -50,16 +58,16 @@ server.tool(
   "Retrieves a list of all Trend Reports performed by your Local Falcon account.",
   {
     nextToken: z.string().optional().nullable(),
-    limit: z.string().optional().nullable().default("5"),
     placeId: z.string().optional().nullable(),
     keyword: z.string().optional().nullable(),
   },
-  async ({ nextToken, limit, placeId, keyword }, ctx) => {
+  async ({ nextToken, placeId, keyword }, ctx) => {
     const apiKey = getApiKey(ctx);
+    const limit = isProUser(ctx) ? HIGH_LIMIT : LOW_LIMIT;
     if (!apiKey) {
       return { content: [{ type: "text", text: "Missing LOCALFALCON_API_KEY in environment variables or request headers" }] };
     }
-    const resp = await fetchLocalFalconTrendReports(apiKey, nextToken ?? undefined, limit ?? undefined, placeId ?? undefined, keyword ?? undefined);
+    const resp = await fetchLocalFalconTrendReports(apiKey, limit, nextToken ?? undefined, placeId ?? undefined, keyword ?? undefined);
     return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
   }
 );
@@ -105,17 +113,17 @@ server.tool(
   "listLocalFalconLocationReports",
   "Retrieves a list of all location reports.",
   {
-    limit: z.string().optional().nullable().default("5"),
     placeId: z.string().optional().nullable().describe("The Place ID of the location."),
     keyword: z.string().optional().nullable().describe("The keyword to search for."),
     nextToken: z.string().optional().nullable().describe("Pagination token for additional results.")
   },
-  async ({ limit, placeId, keyword, nextToken }, ctx) => {
+  async ({ placeId, keyword, nextToken }, ctx) => {
     const apiKey = getApiKey(ctx);
     if (!apiKey) {
       return { content: [{ type: "text", text: "Missing LOCALFALCON_API_KEY in environment variables or request headers" }] };
     }
-    const resp = await fetchLocalFalconLocationReports(apiKey, limit ?? undefined, placeId ?? undefined, keyword ?? undefined, nextToken ?? undefined);
+    const limit = isProUser(ctx) ? HIGH_LIMIT : LOW_LIMIT;
+    const resp = await fetchLocalFalconLocationReports(apiKey, limit, placeId ?? undefined, keyword ?? undefined, nextToken ?? undefined);
     return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
   }
 );
@@ -168,15 +176,15 @@ server.tool(
   "Retrieves a list of all keyword reports. A keyword report looks like https://www.localfalcon.com/reports/keyword/view/754ffcb0f309938 where 754ffcb0f309938 is the report key.",
   {
     nextToken: z.string().optional().nullable().describe("Pagination token for additional results."),
-    limit: z.string().optional().nullable().default("5").describe("Number of results to return."),
     keyword: z.string().optional().nullable().describe("The keyword to search for."),
   },
-  async ({ nextToken, limit, keyword }, ctx) => {
+  async ({ nextToken, keyword }, ctx) => {
     const apiKey = getApiKey(ctx);
     if (!apiKey) {
       return { content: [{ type: "text", text: "Missing LOCALFALCON_API_KEY in environment variables or request headers" }] };
     }
-    const resp = await fetchLocalFalconKeywordReports(apiKey, nextToken ?? undefined, limit ?? undefined, keyword ?? undefined);
+    const limit = isProUser(ctx) ? HIGH_LIMIT : LOW_LIMIT;
+    const resp = await fetchLocalFalconKeywordReports(apiKey, limit, nextToken ?? undefined, keyword ?? undefined);
     return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
   }
 );
@@ -291,13 +299,13 @@ server.tool(
     const resp = await fetchLocalFalconFullGridSearch(apiKey, placeId, keyword, lat, lng, gridSize, radius, measurement);
     return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
   },
+  
 );
 
 server.tool(
   "getLocalFalconCompetitorReports",
   "Retrieves a list of all Competitor Reports within your Local Falcon account.",
   {
-    limit: z.string().optional().nullable().default("5").describe("The number of results you wish to retrieve. Expects 10 to 100."),
     startDate: z.string().optional().nullable().describe("A lower limit (oldest) date you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
     endDate: z.string().optional().nullable().describe("Upper limit (newest) date you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
     placeId: z.string().optional().nullable().describe("Filter only results for specific Google Place ID. Supports multiple Google Place IDs, seperated by commas."),
@@ -305,12 +313,13 @@ server.tool(
     gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15']).optional().nullable().default("3").describe("Filter only for specific grid sizes. Expects 3, 5, 7, 9, 11, 13, or 15."),
     nextToken: z.string().optional().nullable().describe("This parameter is used to get the next 'page' of results. The value used with the parameter is provided from a previous response by this endpoint if more 'pages' of results exist."),
   },
-  async ({ limit, startDate, endDate, placeId, keyword, gridSize, nextToken }, ctx) => {
+  async ({ startDate, endDate, placeId, keyword, gridSize, nextToken }, ctx) => {
     const apiKey = getApiKey(ctx);
     if (!apiKey) {
       return { content: [{ type: "text", text: "Missing LOCALFALCON_API_KEY in environment variables or request headers" }] };
     }
-    const resp = await fetchLocalFalconCompetitorReports(apiKey, limit ?? undefined, startDate ?? undefined, endDate ?? undefined, placeId ?? undefined, keyword ?? undefined, gridSize ?? undefined, nextToken ?? undefined);
+    const limit = isProUser(ctx) ? HIGH_LIMIT : LOW_LIMIT;
+    const resp = await fetchLocalFalconCompetitorReports(apiKey, limit, startDate ?? undefined, endDate ?? undefined, placeId ?? undefined, keyword ?? undefined, gridSize ?? undefined, nextToken ?? undefined);
     return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
   }
 );
@@ -336,18 +345,18 @@ server.tool(
   "listLocalFalconCampaignReports",
   "Retrieves a list of all Location Reports within your Local Falcon account.",
   {
-    limit: z.string().default("5").describe("The number of results you wish to retrieve. Expects 10 to 100."),
     startDate: z.string().optional().nullable().describe("A lower limit date of a Campaign run you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
     endDate: z.string().optional().nullable().describe("Upper limit date of a Campaign run or schedule you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
     placeId: z.string().optional().nullable().describe("Filter only results for specific Google Place ID. Supports multiple Google Place IDs, seperated by commas."),
     nextToken: z.string().optional().nullable().describe("This parameter is used to get the next 'page' of results. The value used with the parameter is provided from a previous response by this endpoint if more 'pages' of results exist."),
   },
-  async ({ limit, startDate, endDate, placeId, nextToken }, ctx) => {
+  async ({ startDate, endDate, placeId, nextToken }, ctx) => {
     const apiKey = getApiKey(ctx);
     if (!apiKey) {
       return { content: [{ type: "text", text: "Missing LOCALFALCON_API_KEY in environment variables or request headers" }] };
     }
-    const resp = await fetchLocalFalconCampaignReports(apiKey, limit ?? undefined, startDate ?? undefined, endDate ?? undefined, placeId ?? undefined, nextToken ?? undefined);
+    const limit = isProUser(ctx) ? HIGH_LIMIT : LOW_LIMIT;
+    const resp = await fetchLocalFalconCampaignReports(apiKey, limit, startDate ?? undefined, endDate ?? undefined, placeId ?? undefined, nextToken ?? undefined);
     return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
   }
 );
@@ -380,7 +389,8 @@ server.tool(
     if (!apiKey) {
       return { content: [{ type: "text", text: "Missing LOCALFALCON_API_KEY in environment variables or request headers" }] };
     }
-    const resp = await fetchLocalFalconGuardReports(apiKey, startDate ?? undefined, endDate ?? undefined);
+    const limit = isProUser(ctx) ? HIGH_LIMIT : LOW_LIMIT;
+    const resp = await fetchLocalFalconGuardReports(apiKey, limit, startDate ?? undefined, endDate ?? undefined);
     return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
   }
 );
@@ -417,12 +427,16 @@ if (serverMode === 'sse') {
     app.get("/sse", (req: Request, res: Response) => {
       // ge the api key from the request headers
       const apiKey = req.query["local_falcon_api_key"] as string;
+      const isPro = req.query["is_pro"] as string;
       if (!apiKey) {
         console.error(`Didn't find api key in query params ${JSON.stringify(req.query)}`);
         throw new Error("Missing LOCALFALCON_API_KEY in environment variables or request headers");
       }
       transport = new SSEServerTransport("/messages", res);
-      sessionApiKeyMapping.set(transport.sessionId, apiKey);
+      sessionMapping.set(transport.sessionId, {
+        apiKey,
+        isPro: isPro === "true",
+      });
       server.connect(transport);
     });
 
