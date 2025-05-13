@@ -62,10 +62,8 @@ For all platforms use the following format:
     "local-falcon-mcp": {
       "command": "npx",
       "args": [
-        "-y",
-        "supergateway",
-        "--sse",
-        "https://mcp.localfalcon.com/sse?local_falcon_api_key=YOUR_API_KEY_HERE"
+        "mcp-remote",
+        "https://mcp.localfalcon.com/sse?local_falcon_api_key=INSERT_YOUR_API_KEY_HERE"
       ]
     }
   }
