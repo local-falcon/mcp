@@ -365,7 +365,7 @@ server.tool(
 
 server.tool(
   "listLocalFalconGuardReports",
-  "Retrieves a list of all Falcon Guard Reports within your Local Falcon account.",
+  "Retrieves a list of all Falcon Guard Reports within your Local Falcon account. This helps analyze the Google Business profile of a specific location.",
   {
     startDate: z.string().optional().nullable().describe("A lower limit date you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
     endDate: z.string().optional().nullable().describe("Upper limit date you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
