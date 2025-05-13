@@ -25,6 +25,10 @@ const PORT = process.env.PORT || 8000;
 const server = new McpServer({
   name: "Local Falcon MCP Server",
   version: "1.0.0",
+  instructions: `You are a Local Falcon MCP Server. You are able to interact with the Local Falcon API to retrieve information about your Local Falcon reports and locations.
+  Note that sometimes you will run into an issue where responses are too verbose. If this happens use the lowDateMode option by default. If the user seems to be unsatisfied with the quanity of data returned, set lowDataMode to false. 
+  Try to use limits of 5 and then iterate the next token rather than using a larger limit.
+  If you are running into issues with larger limits then reduce the limit and continue on.`
 });
 
 server.tool(
@@ -46,7 +50,7 @@ server.tool(
   "Retrieves a list of all Trend Reports performed by your Local Falcon account.",
   {
     nextToken: z.string().optional().nullable(),
-    limit: z.string().optional().nullable().default("10"),
+    limit: z.string().optional().nullable().default("5"),
     placeId: z.string().optional().nullable(),
     keyword: z.string().optional().nullable(),
   },
@@ -101,7 +105,7 @@ server.tool(
   "listLocalFalconLocationReports",
   "Retrieves a list of all location reports.",
   {
-    limit: z.string().optional().nullable().default("10"),
+    limit: z.string().optional().nullable().default("5"),
     placeId: z.string().optional().nullable().describe("The Place ID of the location."),
     keyword: z.string().optional().nullable().describe("The keyword to search for."),
     nextToken: z.string().optional().nullable().describe("Pagination token for additional results.")
@@ -164,7 +168,7 @@ server.tool(
   "Retrieves a list of all keyword reports. A keyword report looks like https://www.localfalcon.com/reports/keyword/view/754ffcb0f309938 where 754ffcb0f309938 is the report key.",
   {
     nextToken: z.string().optional().nullable().describe("Pagination token for additional results."),
-    limit: z.string().optional().nullable().default("10").describe("Number of results to return."),
+    limit: z.string().optional().nullable().default("5").describe("Number of results to return."),
     keyword: z.string().optional().nullable().describe("The keyword to search for."),
   },
   async ({ nextToken, limit, keyword }, ctx) => {
@@ -293,7 +297,7 @@ server.tool(
   "getLocalFalconCompetitorReports",
   "Retrieves a list of all Competitor Reports within your Local Falcon account.",
   {
-    limit: z.string().optional().nullable().default("10").describe("The number of results you wish to retrieve. Expects 10 to 100."),
+    limit: z.string().optional().nullable().default("5").describe("The number of results you wish to retrieve. Expects 10 to 100."),
     startDate: z.string().optional().nullable().describe("A lower limit (oldest) date you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
     endDate: z.string().optional().nullable().describe("Upper limit (newest) date you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
     placeId: z.string().optional().nullable().describe("Filter only results for specific Google Place ID. Supports multiple Google Place IDs, seperated by commas."),
@@ -316,13 +320,14 @@ server.tool(
   "Retrieves up to 20 competitor businesses from a specific Competitor Report from your Local Falcon account. Competitor reports look like https://www.localfalcon.com/reports/competitor/view/08116fb5331e258 where 08116fb5331e258 is the report_key.",
   {
     reportKey: z.string().describe("The report_key of the Competitor Report you wish to retrieve."),
+    lowDataMode: z.boolean().optional().nullable().default(true).describe("Set to false to retrieve more data."),
   },
-  async ({ reportKey }, ctx) => {
+  async ({ reportKey, lowDataMode }, ctx) => {
     const apiKey = getApiKey(ctx);
     if (!apiKey) {
       return { content: [{ type: "text", text: "Missing LOCALFALCON_API_KEY in environment variables or request headers" }] };
     }
-    const resp = await fetchLocalFalconCompetitorReport(apiKey, reportKey);
+    const resp = await fetchLocalFalconCompetitorReport(apiKey, reportKey, lowDataMode ?? true);
     return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
   },
 );
@@ -331,7 +336,7 @@ server.tool(
   "listLocalFalconCampaignReports",
   "Retrieves a list of all Location Reports within your Local Falcon account.",
   {
-    limit: z.string().default("10").describe("The number of results you wish to retrieve. Expects 10 to 100."),
+    limit: z.string().default("5").describe("The number of results you wish to retrieve. Expects 10 to 100."),
     startDate: z.string().optional().nullable().describe("A lower limit date of a Campaign run you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
     endDate: z.string().optional().nullable().describe("Upper limit date of a Campaign run or schedule you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
     placeId: z.string().optional().nullable().describe("Filter only results for specific Google Place ID. Supports multiple Google Place IDs, seperated by commas."),

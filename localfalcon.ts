@@ -642,7 +642,7 @@ export async function fetchLocalFalconCompetitorReports(apiKey: string, limit?: 
   }
 }
 
-export async function fetchLocalFalconCompetitorReport(apiKey: string, reportKey: string): Promise<any> {
+export async function fetchLocalFalconCompetitorReport(apiKey: string, reportKey: string, lowDataMode?: boolean): Promise<any> {
   const url = new URL(`${API_BASE}/competitor-reports/${reportKey}`);
   url.searchParams.set("api_key", apiKey);
 
@@ -663,7 +663,7 @@ export async function fetchLocalFalconCompetitorReport(apiKey: string, reportKey
       grid_size: data.data.grid_size,
       radius: data.data.radius,
       measurement: data.data.measurement,
-      businesses: data.data.businesses.slice(0, 20).map((business: any) => {
+      businesses: data.data.businesses.slice(0, lowDataMode ? 10 : 20).map((business: any) => {
         delete business.data_points;
         delete business.url;
         delete business.lat;
@@ -701,15 +701,25 @@ export async function fetchLocalFalconCampaignReports(apiKey: string, limit?: st
       throw new Error(`Local Falcon API error: ${res.status} ${res.statusText}`);
     }
 
-    const raw = await res.text();
-    let data: any;
+    const data = await res.json() as any;
     try {
-      data = JSON.parse(raw);
+      return {
+        ...data.data,
+        reports: data.data.reports.map((report: any) => {
+          delete report.data_points;
+          delete report.locations;
+          delete report.keywords;
+          delete report.scans;
+          delete report.frequency;
+          delete report.last_run;
+          delete report.status;
+          return report;
+        })
+      }
     } catch (err) {
-      console.error('Raw response from Local Falcon API:', raw);
+      console.error('Raw response from Local Falcon API:', JSON.stringify(data, null, 2));
       throw new Error('Failed to parse JSON from Local Falcon API. See raw response above.');
     }
-    return data;
   } catch (err) {
     throw new Error(`Failed to fetch Local Falcon campaign reports: ${err}`);
   }
