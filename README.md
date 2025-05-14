@@ -72,7 +72,21 @@ For all platforms use the following format:
 
 ## Pro Users
 
-For Claude Max/Team users you unlock a greater MCP tool call limit. This must be enabled by appending the `proU
+For Claude Max/Team users you unlock a greater MCP tool call limit. This must be enabled by appending the `isProUser=true` in the query string of the URL. For example:
+
+```json
+{
+  "mcpServers": {
+    "local-falcon-mcp": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://mcp.localfalcon.com/sse?local_falcon_api_key=INSERT_YOUR_API_KEY_HERE&isProUser=true"
+      ]
+    }
+  }
+}
+```
 
 ## Running via Claude Integrations (SSE)
 
