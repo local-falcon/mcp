@@ -70,6 +70,10 @@ For all platforms use the following format:
 }
 ```
 
+## Pro Users
+
+For Claude Max/Team users you unlock a greater MCP tool call limit. This must be enabled by appending the `proU
+
 ## Running via Claude Integrations (SSE)
 
 If connecting to Claude integrations:
