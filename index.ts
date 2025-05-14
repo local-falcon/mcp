@@ -307,8 +307,8 @@ server.tool(
   "getLocalFalconCompetitorReports",
   "Retrieves a list of all Competitor Reports within your Local Falcon account.",
   {
-    startDate: z.string().optional().nullable().describe("A lower limit (oldest) date you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
-    endDate: z.string().optional().nullable().describe("Upper limit (newest) date you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
+    startDate: z.string().date().optional().nullable().describe("A lower limit (oldest) date you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
+    endDate: z.string().date().optional().nullable().describe("Upper limit (newest) date you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
     placeId: z.string().optional().nullable().describe("Filter only results for specific Google Place ID. Supports multiple Google Place IDs, seperated by commas."),
     keyword: z.string().optional().nullable().describe("Filter only results similar to specified keyword (loose match)."),
     gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15']).optional().nullable().default("3").describe("Filter only for specific grid sizes. Expects 3, 5, 7, 9, 11, 13, or 15."),
@@ -346,8 +346,8 @@ server.tool(
   "listLocalFalconCampaignReports",
   "Retrieves a list of all Location Reports within your Local Falcon account.",
   {
-    startDate: z.string().optional().nullable().describe("A lower limit date of a Campaign run you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
-    endDate: z.string().optional().nullable().describe("Upper limit date of a Campaign run or schedule you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
+    startDate: z.string().date().optional().nullable().describe("A lower limit date of a Campaign run you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
+    endDate: z.string().date().optional().nullable().describe("Upper limit date of a Campaign run or schedule you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
     placeId: z.string().optional().nullable().describe("Filter only results for specific Google Place ID. Supports multiple Google Place IDs, seperated by commas."),
     nextToken: z.string().optional().nullable().describe("This parameter is used to get the next 'page' of results. The value used with the parameter is provided from a previous response by this endpoint if more 'pages' of results exist."),
   },
@@ -382,8 +382,8 @@ server.tool(
   "listLocalFalconGuardReports",
   "Retrieves a list of all Falcon Guard Reports within your Local Falcon account. This helps analyze the Google Business profile of a specific location.",
   {
-    startDate: z.string().optional().nullable().describe("A lower limit date you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
-    endDate: z.string().optional().nullable().describe("Upper limit date you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
+    startDate: z.string().date().optional().nullable().describe("A lower limit date you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
+    endDate: z.string().date().optional().nullable().describe("Upper limit date you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
   },
   async ({ startDate, endDate }, ctx) => {
     const apiKey = getApiKey(ctx);
