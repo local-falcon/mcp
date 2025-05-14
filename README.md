@@ -72,7 +72,7 @@ For all platforms use the following format:
 
 ## Pro Users
 
-For Claude Max/Team users you unlock a greater MCP tool call limit. This must be enabled by appending the `isProUser=true` in the query string of the URL. For example:
+For Claude Max/Team users you unlock a greater MCP tool call limit. This must be enabled by appending the `isPro=true` in the query string of the URL. For example:
 
 ```json
 {
@@ -81,7 +81,7 @@ For Claude Max/Team users you unlock a greater MCP tool call limit. This must be
       "command": "npx",
       "args": [
         "mcp-remote",
-        "https://mcp.localfalcon.com/sse?local_falcon_api_key=INSERT_YOUR_API_KEY_HERE&isProUser=true"
+        "https://mcp.localfalcon.com/sse?local_falcon_api_key=INSERT_YOUR_API_KEY_HERE&isPro=true"
       ]
     }
   }

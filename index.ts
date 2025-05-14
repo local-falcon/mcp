@@ -26,7 +26,7 @@ const getApiKey = (ctx: any) => {
 const isProUser = (ctx: any) => {
   const sessionId = ctx?.sessionId;
   const sessionHeaders = sessionMapping.get(sessionId) || {};
-  return sessionHeaders.isProUser;
+  return sessionHeaders.isPro;
 };
 
 const PORT = process.env.PORT || 8000;
