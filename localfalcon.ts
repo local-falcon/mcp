@@ -134,8 +134,6 @@ export async function fetchLocalFalconReports(apiKey: string, limit: string, nex
   url.searchParams.set("api_key", apiKey);
   if (nextToken) url.searchParams.set("next_token", nextToken);
 
-  console.error(`Making request to ${url.toString()}`)
-
   const res = await fetch(url.toString(), {
     method: "POST",
     headers: HEADERS,
