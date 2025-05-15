@@ -1,0 +1,40 @@
+# Smithery configuration file: https://smithery.ai/docs/build/project-config
+
+startCommand:
+  type: stdio
+  configSchema:
+    # JSON Schema defining the configuration options for the MCP.
+    type: object
+    required:
+      - apiKey
+    properties:
+      apiKey:
+        type: string
+        description: Your Local Falcon API key
+      protocol:
+        type: string
+        default: stdio
+        description: Protocol to use (stdio or sse)
+      isPro:
+        type: boolean
+        default: false
+        description: Enable pro mode for SSE (requires protocol=sse)
+  commandFunction:
+    # A JS function that produces the CLI command based on the given config to start the MCP on stdio.
+    |-
+    (config) => {
+      const args = ["dist/index.js"];
+      if (config.protocol === "sse") {
+        let url = `https://mcp.localfalcon.com/sse?local_falcon_api_key=${config.apiKey}`;
+        if (config.isPro) {
+          url += `&is_pro=true`;
+        }
+        return {command: "npx", args: ["mcp-remote", url]};
+      }
+      // stdio
+      return {command: "node", args};
+    }
+  exampleConfig:
+    apiKey: YOUR_LOCALFALCON_API_KEY
+    protocol: stdio
+    isPro: false
