@@ -1,5 +1,7 @@
 # Local Falcon MCP Server
 
+[![smithery badge](https://smithery.ai/badge/@local-falcon/mcp)](https://smithery.ai/server/@local-falcon/mcp)
+
 An MCP (Model Context Protocol) server for the [Local Falcon API](https://www.localfalcon.com/), implemented in TypeScript, using the official MCP SDK. This server exposes Local Falcon reporting capabilities as MCP tools, enabling integration with agentic AI systems and workflows.
 
 ---
