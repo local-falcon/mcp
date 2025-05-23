@@ -300,7 +300,7 @@ server.tool(
     const resp = await fetchLocalFalconFullGridSearch(apiKey, placeId, keyword, lat, lng, gridSize, radius, measurement);
     return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
   },
-  
+
 );
 
 server.tool(
@@ -431,7 +431,8 @@ if (serverMode === 'sse') {
       const isPro = req.query["is_pro"] as string;
       if (!apiKey) {
         console.error(`Didn't find api key in query params ${JSON.stringify(req.query)}`);
-        throw new Error("Missing LOCALFALCON_API_KEY in environment variables or request headers");
+        res.status(401).send("Missing LOCALFALCON_API_KEY in environment variables or request headers");
+        return;
       }
       transport = new SSEServerTransport("/messages", res);
       sessionMapping.set(transport.sessionId, {
