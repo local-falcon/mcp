@@ -15,17 +15,24 @@ const HIGH_LIMIT = "7"
 
 // Backup key if no session header is found (optional)
 const defaultApiKey = process.env.LOCALFALCON_API_KEY;
-const sessionMapping = new Map();
+const sessionMapping = new Map<string, { apiKey: string; isPro: boolean }>();
+const transportMapping = new Map<string, SSEServerTransport>();
 
 const getApiKey = (ctx: any) => {
   const sessionId = ctx?.sessionId;
-  const sessionHeaders = sessionMapping.get(sessionId) || {};
-  return sessionHeaders.apiKey || defaultApiKey;
+  const sessionHeaders = sessionMapping.get(sessionId)
+  if (!sessionHeaders) {
+    return defaultApiKey;
+  }
+  return sessionHeaders.apiKey;
 };
 
 const isProUser = (ctx: any) => {
   const sessionId = ctx?.sessionId;
-  const sessionHeaders = sessionMapping.get(sessionId) || {};
+  const sessionHeaders = sessionMapping.get(sessionId)
+  if (!sessionHeaders) {
+    return false;
+  }
   return sessionHeaders.isPro;
 };
 
@@ -36,7 +43,18 @@ const server = new McpServer({
   version: "1.0.0",
   instructions: `You are a Local Falcon MCP Server. You are able to interact with the Local Falcon API to retrieve information about your Local Falcon reports and locations.
   Note that sometimes you will run into an issue where responses are too verbose. If this happens use the lowDateMode option by default. If the user seems to be unsatisfied with the quanity of data returned, set lowDataMode to false.
-  Don't run a ton of tools sequentially with no direction, for example if the user asks for a scan reports don't run the tool for every other kind of report as well unless you're trying to do something important. Instead in that case you'd just summarize the scan reports for them.`
+  Don't run a ton of tools sequentially with no direction, for example if the user asks for a scan reports don't run the tool for every other kind of report as well unless you're trying to do something important. Instead in that case you'd just summarize the scan reports for them.
+  
+  **Parameter Handling Note:**
+When calling Local Falcon API functions, omit optional parameters entirely when you don't have a useful value to provide. Do not pass null values or empty strings for parameters you're not actively using.
+
+Examples:
+- Correct: \`listLocalFalconLocationReports({})\` (no filters needed)
+- Correct: \`listLocalFalconLocationReports({"keyword": "web design"})\` (filtering by keyword)
+- Incorrect: \`listLocalFalconLocationReports({"keyword": null, "placeId": ""})\` (passing unused parameters)
+
+Only include parameters when you have meaningful values that will filter or modify the API response.
+`
 });
 
 server.tool(
@@ -416,8 +434,6 @@ server.tool(
 const args = process.argv.slice(2);
 const serverMode = args[0] || 'stdio'; // Default to stdio if not specified
 
-let transport: SSEServerTransport | StdioServerTransport;
-
 if (serverMode === 'sse') {
   try {
     const app = express();
@@ -426,34 +442,61 @@ if (serverMode === 'sse') {
     }));
 
     app.get("/sse", (req: Request, res: Response) => {
-      // ge the api key from the request headers
       const apiKey = req.query["local_falcon_api_key"] as string;
       const isPro = req.query["is_pro"] as string;
+      
       if (!apiKey) {
         console.error(`Didn't find api key in query params ${JSON.stringify(req.query)}`);
         res.status(401).send("Missing LOCALFALCON_API_KEY in environment variables or request headers");
         return;
       }
-      transport = new SSEServerTransport("/messages", res);
-      sessionMapping.set(transport.sessionId, {
+
+      const transport = new SSEServerTransport("/messages", res);
+      const sessionId = transport.sessionId;
+      
+      // Store both session data and transport reference
+      sessionMapping.set(sessionId, {
         apiKey,
         isPro: isPro === "true",
       });
+      transportMapping.set(sessionId, transport);
+      
       server.connect(transport);
+      
+      // Clean up when connection closes
+      res.on('close', () => {
+        sessionMapping.delete(sessionId);
+        transportMapping.delete(sessionId);
+      });
     });
 
     app.post("/messages", (req: Request, res: Response) => {
-      if (transport) {
-        (transport as SSEServerTransport).handlePostMessage(req, res);
+      const sessionId = req.query.sessionId as string;
+      
+      if (!sessionId) {
+        res.status(400).send("Missing sessionId in query parameters");
+        return;
       }
+      
+      const transport = transportMapping.get(sessionId);
+      
+      if (!transport) {
+        res.status(400).send("SSE connection not established for this session");
+        return;
+      }
+      
+      transport.handlePostMessage(req, res);
     });
-    app.listen(PORT);
+
+    app.listen(PORT, () => {
+      console.log(`SSE server listening on port ${PORT}`);
+    });
   } catch (err) {
     console.error("Error starting server:", err);
     process.exit(1);
   }
 } else {
-  transport = new StdioServerTransport();
+  const transport = new StdioServerTransport();
   server.connect(transport);
   process.on("uncaughtException", (err) => {
     console.error("Uncaught exception:", err);

@@ -253,6 +253,7 @@ async function safeParseJson(response: any) {
 export async function fetchLocalFalconReports(apiKey: string, limit: string, nextToken?: string) {
   const url = new URL(`${API_BASE}/reports`);
   url.searchParams.set("api_key", apiKey);
+  url.searchParams.set("limit", limit);
   if (nextToken) url.searchParams.set("next_token", nextToken);
 
   await rateLimiter.waitForAvailableSlot();
@@ -294,7 +295,7 @@ export async function fetchLocalFalconReports(apiKey: string, limit: string, nex
 export async function fetchLocalFalconTrendReports(apiKey: string, limit: string, nextToken?: string, placeId?: string, keyword?: string) {
   const url = new URL(`${API_BASE}/trend-reports`);
   url.searchParams.set("api_key", apiKey);
-
+  url.searchParams.set("limit", limit);
   if (nextToken) url.searchParams.set("next_token", nextToken);
   if (placeId) url.searchParams.set("place_id", placeId);
   if (keyword) url.searchParams.set("keyword", keyword);
@@ -377,6 +378,7 @@ export async function fetchLocalFalconAutoScans(apiKey: string, nextToken?: stri
 export async function fetchLocalFalconLocationReports(apiKey: string, limit: string, placeId?: string, keyword?: string, nextToken?: string) {
   const url = new URL(`${API_BASE}/location-reports`);
   url.searchParams.set("api_key", apiKey);
+  url.searchParams.set("limit", limit);
 
   if (placeId) url.searchParams.set("place_id", placeId);
   if (keyword) url.searchParams.set("keyword", keyword);
@@ -635,6 +637,7 @@ export async function fetchLocalFalconTrendReport(apiKey: string, reportKey: str
 export async function fetchLocalFalconKeywordReports(apiKey: string, limit: string, nextToken?: string, keyword?: string) {
   const url = new URL(`${API_BASE}/keyword-reports`);
   url.searchParams.set("api_key", apiKey);
+  url.searchParams.set("limit", limit);
 
   if (nextToken) url.searchParams.set("next_token", nextToken);
   if (keyword) url.searchParams.set("keyword", keyword);
@@ -905,6 +908,7 @@ export async function fetchLocalFalconFullGridSearch(apiKey: string, placeId: st
 export async function fetchLocalFalconCompetitorReports(apiKey: string, limit: string, startDate?: string, endDate?: string, placeId?: string, keyword?: string, gridSize?: string, nextToken?: string) {
   const url = new URL(`${API_BASE}/competitor-reports`);
   url.searchParams.set("api_key", apiKey);
+  url.searchParams.set("limit", limit);
 
   if (startDate) url.searchParams.set("start_date", startDate);
   if (endDate) url.searchParams.set("end_date", endDate);
@@ -1029,6 +1033,7 @@ export async function fetchLocalFalconCompetitorReport(apiKey: string, reportKey
 export async function fetchLocalFalconCampaignReports(apiKey: string, limit: string, startDate?: string, endDate?: string, placeId?: string, nextToken?: string) {
   const url = new URL(`${API_BASE}/campaigns`);
   url.searchParams.set("api_key", apiKey);
+  url.searchParams.set("limit", limit);
 
   if (startDate) url.searchParams.set("start_date", startDate);
   if (endDate) url.searchParams.set("end_date", endDate);
@@ -1120,6 +1125,7 @@ export async function fetchLocalFalconCampaignReport(apiKey: string, reportKey: 
 export async function fetchLocalFalconGuardReports(apiKey: string, limit: string, startDate?: string, endDate?: string) {
   const url = new URL(`${API_BASE}/guard`);
   url.searchParams.set("api_key", apiKey);
+  url.searchParams.set("limit", limit);
 
   if (startDate) url.searchParams.set("start_date", startDate);
   if (endDate) url.searchParams.set("end_date", endDate);
