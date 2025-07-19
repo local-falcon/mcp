@@ -300,25 +300,26 @@ server.tool(
 
 server.tool(
   "runLocalFalconFullGridSearch",
-  "Retrieves a full grid search using the passed keyword or search term to match against the specified business.",
+  "Runs a full grid search using the passed keyword or search term to match against the specified business.",
   {
     placeId: z.string().describe("The Google Place ID of the business to match against in results."),
     keyword: z.string().describe("The desired search term or keyword."),
     lat: z.string().describe("The center point latitude value."),
     lng: z.string().describe("The center point longitude value."),
     gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15']).describe("The size of your desired grid."),
-    radius: z.string().describe("The radius of your grid from center point to outer most north/east/south/west point."),
-    measurement: z.enum(['mi', 'km']).describe("The measurement unit of your radius."),
+    radius: z.string().describe("The radius of your grid from center point to outer most north/east/south/west point (0.1 to 100)."),
+    measurement: z.enum(['mi', 'km']).describe("The measurement unit of your radius (mi for miles, km for kilometers)."),
+    platform: z.enum(['google', 'apple', 'gaio', 'chatgpt']).describe("The platform to run the scan against."),
+    aiAnalysis: z.boolean().default(false).describe("Whether AI analysis should be generated for this scan (optional, defaults to false)."),
   },
-  async ({ placeId, keyword, lat, lng, gridSize, radius, measurement }, ctx) => {
+  async ({ placeId, keyword, lat, lng, gridSize, radius, measurement, platform, aiAnalysis }, ctx) => {
     const apiKey = getApiKey(ctx);
     if (!apiKey) {
       return { content: [{ type: "text", text: "Missing LOCALFALCON_API_KEY in environment variables or request headers" }] };
     }
-    const resp = await fetchLocalFalconFullGridSearch(apiKey, placeId, keyword, lat, lng, gridSize, radius, measurement);
+    const resp = await fetchLocalFalconFullGridSearch(apiKey, placeId, keyword, lat, lng, gridSize, radius, measurement, platform, aiAnalysis);
     return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
   },
-
 );
 
 server.tool(

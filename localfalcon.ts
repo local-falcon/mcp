@@ -846,34 +846,51 @@ export async function fetchLocalFalconKeywordAtCoordinate(apiKey: string, lat: s
 }
 
 /**
- * Runs a full grid search.
+ * Runs a full grid search using Local Falcon API v2.
  * @param {string} apiKey - Your Local Falcon API key
- * @param {string} placeId - Place ID
- * @param {string} keyword - Search keyword
- * @param {string} lat - Latitude
- * @param {string} lng - Longitude
- * @param {string} gridSize - Grid size
- * @param {string} radius - Radius
- * @param {string} measurement - Measurement unit
+ * @param {string} placeId - The Google Place ID of the business to match against
+ * @param {string} keyword - The desired search term or keyword
+ * @param {string} lat - The data point latitude value
+ * @param {string} lng - The data point longitude value
+ * @param {string} gridSize - Grid size (3, 5, 7, 9, 11, 13, or 15)
+ * @param {string} radius - Radius from center point (.1 to 100)
+ * @param {string} measurement - Measurement unit ("mi" for miles or "km" for kilometers)
+ * @param {string} platform - Platform to run scan against ("google", "apple", "gaio", or "chatgpt")
+ * @param {boolean} aiAnalysis - Whether AI analysis should be generated (optional)
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconFullGridSearch(apiKey: string, placeId: string, keyword: string, lat: string, lng: string, gridSize: string, radius: string, measurement: string) {
-  const url = new URL(`${API_BASE}/scan`);
-  url.searchParams.set("api_key", apiKey);
-  url.searchParams.set("place_id", placeId);
-  url.searchParams.set("keyword", keyword);
-  url.searchParams.set("lat", lat);
-  url.searchParams.set("lng", lng);
-  url.searchParams.set("grid_size", gridSize);
-  url.searchParams.set("radius", radius);
-  url.searchParams.set("measurement", measurement);
+export async function fetchLocalFalconFullGridSearch(
+  apiKey: string,
+  placeId: string,
+  keyword: string,
+  lat: string,
+  lng: string,
+  gridSize: string,
+  radius: string,
+  measurement: string,
+  platform: string,
+  aiAnalysis: boolean = false
+) {
+  const url = "https://api.localfalcon.com/v2/run-scan/";
+  
+  const formData = new FormData();
+  formData.append("api_key", apiKey);
+  formData.append("place_id", placeId);
+  formData.append("keyword", keyword);
+  formData.append("lat", lat);
+  formData.append("lng", lng);
+  formData.append("grid_size", gridSize);
+  formData.append("radius", radius);
+  formData.append("measurement", measurement);
+  formData.append("platform", platform);
+  formData.append("ai_analysis", aiAnalysis.toString());
 
   await rateLimiter.waitForAvailableSlot();
 
   return withRetry(async () => {
-    const res = await fetchWithTimeout(url.toString(), {
+    const res = await fetchWithTimeout(url, {
       method: "POST",
-      headers: HEADERS,
+      body: formData,
     }, LONG_OPERATION_TIMEOUT_MS); // Long timeout for grid searches
 
     if (!res.ok) {
@@ -882,13 +899,15 @@ export async function fetchLocalFalconFullGridSearch(apiKey: string, placeId: st
     }
 
     const responseData = await safeParseJson(res);
+    const data = responseData.data;
+    const { data_points, rankings, ...rest } = data;
 
     return {
       success: true,
       message: `Local Falcon full grid search started with params ${JSON.stringify({
-        placeId, keyword, lat, lng, gridSize, radius, measurement
+        placeId, keyword, lat, lng, gridSize, radius, measurement, platform, aiAnalysis
       })}`,
-      data: responseData.data
+      data: rest
     };
   });
 }
