@@ -299,7 +299,7 @@ server.tool(
 );
 
 server.tool(
-  "runLocalFalconFullGridSearch",
+  "runLocalFalconScan",
   "Runs a full grid search using the passed keyword or search term to match against the specified business.",
   {
     placeId: z.string().describe("The Google Place ID of the business to match against in results."),
