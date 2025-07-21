@@ -17,7 +17,7 @@
   "license": "MIT",
   "type": "module",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.10.2",
+    "@modelcontextprotocol/sdk": "^1.16.0",
     "abort-controller": "^3.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",

@@ -884,6 +884,8 @@ export async function fetchLocalFalconFullGridSearch(
   formData.append("measurement", measurement);
   formData.append("platform", platform);
   formData.append("ai_analysis", aiAnalysis.toString());
+  const isEager = platform != "google"
+  formData.append("eager", isEager.toString())
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -899,15 +901,26 @@ export async function fetchLocalFalconFullGridSearch(
     }
 
     const responseData = await safeParseJson(res);
+
+
+    console.info(`Is eager is: ${isEager}`)
+    console.info(`Platform is: ${platform}`)
+    if (isEager) console.info(`Raw eager response is ${JSON.stringify(responseData, null, 2)}`)
+    
     const data = responseData.data;
     const { data_points, rankings, ...rest } = data;
+    const parameters = responseData.parameters;
+    const result = {
+      parameters,
+      rest,
+      message: responseData.message,
+      url: `https://www.localfalcon.com/reports/view/${rest.report_key}`
+    }
+    console.info(`response is: ${JSON.stringify(result, null, 2)}`)
 
     return {
       success: true,
-      message: `Local Falcon full grid search started with params ${JSON.stringify({
-        placeId, keyword, lat, lng, gridSize, radius, measurement, platform, aiAnalysis
-      })}`,
-      data: rest
+      ...result
     };
   });
 }
