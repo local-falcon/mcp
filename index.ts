@@ -7,6 +7,7 @@ import dotenv from "dotenv";
 import { fetchLocalFalconAutoScans, fetchLocalFalconFullGridSearch, fetchLocalFalconGoogleBusinessLocations, fetchLocalFalconGrid, fetchLocalFalconKeywordAtCoordinate, fetchLocalFalconKeywordReport, fetchLocalFalconKeywordReports, fetchLocalFalconLocationReport, fetchLocalFalconLocationReports, fetchAllLocalFalconLocations, fetchLocalFalconRankingAtCoordinate, fetchLocalFalconReport, fetchLocalFalconReports, fetchLocalFalconTrendReport, fetchLocalFalconTrendReports, fetchLocalFalconCompetitorReports, fetchLocalFalconCompetitorReport, fetchLocalFalconCampaignReports, fetchLocalFalconCampaignReport, fetchLocalFalconGuardReports, fetchLocalFalconGuardReport } from "./localfalcon.js";
 import express, { Request, Response } from "express";
 import cors from "cors";
+const CONNECTION_TIMEOUT = 30000;
 
 dotenv.config({ path: ".env.local" });
 
@@ -441,6 +442,19 @@ if (serverMode === 'sse') {
     app.use(cors({
       allowedHeaders: ['Content-Type', 'LOCALFALCON_API_KEY']
     }));
+
+    app.get("/ping", (req: Request, res: Response) => {
+      res.status(200).json({ status: "ok", message: "Local Falcon MCP server is alive." });
+    });
+    
+    app.get("/healthz", (req: Request, res: Response) => {
+      res.status(200).json({
+        status: "ok",
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
+        connectedSessions: sessionMapping.size,
+      });
+    });
 
     app.get("/sse", (req: Request, res: Response) => {
       const apiKey = req.query["local_falcon_api_key"] as string;
