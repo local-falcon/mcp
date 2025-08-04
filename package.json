@@ -8,6 +8,7 @@
     "start": "bun run index.ts",
     "start:sse": "bun run index.ts sse",
     "start:stdio": "bun run index.ts stdio",
+    "start:http": "bun run index.ts http",
     "build": "rm -rf dist && tsc",
     "inspector": "npx @modelcontextprotocol/inspector bun start",
     "docker:build": "docker build -t local-falcon-mcp .",
@@ -23,6 +24,7 @@
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "node-fetch": "^3.3.2",
+    "uuid": "^11.1.0",
     "zod": "^3.24.3"
   },
   "devDependencies": {
