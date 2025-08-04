@@ -20,7 +20,6 @@ interface SessionData {
 
 type Transport = SSEServerTransport | StreamableHTTPServerTransport;
 
-// Custom async handler type to support Promise-based route handlers
 type AsyncRequestHandler = (req: Request, res: Response) => Promise<void>;
 
 // Session Management
@@ -90,66 +89,69 @@ const validateAuth = (apiKey?: string): boolean => {
   return isValid;
 };
 
-// Server Configuration
+// Base Application Setup
 const createBaseApp = (sessionManager: SessionManager): Application => {
   const app = express();
   app.use(express.json());
   app.use(cors({
-    allowedHeaders: ['Content-Type', 'mcp-session-id', 'LOCAL_FALCON_API_KEY', 'is_pro'],
-    origin: "*", // Allow all origins (ngrok-compatible)
+    allowedHeaders: ['Content-Type', 'mcp-session-id', 'LOCAL_FALCON_API_KEY', 'is_pro', 'last-event-id'],
+    origin: "*",
     exposedHeaders: ['mcp-session-id'],
   }));
 
-  const pingHandler: RequestHandler = (_req: Request, res: Response): void => {
+  // Health check endpoints
+  app.get("/ping", (_req: Request, res: Response): void => {
     res.status(200).json({ status: "ok", message: "Local Falcon MCP server is up." });
-  };
+  });
 
-  const healthzHandler: RequestHandler = (_req: Request, res: Response): void => {
+  app.get("/healthz", (_req: Request, res: Response): void => {
     res.status(200).json({
       status: "ok",
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
       connectedSessions: sessionManager.getSessionCount(),
     });
-  };
+  });
 
-  // OAuth discovery endpoints (minimal implementation)
-  const oauthDiscoveryHandler: RequestHandler = (_req: Request, res: Response): void => {
+  // OAuth discovery endpoints
+  app.get("/.well-known/openid_configuration", (_req: Request, res: Response): void => {
     res.status(200).json({
       issuer: "Local Falcon MCP",
       authorization_endpoint: "not_implemented",
       token_endpoint: "not_implemented",
       registration_endpoint: "/register",
     });
-  };
+  });
 
-  const registerHandler: RequestHandler = (_req: Request, res: Response): void => {
+  app.post("/register", (_req: Request, res: Response): void => {
     res.status(501).json({ error: "Registration endpoint not implemented" });
-  };
-
-  app.get("/ping", pingHandler);
-  app.get("/healthz", healthzHandler);
-  app.post("/register", registerHandler);
+  });
 
   return app;
 };
 
-// SSE Server Handlers
-const setupSSEHandlers = (app: Application, sessionManager: SessionManager): void => {
+// SSE Transport Handlers
+const setupSSERoutes = (app: Application, sessionManager: SessionManager): void => {
+  // SSE endpoint for establishing streams
   const sseHandler: AsyncRequestHandler = async (req, res) => {
     console.log("Establishing SSE stream...");
     const { apiKey, isPro } = extractAuth(req);
 
     if (!validateAuth(apiKey)) {
-      res.status(401).json({ error: "Missing or invalid LOCAL_FALCON_API_KEY", headers: req.headers, query: req.query });
+      res.status(401).json({ 
+        error: "Missing or invalid LOCAL_FALCON_API_KEY", 
+        headers: req.headers, 
+        query: req.query 
+      });
       return;
     }
 
     try {
-      const transport = new SSEServerTransport("/messages", res);
+      const transport = new SSEServerTransport("/sse/messages", res);
       const sessionId = transport.sessionId;
 
       sessionManager.add(sessionId, { apiKey: apiKey!, isPro: isPro === "true" }, transport);
+      
       transport.onclose = () => {
         console.log(`SSE transport closed for session ${sessionId}`);
         sessionManager.remove(sessionId);
@@ -160,16 +162,22 @@ const setupSSEHandlers = (app: Application, sessionManager: SessionManager): voi
       console.log(`Established SSE stream with session ID: ${sessionId}`);
     } catch (error: unknown) {
       console.error("Error establishing SSE stream:", error);
-      if (!res.headersSent) res.status(500).json({ error: "Error establishing SSE stream", details: String(error) });
+      if (!res.headersSent) {
+        res.status(500).json({ 
+          error: "Error establishing SSE stream", 
+          details: String(error) 
+        });
+      }
     }
   };
 
-  const messagesHandler: AsyncRequestHandler = async (req, res) => {
+  // SSE message handling endpoint
+  const sseMessagesHandler: AsyncRequestHandler = async (req, res) => {
     console.log("Received message for SSE...");
     const sessionId = req.query.sessionId as string | undefined;
 
     if (!sessionId) {
-      console.error("Missing session ID in request");
+      console.error("Missing session ID in SSE request");
       res.status(400).json({ error: "Missing sessionId parameter" });
       return;
     }
@@ -185,39 +193,45 @@ const setupSSEHandlers = (app: Application, sessionManager: SessionManager): voi
       await transport.handlePostMessage(req, res, req.body);
     } catch (error: unknown) {
       console.error("Error handling SSE message:", error);
-      if (!res.headersSent) res.status(500).json({ error: "Error handling request", details: String(error) });
+      if (!res.headersSent) {
+        res.status(500).json({ 
+          error: "Error handling request", 
+          details: String(error) 
+        });
+      }
     }
   };
 
   app.get("/sse", sseHandler);
-  app.post("/messages", messagesHandler);
+  app.post("/sse/messages", sseMessagesHandler);
 };
 
-const setupHTTPHandlers = (app: Application, sessionManager: SessionManager): void => {
-
-  app.post('/mcp', async (req, res) => {
-    console.log(`Request received: ${req.method} ${req.url}`, {body: req.body});
+// HTTP Transport Handlers
+const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void => {
+  // Main MCP HTTP endpoint
+  const mcpHandler: AsyncRequestHandler = async (req, res) => {
+    console.log(`MCP Request received: ${req.method} ${req.url}`, { body: req.body });
     
     // Capture response data for logging
     const originalJson = res.json;
     res.json = function(body) {
-      console.log(`Response being sent:`, JSON.stringify(body, null, 2));
+      console.log(`MCP Response being sent:`, JSON.stringify(body, null, 2));
       return originalJson.call(this, body);
     };
     
     try {
-      // Check for existing session ID
       const sessionId = req.headers['mcp-session-id'] as string | undefined;
       let transport: StreamableHTTPServerTransport;
 
       if (sessionId && sessionManager.getTransport(sessionId)) {
         // Reuse existing transport
-        console.log(`Reusing session: ${sessionId}`);
+        console.log(`Reusing HTTP session: ${sessionId}`);
         transport = sessionManager.getTransport(sessionId) as StreamableHTTPServerTransport;
       } else if (!sessionId && isInitializeRequest(req.body)) {
-        console.log(`New session request: ${req.body.method}`);
         // New initialization request
+        console.log(`New HTTP session request: ${req.body.method}`);
         const { apiKey, isPro } = extractAuth(req);
+        
         if (!validateAuth(apiKey)) {
           res.status(401).json({
             error: "Missing or invalid LOCAL_FALCON_API_KEY",
@@ -226,40 +240,36 @@ const setupHTTPHandlers = (app: Application, sessionManager: SessionManager): vo
           });
           return;
         }
+
         const eventStore = new InMemoryEventStore();
         transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => uuidv4(),
           enableJsonResponse: true,
-          eventStore, // Enable resumability
+          eventStore,
           onsessioninitialized: (sessionId) => {
-            // Store the transport by session ID
-            console.log(`Session initialized: ${sessionId}`);
+            console.log(`HTTP Session initialized: ${sessionId}`);
             sessionManager.add(sessionId, { apiKey: apiKey!, isPro: isPro === "true" }, transport);
           }
         });
 
-        // Clean up transport when closed
         transport.onclose = () => {
           const sid = transport.sessionId;
           if (sid && sessionManager.getTransport(sid)) {
-            console.log(`Transport closed for session ${sid}, removing from transports map`);
+            console.log(`HTTP Transport closed for session ${sid}, removing from session manager`);
             sessionManager.remove(sid);
           }
         };
 
-
-        // Connect to the MCP server BEFORE handling the request
-        console.log(`Connecting transport to MCP server...`);
+        console.log(`Connecting HTTP transport to MCP server...`);
         await getServer(sessionManager.getSessionMap()).connect(transport);
-        console.log(`Transport connected to MCP server successfully`);
+        console.log(`HTTP Transport connected to MCP server successfully`);
         
-        console.log(`Handling initialization request...`);
+        console.log(`Handling HTTP initialization request...`);
         await transport.handleRequest(req, res, req.body);
-        console.log(`Initialization request handled, response sent`);
-        return; // Already handled
+        console.log(`HTTP Initialization request handled, response sent`);
+        return;
       } else {
-        console.error('Invalid request: No valid session ID or initialization request');
-        // Invalid request
+        console.error('Invalid HTTP request: No valid session ID or initialization request');
         res.status(400).json({
           jsonrpc: '2.0',
           error: {
@@ -271,17 +281,13 @@ const setupHTTPHandlers = (app: Application, sessionManager: SessionManager): vo
         return;
       }
 
-      console.log(`Handling request for session: ${transport.sessionId}`);
-      console.log(`Request body:`, JSON.stringify(req.body, null, 2));
-      
-      // Handle the request with existing transport
-      console.log(`Calling transport.handleRequest...`);
+      console.log(`Handling HTTP request for session: ${transport.sessionId}`);
       const startTime = Date.now();
       await transport.handleRequest(req, res, req.body);
       const duration = Date.now() - startTime;
-      console.log(`Request handling completed in ${duration}ms for session: ${transport.sessionId}`);
+      console.log(`HTTP Request handling completed in ${duration}ms for session: ${transport.sessionId}`);
     } catch (error) {
-      console.error('Error handling MCP request:', error);
+      console.error('Error handling MCP HTTP request:', error);
       if (!res.headersSent) {
         res.status(500).json({
           jsonrpc: '2.0',
@@ -293,121 +299,146 @@ const setupHTTPHandlers = (app: Application, sessionManager: SessionManager): vo
         });
       }
     }
-  });
+  };
 
-  // Handle GET requests for server-to-client notifications via SSE
-  app.get('/mcp', async (req: express.Request, res: express.Response) => {
-    console.log(`GET Request received: ${req.method} ${req.url}`);
+  // Handle GET requests for server-to-client notifications via HTTP SSE
+  const mcpGetHandler: AsyncRequestHandler = async (req, res) => {
+    console.log(`MCP GET Request received: ${req.method} ${req.url}`);
     
     try {
       const sessionId = req.headers['mcp-session-id'] as string | undefined;
       if (!sessionId || !sessionManager.getTransport(sessionId)) {
-        console.log(`Invalid session ID in GET request: ${sessionId}`);
+        console.log(`Invalid session ID in HTTP GET request: ${sessionId}`);
         res.status(400).send('Invalid or missing session ID');
         return;
       }
       
-      // Check for Last-Event-ID header for resumability
       const lastEventId = req.headers['last-event-id'] as string | undefined;
       if (lastEventId) {
-        console.log(`Client reconnecting with Last-Event-ID: ${lastEventId}`);
+        console.log(`HTTP Client reconnecting with Last-Event-ID: ${lastEventId}`);
       } else {
-        console.log(`Establishing new SSE stream for session ${sessionId}`);
+        console.log(`Establishing new HTTP SSE stream for session ${sessionId}`);
       }
       
       const transport = sessionManager.getTransport(sessionId);
       
-      // Set up connection close monitoring
       res.on('close', () => {
-        console.log(`SSE connection closed for session ${sessionId}`);
+        console.log(`HTTP SSE connection closed for session ${sessionId}`);
       });
       
-      console.log(`Starting SSE transport.handleRequest for session ${sessionId}...`);
+      console.log(`Starting HTTP SSE transport.handleRequest for session ${sessionId}...`);
       const startTime = Date.now();
       await (transport as StreamableHTTPServerTransport).handleRequest(req, res);
       const duration = Date.now() - startTime;
-      console.log(`SSE stream setup completed in ${duration}ms for session: ${sessionId}`);
+      console.log(`HTTP SSE stream setup completed in ${duration}ms for session: ${sessionId}`);
     } catch (error) {
-      console.error('Error handling GET request:', error);
+      console.error('Error handling HTTP GET request:', error);
       if (!res.headersSent) {
         res.status(500).send('Internal server error');
       }
     }
-  });
+  };
 
   // Handle DELETE requests for session termination
-  app.delete('/mcp', async (req: express.Request, res: express.Response) => {
-    console.log(`DELETE Request received: ${req.method} ${req.url}`);
+  const mcpDeleteHandler: AsyncRequestHandler = async (req, res) => {
+    console.log(`MCP DELETE Request received: ${req.method} ${req.url}`);
     try {
       const sessionId = req.headers['mcp-session-id'] as string | undefined;
       if (!sessionId || !sessionManager.getTransport(sessionId)) {
-        console.log(`Invalid session ID in DELETE request: ${sessionId}`);
+        console.log(`Invalid session ID in HTTP DELETE request: ${sessionId}`);
         res.status(400).send('Invalid or missing session ID');
         return;
       }
       
-      console.log(`Received session termination request for session ${sessionId}`);
+      console.log(`Received HTTP session termination request for session ${sessionId}`);
       const transport = sessionManager.getTransport(sessionId);
       
-      // Capture response for logging
       const originalSend = res.send;
       res.send = function(body) {
-        console.log(`DELETE response being sent:`, body);
+        console.log(`HTTP DELETE response being sent:`, body);
         return originalSend.call(this, body);
       };
       
-      console.log(`Processing session termination...`);
+      console.log(`Processing HTTP session termination...`);
       const startTime = Date.now();
       await (transport as StreamableHTTPServerTransport).handleRequest(req, res);
       const duration = Date.now() - startTime;
-      console.log(`Session termination completed in ${duration}ms for session: ${sessionId}`);
+      console.log(`HTTP Session termination completed in ${duration}ms for session: ${sessionId}`);
       
-      // Check if transport was actually closed
       setTimeout(() => {
         if (sessionManager.getTransport(sessionId)) {
-          console.log(`Note: Transport for session ${sessionId} still exists after DELETE request`);
+          console.log(`Note: HTTP Transport for session ${sessionId} still exists after DELETE request`);
         } else {
-          console.log(`Transport for session ${sessionId} successfully removed after DELETE request`);
+          console.log(`HTTP Transport for session ${sessionId} successfully removed after DELETE request`);
         }
       }, 100);
     } catch (error) {
-      console.error('Error handling DELETE request:', error);
+      console.error('Error handling HTTP DELETE request:', error);
       if (!res.headersSent) {
         res.status(500).send('Error processing session termination');
       }
     }
-  });
+  };
+
+  app.post('/mcp', mcpHandler);
+  app.get('/mcp', mcpGetHandler);
+  app.delete('/mcp', mcpDeleteHandler);
 };
 
-// Server Factory
-const createSSEServer = (sessionManager: SessionManager): Application => {
+// Unified Server Creation
+const createUnifiedServer = (sessionManager: SessionManager, modes: string[]): Application => {
   const app = createBaseApp(sessionManager);
-  setupSSEHandlers(app, sessionManager);
-  return app;
-};
-
-const createHTTPServer = (sessionManager: SessionManager): Application => {
-  const app = createBaseApp(sessionManager);
-  setupHTTPHandlers(app, sessionManager);
+  
+  if (modes.includes('sse')) {
+    console.log('Setting up SSE routes...');
+    setupSSERoutes(app, sessionManager);
+  }
+  
+  if (modes.includes('http')) {
+    console.log('Setting up HTTP routes...');
+    setupHTTPRoutes(app, sessionManager);
+  }
+  
   return app;
 };
 
 // Server Startup
-const startExpressServer = (app: Application, sessionManager: SessionManager, mode: string): void => {
+const startUnifiedServer = (app: Application, sessionManager: SessionManager, modes: string[]): void => {
   const port = parseInt(process.env.PORT ?? "8000", 10);
-  const server = app.listen(port, () => console.log(`${mode.toUpperCase()} server listening on port ${port}`));
+  const server = app.listen(port, () => {
+    console.log(`Unified MCP server listening on port ${port}`);
+    console.log(`Active modes: ${modes.join(', ').toUpperCase()}`);
+    console.log(`Available endpoints:`);
+    if (modes.includes('sse')) {
+      console.log(`  - SSE: GET /sse, POST /sse/messages`);
+    }
+    if (modes.includes('http')) {
+      console.log(`  - HTTP: POST /mcp, GET /mcp, DELETE /mcp`);
+    }
+    console.log(`  - Health: GET /ping, GET /healthz`);
+  });
 
   process.on("SIGINT", async () => {
-    console.log("Shutting down server...");
+    console.log("Shutting down unified server...");
     await sessionManager.cleanup();
     server.close(() => {
-      console.log("Server shutdown complete");
+      console.log("Unified server shutdown complete");
+      process.exit(0);
+    });
+  });
+
+  process.on("SIGTERM", async () => {
+    console.log("Received SIGTERM, shutting down unified server...");
+    await sessionManager.cleanup();
+    server.close(() => {
+      console.log("Unified server shutdown complete");
       process.exit(0);
     });
   });
 };
 
 const startStdioServer = (): void => {
+  console.log("Starting STDIO server...");
   const transport = new StdioServerTransport();
   const server = getServer(new Map<string, SessionData>());
 
@@ -425,6 +456,8 @@ const startStdioServer = (): void => {
     console.error("Unhandled Rejection at:", promise, "reason:", reason);
     process.exit(1);
   });
+
+  console.log("STDIO server started successfully");
 };
 
 // Main Execution
@@ -435,12 +468,22 @@ const main = (): void => {
     switch (serverMode) {
       case "sse": {
         const sessionManager = new SessionManager();
-        startExpressServer(createSSEServer(sessionManager), sessionManager, "sse");
+        const app = createUnifiedServer(sessionManager, ['sse']);
+        startUnifiedServer(app, sessionManager, ['sse']);
         break;
       }
       case "http": {
         const sessionManager = new SessionManager();
-        startExpressServer(createHTTPServer(sessionManager), sessionManager, "http");
+        const app = createUnifiedServer(sessionManager, ['http']);
+        startUnifiedServer(app, sessionManager, ['http']);
+        break;
+      }
+      case "unified":
+      case "both":
+      case "HTTPAndSSE": {
+        const sessionManager = new SessionManager();
+        const app = createUnifiedServer(sessionManager, ['http', 'sse']);
+        startUnifiedServer(app, sessionManager, ['http', 'sse']);
         break;
       }
       case "stdio":

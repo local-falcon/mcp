@@ -1,6 +1,6 @@
 {
   "name": "@local-falcon/mcp",
-  "version": "0.0.27",
+  "version": "0.0.28",
   "description": "An MCP server for the Local Falcon API.",
   "main": "index.js",
   "scripts": {
@@ -9,6 +9,7 @@
     "start:sse": "bun run index.ts sse",
     "start:stdio": "bun run index.ts stdio",
     "start:http": "bun run index.ts http",
+    "start:HTTPAndSSE": "bun run index.ts HTTPAndSSE",
     "build": "rm -rf dist && tsc",
     "inspector": "npx @modelcontextprotocol/inspector bun start",
     "docker:build": "docker build -t local-falcon-mcp .",
