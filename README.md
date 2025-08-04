@@ -88,11 +88,53 @@ For Claude Max/Team users you unlock a greater MCP tool call limit. This must be
 }
 ```
 
+## Running via HTTP
+
+For all platforms use the following format:
+
+```json
+{
+  "mcpServers": {
+    "local-falcon-mcp": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://mcp.localfalcon.com/mcp?local_falcon_api_key=INSERT_YOUR_API_KEY_HERE"
+      ]
+    }
+  }
+}
+```
+
+## Pro Users
+
+For Claude Max/Team users you unlock a greater MCP tool call limit. This must be enabled by appending the `is_pro=true` in the query string of the URL. For example:
+
+```json
+{
+  "mcpServers": {
+    "local-falcon-mcp": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://mcp.localfalcon.com/mcp?local_falcon_api_key=INSERT_YOUR_API_KEY_HERE&is_pro=true"
+      ]
+    }
+  }
+}
+```
+
 ## Running via Claude Integrations (SSE)
 
 If connecting to Claude integrations:
-1. name the server `Local Falcon MCP`
+1. name the server `Local Falcon MCP SSE`
 2. add the following url: https://mcp.localfalcon.com/sse?local_falcon_api_key=YOUR_API_KEY_HERE
+
+## Running via Claude Integrations (HTTP)
+
+If connecting to Claude integrations:
+1. name the server `Local Falcon MCP HTTP`
+2. add the following url: https://mcp.localfalcon.com/mcp?local_falcon_api_key=YOUR_API_KEY_HERE
 
 ## Tools List
 * listLocalFalconScanReports: Retrieves a list of all Scan Reports performed by your Local Falcon account.
