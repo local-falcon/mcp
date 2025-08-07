@@ -151,7 +151,6 @@ If connecting to Claude integrations:
 * getLocalFalconGoogleBusinessLocations: Fetches Local Falcon Google Business locations.
 * getLocalFalconRankingAtCoordinate: Retrieves search results at the specified coordinate point and gets ranking data for specified business.
 * getLocalFalconKeywordAtCoordinate: Retrieves search results at the specified coordinate point without any rank comparison data.
-* runLocalFalconScan: Retrieves a full grid search using the passed keyword or search term to match against the specified business.
 * getLocalFalconCompetitorReports: Retrieves a list of all Competitor Reports within your Local Falcon account.
 * getLocalFalconCompetitorReport: Retrieves up to 20 competitor businesses from a specific Competitor Report from your Local Falcon account.
 * listLocalFalconCampaignReports: Retrieves a list of all Location Reports within your Local Falcon account.
@@ -159,6 +158,10 @@ If connecting to Claude integrations:
 * listLocalFalconGuardReports: Retrieves a list of all Falcon Guard Reports within your Local Falcon account.
 * getLocalFalconGuardReport: Retrieves a full report of a Falcon Guard Report from your Local Falcon account given a place_id.
 
+* runLocalFalconScan: Retrieves a full grid search using the passed keyword or search term to match against the specified business.
+* searchForLocalFalconBusinessLocation: Searches for business locations on the specified platform.
+* saveLocalFalconBusinessLocationToAccount: Saves a business location to your account.
+* fetchLocalFalconAccountInfo: Retrieves Local Falcon account information.
 ---
 
 ## For developers
