@@ -120,6 +120,7 @@ export interface LocalFalconTrendReportsResponse {
 }
 
 const API_BASE = "https://api.localfalcon.com/v1";
+const API_BASE_V2 = "https://api.localfalcon.com/v2";
 const HEADERS = {
   "Content-Type": "application/json",
 };
@@ -1233,4 +1234,208 @@ export async function fetchLocalFalconGuardReport(apiKey: string, placeId: strin
     const { metrics, ...cleanData } = data.data;
     return { data: cleanData };
   });
+}
+
+/**
+ * Runs a scan at the specified coordinate point and gets ranking data for a specified business.
+ * @param {string} apiKey - Your Local Falcon API key
+ * @param {string} placeId - The Google Place ID of the business to match against in results
+ * @param {string} keyword - The desired search term or keyword
+ * @param {string} lat - The data point latitude value
+ * @param {string} lng - The data point longitude value
+ * @param {string} gridSize - The size of the grid (3, 5, 7, 9, 11, 13, or 15)
+ * @param {string} radius - The radius of the grid from center point to outer most north/east/south/west point (0.1 to 100)
+ * @param {string} measurement - The measurement unit of the radius ("mi" for miles or "km" for kilometers)
+ * @param {string} platform - The platform to run the scan against ("google", "apple", "gaio", or "chatgpt")
+ * @param {boolean} [aiAnalysis=false] - Whether AI analysis should be generated for this scan (optional)
+ * @returns {Promise<any>} API response with scan results
+ */
+export async function runLocalFalconScan(
+  apiKey: string,
+  placeId: string,
+  keyword: string,
+  lat: string,
+  lng: string,
+  gridSize: string,
+  radius: string,
+  measurement: string,
+  platform: string,
+  aiAnalysis: boolean = false
+): Promise<any> {
+  try {
+    // Wait for rate limiter before making the request
+    await rateLimiter.waitForAvailableSlot();
+    const form = new FormData();
+    form.append('api_key', apiKey);
+    form.append('place_id', placeId);
+    form.append('keyword', keyword);
+    form.append('lat', lat);
+    form.append('lng', lng);
+    form.append('grid_size', gridSize);
+    form.append('radius', radius);
+    form.append('measurement', measurement);
+    form.append('platform', platform);
+    form.append('ai_analysis', aiAnalysis.toString());
+    const response = await withRetry(async () => {
+      return await fetchWithTimeout(
+        `${API_BASE_V2}/run-scan/`,
+        {
+          method: 'POST',
+          body: form,
+        },
+        DEFAULT_TIMEOUT_MS
+      );
+    });
+
+    // Parse and return the response
+    const data = await safeParseJson(response);
+    
+    if (!response.ok) {
+      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error running scan:', error);
+    throw error;
+  }
+}
+
+/**
+ * Searches for business locations on the specified platform.
+ * @param {string} apiKey - Your Local Falcon API key
+ * @param {string} term - The business location name to search for
+ * @param {string} platform - The platform to search against ("google" or "apple")
+ * @param {string} [proximity] - Optional proximity filter (e.g., city, state, country)
+ * @returns {Promise<any>} API response with matching business locations
+ */
+export async function searchForLocalFalconBusinessLocation(
+  apiKey: string,
+  term: string,
+  platform: string,
+  proximity?: string
+): Promise<any> {
+  try {
+    // Wait for rate limiter before making the request
+    await rateLimiter.waitForAvailableSlot();
+    const form = new FormData();
+    form.append('api_key', apiKey);
+    form.append('term', term);
+    form.append('platform', platform);
+    if (proximity) form.append('proximity', proximity);
+    const response = await withRetry(async () => {
+      return await fetchWithTimeout(
+        `${API_BASE_V2}/locations/search`,
+        {
+          method: 'POST',
+          body: form,
+        },
+        DEFAULT_TIMEOUT_MS
+      );
+    });
+
+    // Parse and return the response
+    const data = await safeParseJson(response);
+    
+    if (!response.ok) {
+      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error searching business locations:', error);
+    throw error;
+  }
+}
+
+/**
+ * Saves a business location to your Local Falcon account.
+ * @param {string} apiKey - Your Local Falcon API key
+ * @param {string} platform - The platform to add the location from ("google" or "apple")
+ * @param {string} placeId - The Business Location ID to add
+ * @param {string} [name] - Business name (required for Apple)
+ * @param {string} [lat] - Latitude (required for Apple)
+ * @param {string} [lng] - Longitude (required for Apple)
+ * @returns {Promise<any>} API response
+ */
+export async function saveLocalFalconBusinessLocationToAccount(
+  apiKey: string,
+  platform: 'google' | 'apple',
+  placeId: string,
+  name?: string,
+  lat?: string,
+  lng?: string
+): Promise<any> {
+  try {
+    await rateLimiter.waitForAvailableSlot();
+    const form = new FormData();
+    form.append('api_key', apiKey);
+    form.append('platform', platform);
+    form.append('place_id', placeId);
+    if (name) form.append('name', name);
+    if (lat) form.append('lat', lat);
+    if (lng) form.append('lng', lng);
+    
+    const response = await withRetry(async () => {
+      return await fetchWithTimeout(
+        `${API_BASE_V2}/locations/add`,
+        {
+          method: 'POST',
+          body: form,
+        },
+        DEFAULT_TIMEOUT_MS
+      );
+    });
+
+    const data = await safeParseJson(response);
+
+    if (!response.ok) {
+      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error saving business location:', error);
+    throw error;
+  }
+}
+
+
+/**
+ * Retrieves Local Falcon account information.
+ * @param {string} apiKey - Your Local Falcon API key
+ * @param {string} [returnField] - Optional specific return information: "user", "credit package", "subscription", or "credits"
+ * @returns {Promise<any>} API response with account details
+ */
+export async function fetchLocalFalconAccountInfo(
+  apiKey: string,
+  returnField?: 'user' | 'credit package' | 'subscription' | 'credits'
+): Promise<any> {
+  try {
+    await rateLimiter.waitForAvailableSlot();
+    const form = new FormData();
+    form.append('api_key', apiKey);
+    if (returnField) form.append('return', returnField);
+    const response = await withRetry(async () => {
+      return await fetchWithTimeout(
+        `${API_BASE_V2}/account`,
+        {
+          method: 'POST',
+          body: form,
+        },
+        DEFAULT_TIMEOUT_MS
+      );
+    });
+
+    const data = await safeParseJson(response);
+
+    if (!response.ok) {
+      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error fetching account information:', error);
+    throw error;
+  }
 }
