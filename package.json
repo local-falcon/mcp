@@ -24,13 +24,18 @@
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
+    "google-auth-library": "^10.3.0",
+    "jose": "^6.0.13",
     "node-fetch": "^3.3.2",
+    "oauth2-server": "^3.1.1",
+    "pkce-challenge": "^5.0.0",
     "uuid": "^11.1.0",
     "zod": "^3.24.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.18",
     "@types/express": "^5.0.1",
+    "@types/oauth2-server": "^3.0.18",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
   }

@@ -8,6 +8,7 @@ import { getServer } from "./server.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { InMemoryEventStore } from "@modelcontextprotocol/sdk/examples/shared/inMemoryEventStore.js";
+import { OAuth2Client } from "google-auth-library";
 
 // Configure environment variables
 dotenv.config({ path: ".env.local" });
@@ -18,14 +19,132 @@ interface SessionData {
   isPro: boolean;
 }
 
+interface AuthenticatedUser {
+  id: string;
+  email: string;
+  name?: string;
+  apiKey: string; // mapped from user profile or config
+  isPro: boolean;
+  provider: 'google' | 'legacy';
+}
+
 type Transport = SSEServerTransport | StreamableHTTPServerTransport;
 
 type AsyncRequestHandler = (req: Request, res: Response) => Promise<void>;
+
+// Google OAuth Client
+class GoogleOAuthService {
+  private googleClient: OAuth2Client;
+  private allowedDomains: Set<string> = new Set();
+
+  constructor() {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    
+    if (!clientId) {
+      console.warn('GOOGLE_CLIENT_ID not provided - Google OAuth will be disabled');
+    }
+    
+    // Initialize OAuth client with both ID and secret (secret optional for ID token validation)
+    this.googleClient = new OAuth2Client(clientId, clientSecret);
+    
+    if (clientSecret) {
+      console.log('Google OAuth configured with client secret for enhanced validation');
+    } else {
+      console.log('Google OAuth configured for ID token validation only');
+    }
+    
+    // Hardcoded allowed domains - no need for env var
+    // Add any domains you want to allow here
+    // this.allowedDomains.add('yourcompany.com');
+  }
+
+  async verifyGoogleToken(token: string): Promise<AuthenticatedUser | null> {
+    try {
+      if (!process.env.GOOGLE_CLIENT_ID) {
+        console.log('Google OAuth not configured - skipping token verification');
+        return null;
+      }
+
+      const ticket = await this.googleClient.verifyIdToken({
+        idToken: token,
+        audience: process.env.GOOGLE_CLIENT_ID,
+      });
+
+      const payload = ticket.getPayload();
+      if (!payload || !payload.email_verified) {
+        console.log('Google token verification failed: invalid payload or unverified email');
+        return null;
+      }
+
+      // Skip domain restrictions - allow all domains
+      // if (this.allowedDomains.size > 0 && payload.hd && !this.allowedDomains.has(payload.hd)) {
+      //   console.log(`Google token verification failed: domain ${payload.hd} not in allowed domains`);
+      //   return null;
+      // }
+
+      // Map Google user to our user format
+      const user: AuthenticatedUser = {
+        id: payload.sub!,
+        email: payload.email!,
+        name: payload.name,
+        apiKey: process.env.LOCAL_FALCON_API_KEY || 'default-key',
+        isPro: this.isProUser(payload.email!, payload.hd || undefined),
+        provider: 'google'
+      };
+
+      console.log(`[${new Date().toISOString()}] Google OAuth authentication successful for ${user.email}`);
+      return user;
+    } catch (error) {
+      console.error('Google token verification error:', error);
+      return null;
+    }
+  }
+
+  private isProUser(email: string, domain?: string): boolean {
+    // Hardcoded pro users and domains - no need for env vars
+    const proUsers = [
+      // Add pro user emails here
+      // 'admin@yourcompany.com',
+      // 'premium@gmail.com'
+    ];
+    const proDomains = [
+      // Add pro domains here
+      // 'enterprise.com',
+      // 'yourcompany.com'
+    ];
+    
+    return proUsers.includes(email) || !!(domain && proDomains.includes(domain));
+  }
+
+  getGoogleAuthUrl(): string {
+    return 'https://accounts.google.com';
+  }
+
+  isConfigured(): boolean {
+    return !!process.env.GOOGLE_CLIENT_ID;
+  }
+}
 
 // Session Management
 class SessionManager {
   private sessions = new Map<string, SessionData>();
   private transports = new Map<string, Transport>();
+  private googleOAuthService: GoogleOAuthService;
+
+  constructor() {
+    this.googleOAuthService = new GoogleOAuthService();
+    
+    if (this.googleOAuthService.isConfigured()) {
+      console.log('Google OAuth service initialized');
+    } else {
+      console.log('Google OAuth service not configured - only legacy API key auth available');
+    }
+  }
+
+  getGoogleOAuthService(): GoogleOAuthService {
+    return this.googleOAuthService;
+  }
 
   add(sessionId: string, data: SessionData, transport?: Transport): void {
     this.sessions.set(sessionId, data);
@@ -73,14 +192,21 @@ class SessionManager {
 }
 
 // Authentication Utilities
-const extractAuth = (req: Request): { apiKey?: string; isPro?: string } => {
+const extractAuth = (req: Request): { apiKey?: string; isPro?: string; oauthToken?: string } => {
+  // Try OAuth Bearer token first
+  const authHeader = req.headers.authorization;
+  const oauthToken = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : undefined;
+  
+  // Fallback to legacy API key auth
   const apiKey = (req.headers["local_falcon_api_key"] as string | undefined) ??
     (req.query["local_falcon_api_key"] as string | undefined);
   const isPro = (req.headers["is_pro"] as string | undefined) ??
     (req.query["is_pro"] as string | undefined);
+  
   console.log(`[${new Date().toISOString()}] Extracted auth - Method: ${req.method}, URL: ${req.url}, ` +
-    `apiKey: ${apiKey ? `"${apiKey}"` : "missing"}, isPro: ${isPro || "not provided"}`);
-  return { apiKey, isPro };
+    `oauthToken: ${oauthToken ? "present" : "missing"}, apiKey: ${apiKey ? `"${apiKey}"` : "missing"}, isPro: ${isPro || "not provided"}`);
+  
+  return { apiKey, isPro, oauthToken };
 };
 
 const validateAuth = (apiKey?: string): boolean => {
@@ -89,10 +215,21 @@ const validateAuth = (apiKey?: string): boolean => {
   return isValid;
 };
 
+const validateGoogleOAuthToken = async (token: string, googleOAuthService: GoogleOAuthService): Promise<AuthenticatedUser | null> => {
+  try {
+    return await googleOAuthService.verifyGoogleToken(token);
+  } catch (error) {
+    console.log(`[${new Date().toISOString()}] Google OAuth token validation error:`, error);
+    return null;
+  }
+};
+
+
 // Base Application Setup
 const createBaseApp = (sessionManager: SessionManager): Application => {
   const app = express();
   app.use(express.json());
+  app.use(express.urlencoded({ extended: true })); // Add URL-encoded parsing for OAuth
   app.use(cors({
     allowedHeaders: ['Content-Type', 'mcp-session-id', 'LOCAL_FALCON_API_KEY', 'is_pro', 'last-event-id'],
     origin: "*",
@@ -113,21 +250,120 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
     });
   });
 
-  // OAuth discovery endpoints
-  app.get("/.well-known/openid_configuration", (_req: Request, res: Response): void => {
-    res.status(200).json({
-      issuer: "Local Falcon MCP",
-      authorization_endpoint: "not_implemented",
-      token_endpoint: "not_implemented",
-      registration_endpoint: "/register",
-    });
-  });
-
-  app.post("/register", (_req: Request, res: Response): void => {
-    res.status(501).json({ error: "Registration endpoint not implemented" });
+  // OAuth Resource Server discovery endpoints - Hardcoded Google OAuth config
+  app.get("/.well-known/openid_configuration", (req: Request, res: Response): void => {
+    if (sessionManager.getGoogleOAuthService().isConfigured()) {
+      res.status(200).json({
+        issuer: "https://accounts.google.com",
+        authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+        token_endpoint: "https://oauth2.googleapis.com/token",
+        userinfo_endpoint: "https://openidconnect.googleapis.com/v1/userinfo",
+        jwks_uri: "https://www.googleapis.com/oauth2/v3/certs",
+        response_types_supported: ["code", "token", "id_token"],
+        subject_types_supported: ["public"],
+        id_token_signing_alg_values_supported: ["RS256"],
+        scopes_supported: ["openid", "email", "profile"],
+        token_endpoint_auth_methods_supported: ["client_secret_post", "client_secret_basic", "none"],
+        code_challenge_methods_supported: ["S256", "plain"],
+        claims_supported: ["aud", "email", "email_verified", "exp", "family_name", "given_name", "iat", "iss", "locale", "name", "picture", "sub"],
+        // Hardcoded redirect URIs that work with most MCP clients
+        redirect_uris_supported: [
+          "http://localhost:3000/auth/callback",
+          "http://localhost:8080/auth/callback", 
+          "http://localhost:5173/auth/callback",
+          "http://localhost:3001/auth/callback"
+        ]
+      });
+    } else {
+      res.status(503).json({
+        error: "OAuth not configured",
+        message: "Google OAuth not configured. Use LOCAL_FALCON_API_KEY for authentication."
+      });
+    }
   });
 
   return app;
+};
+
+// OAuth Resource Server Info - No OAuth endpoints needed, just discovery
+const setupOAuthDiscovery = (app: Application, sessionManager: SessionManager): void => {
+  // OAuth authorization server metadata - hardcoded Google config
+  app.get('/.well-known/oauth-authorization-server', (req: Request, res: Response): void => {
+    if (sessionManager.getGoogleOAuthService().isConfigured()) {
+      res.json({
+        issuer: "https://accounts.google.com",
+        authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+        token_endpoint: "https://oauth2.googleapis.com/token",
+        jwks_uri: "https://www.googleapis.com/oauth2/v3/certs",
+        response_types_supported: ["code", "token", "id_token"],
+        grant_types_supported: ["authorization_code", "implicit", "refresh_token"],
+        scopes_supported: ["openid", "email", "profile"],
+        token_endpoint_auth_methods_supported: ["client_secret_post", "client_secret_basic", "none"],
+        code_challenge_methods_supported: ["S256", "plain"],
+        // Hardcoded redirect URIs that work with most MCP clients
+        redirect_uris_supported: [
+          "http://localhost:3000/auth/callback",
+          "http://localhost:8080/auth/callback",
+          "http://localhost:5173/auth/callback", 
+          "http://localhost:3001/auth/callback"
+        ]
+      });
+    } else {
+      res.status(503).json({
+        error: "OAuth not configured",
+        message: "Google OAuth not configured. Use LOCAL_FALCON_API_KEY for authentication."
+      });
+    }
+  });
+
+  // Legacy endpoint response
+  app.post("/register", (_req: Request, res: Response): void => {
+    res.status(501).json({ 
+      error: "Registration not supported",
+      message: "This MCP server uses Google OAuth. Register your application at https://console.cloud.google.com/"
+    });
+  });
+};
+
+// Authentication middleware
+const authenticateRequest = async (req: Request, res: Response, sessionManager: SessionManager): Promise<{ user: AuthenticatedUser; isOAuth: boolean } | null> => {
+  const { apiKey, isPro, oauthToken } = extractAuth(req);
+  
+  // Try Google OAuth first
+  if (oauthToken) {
+    const googleUser = await validateGoogleOAuthToken(oauthToken, sessionManager.getGoogleOAuthService());
+    if (googleUser) {
+      console.log(`[${new Date().toISOString()}] Google OAuth authentication successful`);
+      return { user: googleUser, isOAuth: true };
+    } else {
+      console.log(`[${new Date().toISOString()}] Google OAuth authentication failed`);
+      res.status(401).json({ 
+        error: "Invalid or expired Google OAuth token"
+      });
+      return null;
+    }
+  }
+  
+  // Fallback to legacy API key auth
+  if (validateAuth(apiKey)) {
+    const legacyUser: AuthenticatedUser = {
+      id: 'legacy-user',
+      email: 'legacy@local-falcon.com',
+      apiKey: apiKey!,
+      isPro: isPro === "true",
+      provider: 'legacy'
+    };
+    console.log(`[${new Date().toISOString()}] Legacy API key authentication successful`);
+    return { user: legacyUser, isOAuth: false };
+  }
+  
+  console.log(`[${new Date().toISOString()}] Authentication failed: no valid OAuth token or API key`);
+  res.status(401).json({ 
+    error: "Missing or invalid authentication. Provide either Authorization: Bearer <google-id-token> or LOCAL_FALCON_API_KEY", 
+    headers: req.headers, 
+    query: req.query 
+  });
+  return null;
 };
 
 // SSE Transport Handlers
@@ -135,22 +371,17 @@ const setupSSERoutes = (app: Application, sessionManager: SessionManager): void 
   // SSE endpoint for establishing streams
   const sseHandler: AsyncRequestHandler = async (req, res) => {
     console.log("Establishing SSE stream...");
-    const { apiKey, isPro } = extractAuth(req);
-
-    if (!validateAuth(apiKey)) {
-      res.status(401).json({ 
-        error: "Missing or invalid LOCAL_FALCON_API_KEY", 
-        headers: req.headers, 
-        query: req.query 
-      });
-      return;
-    }
+    
+    const authResult = await authenticateRequest(req, res, sessionManager);
+    if (!authResult) return; // Response already sent by authenticateRequest
+    
+    const { user } = authResult;
 
     try {
       const transport = new SSEServerTransport("/sse/messages", res);
       const sessionId = transport.sessionId;
 
-      sessionManager.add(sessionId, { apiKey: apiKey!, isPro: isPro === "true" }, transport);
+      sessionManager.add(sessionId, { apiKey: user.apiKey, isPro: user.isPro }, transport);
       
       transport.onclose = () => {
         console.log(`SSE transport closed for session ${sessionId}`);
@@ -230,16 +461,11 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
       } else if (!sessionId && isInitializeRequest(req.body)) {
         // New initialization request
         console.log(`New HTTP session request: ${req.body.method}`);
-        const { apiKey, isPro } = extractAuth(req);
         
-        if (!validateAuth(apiKey)) {
-          res.status(401).json({
-            error: "Missing or invalid LOCAL_FALCON_API_KEY",
-            headers: req.headers,
-            query: req.query,
-          });
-          return;
-        }
+        const authResult = await authenticateRequest(req, res, sessionManager);
+        if (!authResult) return; // Response already sent by authenticateRequest
+        
+        const { user } = authResult;
 
         const eventStore = new InMemoryEventStore();
         transport = new StreamableHTTPServerTransport({
@@ -248,7 +474,7 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
           eventStore,
           onsessioninitialized: (sessionId) => {
             console.log(`HTTP Session initialized: ${sessionId}`);
-            sessionManager.add(sessionId, { apiKey: apiKey!, isPro: isPro === "true" }, transport);
+            sessionManager.add(sessionId, { apiKey: user.apiKey, isPro: user.isPro }, transport);
           }
         });
 
@@ -389,6 +615,10 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
 const createUnifiedServer = (sessionManager: SessionManager, modes: string[]): Application => {
   const app = createBaseApp(sessionManager);
   
+  // Always set up OAuth discovery for any mode
+  console.log('Setting up OAuth discovery...');
+  setupOAuthDiscovery(app, sessionManager);
+  
   if (modes.includes('sse')) {
     console.log('Setting up SSE routes...');
     setupSSERoutes(app, sessionManager);
@@ -409,6 +639,7 @@ const startUnifiedServer = (app: Application, sessionManager: SessionManager, mo
     console.log(`Unified MCP server listening on port ${port}`);
     console.log(`Active modes: ${modes.join(', ').toUpperCase()}`);
     console.log(`Available endpoints:`);
+    console.log(`  - OAuth Discovery: GET /.well-known/openid_configuration, GET /.well-known/oauth-authorization-server`);
     if (modes.includes('sse')) {
       console.log(`  - SSE: GET /sse, POST /sse/messages`);
     }
