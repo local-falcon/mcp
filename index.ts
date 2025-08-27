@@ -38,17 +38,15 @@ class GoogleOAuthService {
   private allowedDomains: Set<string> = new Set();
 
   constructor() {
-    const clientId = process.env.GOOGLE_CLIENT_ID;
-    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
     
-    if (!clientId) {
+    if (!process.env.GOOGLE_CLIENT_ID) {
       console.warn('GOOGLE_CLIENT_ID not provided - Google OAuth will be disabled');
     }
     
     // Initialize OAuth client with both ID and secret (secret optional for ID token validation)
-    this.googleClient = new OAuth2Client(clientId, clientSecret);
+    this.googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
     
-    if (clientSecret) {
+    if (process.env.GOOGLE_CLIENT_SECRET) {
       console.log('Google OAuth configured with client secret for enhanced validation');
     } else {
       console.log('Google OAuth configured for ID token validation only');
@@ -65,6 +63,8 @@ class GoogleOAuthService {
         console.log('Google OAuth not configured - skipping token verification');
         return null;
       }
+
+      console.log(`Verifying Google token: ${token} and client id: ${process.env.GOOGLE_CLIENT_ID}`)
 
       const ticket = await this.googleClient.verifyIdToken({
         idToken: token,
@@ -89,7 +89,7 @@ class GoogleOAuthService {
         email: payload.email!,
         name: payload.name,
         apiKey: process.env.LOCAL_FALCON_API_KEY || 'default-key',
-        isPro: this.isProUser(payload.email!, payload.hd || undefined),
+        isPro: false,
         provider: 'google'
       };
 
@@ -99,22 +99,6 @@ class GoogleOAuthService {
       console.error('Google token verification error:', error);
       return null;
     }
-  }
-
-  private isProUser(email: string, domain?: string): boolean {
-    // Hardcoded pro users and domains - no need for env vars
-    const proUsers = [
-      // Add pro user emails here
-      // 'admin@yourcompany.com',
-      // 'premium@gmail.com'
-    ];
-    const proDomains = [
-      // Add pro domains here
-      // 'enterprise.com',
-      // 'yourcompany.com'
-    ];
-    
-    return proUsers.includes(email) || !!(domain && proDomains.includes(domain));
   }
 
   getGoogleAuthUrl(): string {
@@ -231,7 +215,7 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true })); // Add URL-encoded parsing for OAuth
   app.use(cors({
-    allowedHeaders: ['Content-Type', 'mcp-session-id', 'LOCAL_FALCON_API_KEY', 'is_pro', 'last-event-id'],
+    allowedHeaders: ['Content-Type', 'mcp-session-id', 'LOCAL_FALCON_API_KEY', 'is_pro', 'last-event-id', 'mcp-protocol-version', 'Authorization'],
     origin: "*",
     exposedHeaders: ['mcp-session-id'],
   }));
@@ -268,10 +252,7 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
         claims_supported: ["aud", "email", "email_verified", "exp", "family_name", "given_name", "iat", "iss", "locale", "name", "picture", "sub"],
         // Hardcoded redirect URIs that work with most MCP clients
         redirect_uris_supported: [
-          "http://localhost:3000/auth/callback",
-          "http://localhost:8080/auth/callback", 
-          "http://localhost:5173/auth/callback",
-          "http://localhost:3001/auth/callback"
+          "http://localhost:8000/callback", 
         ]
       });
     } else {
@@ -285,8 +266,88 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
   return app;
 };
 
-// OAuth Resource Server Info - No OAuth endpoints needed, just discovery
+// OAuth Resource Server Info - Includes callback handling
 const setupOAuthDiscovery = (app: Application, sessionManager: SessionManager): void => {
+  // OAuth callback route - handles the redirect from Google
+  app.get('/callback', (req: Request, res: Response): void => {
+    console.log('OAuth callback received:', req.query);
+    
+    const { code, state, error } = req.query;
+    
+    if (error) {
+      res.status(400).send(`OAuth error: ${error}`);
+      return;
+    }
+    
+    if (code) {
+      // In a full implementation, you'd exchange the code for tokens here
+      // For now, just show success and the code
+      res.send(`
+        <html>
+          <head><title>OAuth Success</title></head>
+          <body>
+            <h1>OAuth Authorization Successful!</h1>
+            <p>Authorization code received: <code>${code}</code></p>
+            <p>State: <code>${state || 'none'}</code></p>
+            <p>Your MCP client should now have received the necessary tokens.</p>
+            <script>
+              // Auto-close the window after a few seconds
+              setTimeout(() => {
+                window.close();
+              }, 3000);
+            </script>
+          </body>
+        </html>
+      `);
+    } else {
+      res.status(400).send('OAuth callback missing authorization code');
+    }
+  });
+
+  // OAuth Protected Resource metadata endpoint - MCP specific
+  app.get('/.well-known/oauth-protected-resource', (req: Request, res: Response): void => {
+    if (sessionManager.getGoogleOAuthService().isConfigured()) {
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      res.json({
+        resource: baseUrl,
+        authorization_servers: ["https://accounts.google.com"],
+        scopes_supported: ["openid", "email", "profile"],
+        bearer_methods_supported: ["header"],
+        resource_documentation: `${baseUrl}/mcp`,
+        // MCP specific metadata
+        mcp_versions_supported: ["2024-11-05", "2025-06-18"],
+        transport_types_supported: ["http", "sse"]
+      });
+    } else {
+      res.status(503).json({
+        error: "OAuth not configured",
+        message: "Google OAuth not configured. Use LOCAL_FALCON_API_KEY for authentication."
+      });
+    }
+  });
+
+  // MCP specific protected resource endpoint
+  app.get('/.well-known/oauth-protected-resource/mcp', (req: Request, res: Response): void => {
+    if (sessionManager.getGoogleOAuthService().isConfigured()) {
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      res.json({
+        resource: `${baseUrl}/mcp`,
+        authorization_servers: ["https://accounts.google.com"],
+        scopes_required: ["openid", "email"],
+        bearer_methods_supported: ["header"],
+        // MCP specific fields
+        mcp_endpoint: `${baseUrl}/mcp`,
+        mcp_versions_supported: ["2024-11-05", "2025-06-18"],
+        transport_types_supported: ["http", "sse"]
+      });
+    } else {
+      res.status(503).json({
+        error: "OAuth not configured", 
+        message: "Google OAuth not configured. Use LOCAL_FALCON_API_KEY for authentication."
+      });
+    }
+  });
+
   // OAuth authorization server metadata - hardcoded Google config
   app.get('/.well-known/oauth-authorization-server', (req: Request, res: Response): void => {
     if (sessionManager.getGoogleOAuthService().isConfigured()) {
@@ -302,10 +363,7 @@ const setupOAuthDiscovery = (app: Application, sessionManager: SessionManager): 
         code_challenge_methods_supported: ["S256", "plain"],
         // Hardcoded redirect URIs that work with most MCP clients
         redirect_uris_supported: [
-          "http://localhost:3000/auth/callback",
-          "http://localhost:8080/auth/callback",
-          "http://localhost:5173/auth/callback", 
-          "http://localhost:3001/auth/callback"
+          "http://localhost:8000/callback"
         ]
       });
     } else {
@@ -639,7 +697,9 @@ const startUnifiedServer = (app: Application, sessionManager: SessionManager, mo
     console.log(`Unified MCP server listening on port ${port}`);
     console.log(`Active modes: ${modes.join(', ').toUpperCase()}`);
     console.log(`Available endpoints:`);
-    console.log(`  - OAuth Discovery: GET /.well-known/openid_configuration, GET /.well-known/oauth-authorization-server`);
+    console.log(`  - OAuth: GET /callback, GET /.well-known/openid_configuration`);
+    console.log(`  - OAuth: GET /.well-known/oauth-authorization-server, GET /.well-known/oauth-protected-resource`);
+    console.log(`  - OAuth: GET /.well-known/oauth-protected-resource/mcp`);
     if (modes.includes('sse')) {
       console.log(`  - SSE: GET /sse, POST /sse/messages`);
     }
