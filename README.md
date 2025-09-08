@@ -2,6 +2,10 @@
 
 An MCP (Model Context Protocol) server for the [Local Falcon API](https://www.localfalcon.com/), implemented in TypeScript, using the official MCP SDK. This server exposes Local Falcon reporting capabilities as MCP tools, enabling integration with agentic AI systems and workflows.
 
+<a href="https://glama.ai/mcp/servers/@local-falcon/mcp">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@local-falcon/mcp/badge" alt="Local Falcon Server MCP server" />
+</a>
+
 ---
 
 ## Prerequisites
