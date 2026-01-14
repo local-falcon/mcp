@@ -249,13 +249,22 @@ async function safeParseJson(response: any) {
  * @param {string} apiKey - Your Local Falcon API key
  * @param {string} limit - Maximum number of results to return
  * @param {string} nextToken - Optional pagination token for additional results
+ * @param {string} startDate - Optional start date to filter reports (format: YYYY-MM-DD)
+ * @param {string} endDate - Optional end date to filter reports (format: YYYY-MM-DD)
  * @returns {Promise<LocalFalconReportsResponse>} API response
  */
-export async function fetchLocalFalconReports(apiKey: string, limit: string, nextToken?: string) {
+export async function fetchLocalFalconReports(apiKey: string, limit: string, nextToken?: string, startDate?: string, endDate?: string, placeId?: string, keyword?: string, gridSize?: string, campaignKey?: string, platform?: string) {
   const url = new URL(`${API_BASE}/reports`);
   url.searchParams.set("api_key", apiKey);
   url.searchParams.set("limit", limit);
   if (nextToken) url.searchParams.set("next_token", nextToken);
+  if (startDate) url.searchParams.set("start_date", startDate);
+  if (endDate) url.searchParams.set("end_date", endDate);
+  if (placeId) url.searchParams.set("place_id", placeId);
+  if (keyword) url.searchParams.set("keyword", keyword); 
+  if (gridSize) url.searchParams.set("grid_size", gridSize);
+  if (campaignKey) url.searchParams.set("campaign_key", campaignKey);
+  if (platform) url.searchParams.set("platform", platform);
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -293,13 +302,16 @@ export async function fetchLocalFalconReports(apiKey: string, limit: string, nex
  * @param {string} keyword - Optional keyword to filter by
  * @returns {Promise<LocalFalconTrendReportsResponse>} API response
  */
-export async function fetchLocalFalconTrendReports(apiKey: string, limit: string, nextToken?: string, placeId?: string, keyword?: string) {
+export async function fetchLocalFalconTrendReports(apiKey: string, limit: string, nextToken?: string, placeId?: string, keyword?: string, startDate?: string, endDate?: string, platform?: string ) {
   const url = new URL(`${API_BASE}/trend-reports`);
   url.searchParams.set("api_key", apiKey);
   url.searchParams.set("limit", limit);
   if (nextToken) url.searchParams.set("next_token", nextToken);
   if (placeId) url.searchParams.set("place_id", placeId);
   if (keyword) url.searchParams.set("keyword", keyword);
+  if (startDate) url.searchParams.set("start_date", startDate);
+  if (endDate) url.searchParams.set("end_date", endDate);
+  if (platform) url.searchParams.set("platform", platform);  
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -339,7 +351,7 @@ export async function fetchLocalFalconTrendReports(apiKey: string, limit: string
  * @param {string} status - Optional status filter
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconAutoScans(apiKey: string, nextToken?: string, placeId?: string, keyword?: string, grid_size?: string, frequency?: string, status?: string) {
+export async function fetchLocalFalconAutoScans(apiKey: string, nextToken?: string, placeId?: string, keyword?: string, grid_size?: string, frequency?: string, status?: string, platform?: string) {
   const url = new URL(`${API_BASE}/autoscans`);
   url.searchParams.set("api_key", apiKey);
 
@@ -349,6 +361,7 @@ export async function fetchLocalFalconAutoScans(apiKey: string, nextToken?: stri
   if (grid_size) url.searchParams.set("grid_size", grid_size);
   if (frequency) url.searchParams.set("frequency", frequency);
   if (status) url.searchParams.set("status", status);
+  if (platform) url.searchParams.set("platform", platform);
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -376,13 +389,15 @@ export async function fetchLocalFalconAutoScans(apiKey: string, nextToken?: stri
  * @param {string} nextToken - Optional pagination token
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconLocationReports(apiKey: string, limit: string, placeId?: string, keyword?: string, nextToken?: string) {
+export async function fetchLocalFalconLocationReports(apiKey: string, limit: string, placeId?: string, keyword?: string, startDate?:string, endDate?: string, nextToken?: string) {
   const url = new URL(`${API_BASE}/location-reports`);
   url.searchParams.set("api_key", apiKey);
   url.searchParams.set("limit", limit);
 
   if (placeId) url.searchParams.set("place_id", placeId);
   if (keyword) url.searchParams.set("keyword", keyword);
+  if (startDate) url.searchParams.set("start_date", startDate);
+  if (endDate) url.searchParams.set("end_date", endDate); 
   if (nextToken) url.searchParams.set("next_token", nextToken);
 
   await rateLimiter.waitForAvailableSlot();
@@ -635,12 +650,14 @@ export async function fetchLocalFalconTrendReport(apiKey: string, reportKey: str
  * @param {string} keyword - Optional keyword filter
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconKeywordReports(apiKey: string, limit: string, nextToken?: string, keyword?: string) {
+export async function fetchLocalFalconKeywordReports(apiKey: string, limit: string, nextToken?: string, keyword?: string, startDate?: string, endDate?: string) {
   const url = new URL(`${API_BASE}/keyword-reports`);
   url.searchParams.set("api_key", apiKey);
   url.searchParams.set("limit", limit);
 
   if (nextToken) url.searchParams.set("next_token", nextToken);
+  if (startDate) url.searchParams.set("start_date", startDate);
+  if (endDate) url.searchParams.set("end_date", endDate);
   if (keyword) url.searchParams.set("keyword", keyword);
 
   await rateLimiter.waitForAvailableSlot();
@@ -1063,7 +1080,7 @@ export async function fetchLocalFalconCompetitorReport(apiKey: string, reportKey
  * @param {string} nextToken - Optional pagination token
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconCampaignReports(apiKey: string, limit: string, startDate?: string, endDate?: string, placeId?: string, nextToken?: string) {
+export async function fetchLocalFalconCampaignReports(apiKey: string, limit: string, startDate?: string, endDate?: string, placeId?: string, runDate?: string, nextToken?: string) {
   const url = new URL(`${API_BASE}/campaigns`);
   url.searchParams.set("api_key", apiKey);
   url.searchParams.set("limit", limit);
@@ -1071,6 +1088,7 @@ export async function fetchLocalFalconCampaignReports(apiKey: string, limit: str
   if (startDate) url.searchParams.set("start_date", startDate);
   if (endDate) url.searchParams.set("end_date", endDate);
   if (placeId) url.searchParams.set("place_id", placeId);
+  if (runDate) url.searchParams.set("run", runDate);
   if (nextToken) url.searchParams.set("next_token", nextToken);
 
   await rateLimiter.waitForAvailableSlot();
@@ -1121,7 +1139,7 @@ export async function fetchLocalFalconCampaignReports(apiKey: string, limit: str
  * @param {string} reportKey - Report key
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconCampaignReport(apiKey: string, reportKey: string) {
+export async function fetchLocalFalconCampaignReport(apiKey: string, reportKey: string, runDate:string) {
   // Clean up the report key if it's a URL
   const cleanReportKey = reportKey.includes('/')
     ? reportKey.split('/').pop()
@@ -1129,6 +1147,8 @@ export async function fetchLocalFalconCampaignReport(apiKey: string, reportKey: 
 
   const url = new URL(`${API_BASE}/campaigns/${cleanReportKey}`);
   url.searchParams.set("api_key", apiKey);
+
+  if (runDate) url.searchParams.set("run", runDate);
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -1155,14 +1175,15 @@ export async function fetchLocalFalconCampaignReport(apiKey: string, reportKey: 
  * @param {string} endDate - Optional end date filter
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconGuardReports(apiKey: string, limit: string, startDate?: string, endDate?: string) {
+export async function fetchLocalFalconGuardReports(apiKey: string, limit: string, startDate?: string, endDate?: string, status?: string, nextToken?: string) {
   const url = new URL(`${API_BASE}/guard`);
   url.searchParams.set("api_key", apiKey);
   url.searchParams.set("limit", limit);
 
   if (startDate) url.searchParams.set("start_date", startDate);
   if (endDate) url.searchParams.set("end_date", endDate);
-
+  if (status) url.searchParams.set("status", status);
+  if (nextToken) url.searchParams.set("next_token", nextToken);
   await rateLimiter.waitForAvailableSlot();
 
   return withRetry(async () => {
@@ -1436,6 +1457,495 @@ export async function fetchLocalFalconAccountInfo(
     return data;
   } catch (error) {
     console.error('Error fetching account information:', error);
+    throw error;
+  }
+}
+
+export async function addLocationsToFalconGuard(
+  apiKey: string,
+  placeIds: string
+): Promise<any> {
+  try {
+    await rateLimiter.waitForAvailableSlot();
+    const form = new FormData();
+    form.append('api_key', apiKey);
+    form.append('place_id', placeIds);
+
+    const response = await withRetry(async () => {
+      return await fetchWithTimeout(
+        `${API_BASE_V2}/guard/add`,
+        {
+          method: 'POST',
+          body: form,
+        },
+        DEFAULT_TIMEOUT_MS
+      );
+    });
+
+    const data = await safeParseJson(response);
+
+    if (!response.ok) {
+      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error adding locations to Falcon Guard:', error);
+    throw error;
+  }
+}
+
+/**
+ * Pauses protection for one or multiple locations in Falcon Guard.
+ * @param {string} apiKey - Your Local Falcon API key
+ * @param {string} [guardKey] - Falcon Guard report key(s), separated by commas
+ * @param {string} [placeId] - Google Place ID(s), separated by commas (required if guardKey is blank)
+ * @returns {Promise<any>} API response
+ */
+export async function pauseFalconGuardProtection(
+  apiKey: string,
+  guardKey?: string,
+  placeId?: string
+): Promise<any> {
+  try {
+    await rateLimiter.waitForAvailableSlot();
+    const form = new FormData();
+    form.append('api_key', apiKey);
+    if (guardKey) form.append('guard_key', guardKey);
+    if (placeId) form.append('place_id', placeId);
+
+    const response = await withRetry(async () => {
+      return await fetchWithTimeout(
+        `${API_BASE_V2}/guard/pause`,
+        {
+          method: 'POST',
+          body: form,
+        },
+        DEFAULT_TIMEOUT_MS
+      );
+    });
+
+    const data = await safeParseJson(response);
+
+    if (!response.ok) {
+      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error pausing Falcon Guard protection:', error);
+    throw error;
+  }
+}
+
+/**
+ * Resumes protection for one or multiple locations in Falcon Guard.
+ * @param {string} apiKey - Your Local Falcon API key
+ * @param {string} [guardKey] - Falcon Guard report key(s), separated by commas
+ * @param {string} [placeId] - Google Place ID(s), separated by commas (required if guardKey is blank)
+ * @returns {Promise<any>} API response
+ */
+export async function resumeFalconGuardProtection(
+  apiKey: string,
+  guardKey?: string,
+  placeId?: string
+): Promise<any> {
+  try {
+    await rateLimiter.waitForAvailableSlot();
+    const form = new FormData();
+    form.append('api_key', apiKey);
+    if (guardKey) form.append('guard_key', guardKey);
+    if (placeId) form.append('place_id', placeId);
+
+    const response = await withRetry(async () => {
+      return await fetchWithTimeout(
+        `${API_BASE_V2}/guard/resume`,
+        {
+          method: 'POST',
+          body: form,
+        },
+        DEFAULT_TIMEOUT_MS
+      );
+    });
+
+    const data = await safeParseJson(response);
+
+    if (!response.ok) {
+      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error resuming Falcon Guard protection:', error);
+    throw error;
+  }
+}
+
+/**
+ * Removes protection for one or multiple locations from Falcon Guard.
+ * @param {string} apiKey - Your Local Falcon API key
+ * @param {string} [guardKey] - Falcon Guard report key(s), separated by commas
+ * @param {string} [placeId] - Google Place ID(s), separated by commas (required if guardKey is blank)
+ * @returns {Promise<any>} API response
+ */
+export async function removeFalconGuardProtection(
+  apiKey: string,
+  guardKey?: string,
+  placeId?: string
+): Promise<any> {
+  try {
+    await rateLimiter.waitForAvailableSlot();
+    const form = new FormData();
+    form.append('api_key', apiKey);
+    if (guardKey) form.append('guard_key', guardKey);
+    if (placeId) form.append('place_id', placeId);
+
+    const response = await withRetry(async () => {
+      return await fetchWithTimeout(
+        `${API_BASE_V2}/guard/delete`,
+        {
+          method: 'POST',
+          body: form,
+        },
+        DEFAULT_TIMEOUT_MS
+      );
+    });
+
+    const data = await safeParseJson(response);
+
+    if (!response.ok) {
+      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error removing Falcon Guard protection:', error);
+    throw error;
+  }
+}
+
+/**
+ * Creates a new campaign in Local Falcon.
+ * @param {string} apiKey - Your Local Falcon API key
+ * @param {object} params - Campaign parameters
+ * @returns {Promise<any>} API response
+ */
+export async function createLocalFalconCampaign(
+  apiKey: string,
+  params: {
+    name: string;
+    measurement: 'mi' | 'km';
+    gridSize: string;
+    radius: string;
+    frequency: 'one-time' | 'daily' | 'weekly' | 'biweekly' | 'monthly';
+    placeId: string;
+    keyword: string;
+    startDate: string;
+    startTime: string;
+    aiAnalysis?: boolean;
+    notify?: boolean;
+    emailRecipients?: string;
+    emailSubject?: string;
+    emailBody?: string;
+  }
+): Promise<any> {
+  try {
+    await rateLimiter.waitForAvailableSlot();
+    const form = new FormData();
+    form.append('api_key', apiKey);
+    form.append('name', params.name);
+    form.append('measurement', params.measurement);
+    form.append('grid_size', params.gridSize);
+    form.append('radius', params.radius);
+    form.append('frequency', params.frequency);
+    form.append('place_id', params.placeId);
+    form.append('keyword', params.keyword);
+    form.append('start_date', params.startDate);
+    form.append('start_time', params.startTime);
+    if (params.aiAnalysis !== undefined) form.append('ai_analysis', params.aiAnalysis ? '1' : '0');
+    if (params.notify !== undefined) form.append('notify', params.notify ? '1' : '0');
+    if (params.emailRecipients) form.append('email_recipients', params.emailRecipients);
+    if (params.emailSubject) form.append('email_subject', params.emailSubject);
+    if (params.emailBody) form.append('email_body', params.emailBody);
+
+    const response = await withRetry(async () => {
+      return await fetchWithTimeout(
+        `${API_BASE_V2}/campaigns/create`,
+        {
+          method: 'POST',
+          body: form,
+        },
+        DEFAULT_TIMEOUT_MS
+      );
+    });
+
+    const data = await safeParseJson(response);
+
+    if (!response.ok) {
+      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error creating campaign:', error);
+    throw error;
+  }
+}
+
+/**
+ * Manually triggers a campaign to run immediately.
+ * @param {string} apiKey - Your Local Falcon API key
+ * @param {string} campaignKey - The key of the campaign to run
+ * @returns {Promise<any>} API response
+ */
+export async function runLocalFalconCampaign(
+  apiKey: string,
+  campaignKey: string
+): Promise<any> {
+  try {
+    await rateLimiter.waitForAvailableSlot();
+    const form = new FormData();
+    form.append('api_key', apiKey);
+    form.append('campaign_key', campaignKey);
+
+    const response = await withRetry(async () => {
+      return await fetchWithTimeout(
+        `${API_BASE_V2}/campaigns/run`,
+        {
+          method: 'POST',
+          body: form,
+        },
+        LONG_OPERATION_TIMEOUT_MS
+      );
+    });
+
+    const data = await safeParseJson(response);
+
+    if (!response.ok) {
+      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error running campaign:', error);
+    throw error;
+  }
+}
+
+/**
+ * Pauses a campaign.
+ * @param {string} apiKey - Your Local Falcon API key
+ * @param {string} campaignKey - The key of the campaign to pause
+ * @returns {Promise<any>} API response
+ */
+export async function pauseLocalFalconCampaign(
+  apiKey: string,
+  campaignKey: string
+): Promise<any> {
+  try {
+    await rateLimiter.waitForAvailableSlot();
+    const form = new FormData();
+    form.append('api_key', apiKey);
+    form.append('campaign_key', campaignKey);
+
+    const response = await withRetry(async () => {
+      return await fetchWithTimeout(
+        `${API_BASE_V2}/campaigns/pause`,
+        {
+          method: 'POST',
+          body: form,
+        },
+        DEFAULT_TIMEOUT_MS
+      );
+    });
+
+    const data = await safeParseJson(response);
+
+    if (!response.ok) {
+      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error pausing campaign:', error);
+    throw error;
+  }
+}
+
+/**
+ * Resumes a campaign from a deactivated or paused status.
+ * @param {string} apiKey - Your Local Falcon API key
+ * @param {string} campaignKey - The key of the campaign to resume
+ * @param {string} [startDate] - Optional date to resume and run the campaign (MM/DD/YYYY)
+ * @param {string} [startTime] - Optional time of day the campaign should next run (e.g., "9:00 AM")
+ * @returns {Promise<any>} API response
+ */
+export async function resumeLocalFalconCampaign(
+  apiKey: string,
+  campaignKey: string,
+  startDate?: string,
+  startTime?: string
+): Promise<any> {
+  try {
+    await rateLimiter.waitForAvailableSlot();
+    const form = new FormData();
+    form.append('api_key', apiKey);
+    form.append('campaign_key', campaignKey);
+    if (startDate) form.append('start_date', startDate);
+    if (startTime) form.append('start_time', startTime);
+
+    const response = await withRetry(async () => {
+      return await fetchWithTimeout(
+        `${API_BASE_V2}/campaigns/resume`,
+        {
+          method: 'POST',
+          body: form,
+        },
+        DEFAULT_TIMEOUT_MS
+      );
+    });
+
+    const data = await safeParseJson(response);
+
+    if (!response.ok) {
+      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error resuming campaign:', error);
+    throw error;
+  }
+}
+
+/**
+ * Reactivates a campaign that was deactivated due to insufficient credits.
+ * @param {string} apiKey - Your Local Falcon API key
+ * @param {string} campaignKey - The key of the campaign to reactivate
+ * @returns {Promise<any>} API response
+ */
+export async function reactivateLocalFalconCampaign(
+  apiKey: string,
+  campaignKey: string
+): Promise<any> {
+  try {
+    await rateLimiter.waitForAvailableSlot();
+    const form = new FormData();
+    form.append('api_key', apiKey);
+    form.append('campaign_key', campaignKey);
+
+    const response = await withRetry(async () => {
+      return await fetchWithTimeout(
+        `${API_BASE_V2}/campaigns/reactivate`,
+        {
+          method: 'POST',
+          body: form,
+        },
+        DEFAULT_TIMEOUT_MS
+      );
+    });
+
+    const data = await safeParseJson(response);
+
+    if (!response.ok) {
+      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error reactivating campaign:', error);
+    throw error;
+  }
+}
+
+/**
+ * Retrieves the full list of all Reviews Analysis Reports.
+ * @param {string} apiKey - Your Local Falcon API key
+ * @param {string} [reviewsKey] - Filter by parent Reviews Analysis record key
+ * @param {string} [placeId] - Filter by platform Place ID(s), comma-separated
+ * @param {string} [frequency] - Filter by analysis frequency
+ * @param {number} [limit] - Number of results (1-100, defaults to 10)
+ * @param {string} [nextToken] - Pagination token for next page
+ * @returns {Promise<any>} API response
+ */
+export async function fetchLocalFalconReviewsAnalysisReports(
+  apiKey: string,
+  reviewsKey?: string,
+  placeId?: string,
+  frequency?: string,
+  limit?: number,
+  nextToken?: string
+): Promise<any> {
+  try {
+    await rateLimiter.waitForAvailableSlot();
+    const form = new FormData();
+    form.append('api_key', apiKey);
+    if (reviewsKey) form.append('reviews_key', reviewsKey);
+    if (placeId) form.append('place_id', placeId);
+    if (frequency) form.append('frequency', frequency);
+    if (limit !== undefined) form.append('limit', limit.toString());
+    if (nextToken) form.append('next_token', nextToken);
+
+    const response = await withRetry(async () => {
+      return await fetchWithTimeout(
+        `${API_BASE}/reviews/`,
+        {
+          method: 'POST',
+          body: form,
+        },
+        DEFAULT_TIMEOUT_MS
+      );
+    });
+
+    const data = await safeParseJson(response);
+
+    if (!response.ok) {
+      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error fetching reviews analysis reports:', error);
+    throw error;
+  }
+}
+
+/**
+ * Retrieves a specific Reviews Analysis Report.
+ * @param {string} apiKey - Your Local Falcon API key
+ * @param {string} reportKey - The key of the report to retrieve
+ * @returns {Promise<any>} API response
+ */
+export async function fetchLocalFalconReviewsAnalysisReport(
+  apiKey: string,
+  reportKey: string
+): Promise<any> {
+  try {
+    await rateLimiter.waitForAvailableSlot();
+    const form = new FormData();
+    form.append('api_key', apiKey);
+    form.append('report_key', reportKey);
+
+    const response = await withRetry(async () => {
+      return await fetchWithTimeout(
+        `${API_BASE}/reviews/${reportKey}`,
+        {
+          method: 'POST',
+          body: form,
+        },
+        DEFAULT_TIMEOUT_MS
+      );
+    });
+
+    const data = await safeParseJson(response);
+
+    if (!response.ok) {
+      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error fetching reviews analysis report:', error);
     throw error;
   }
 }

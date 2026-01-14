@@ -137,31 +137,65 @@ If connecting to Claude integrations:
 2. add the following url: https://mcp.localfalcon.com/mcp?local_falcon_api_key=YOUR_API_KEY_HERE
 
 ## Tools List
-* listLocalFalconScanReports: Retrieves a list of all Scan Reports performed by your Local Falcon account.
-* listLocalFalconTrendReports: Retrieves a list of all Trend Reports performed by your Local Falcon account.
-* listLocalFalconAutoScans: Retrieves a list of all Auto Scans.
-* listAllLocalFalconLocations: Retrieves a list of all locations.
-* listLocalFalconLocationReports: Retrieves a list of all location reports.
-* getLocalFalconLocationReport: Retrieves a single location report. A location report looks like https://www.localfalcon.com/reports/location/view/c60c325a8665c4a where c60c325a8665c4a is the report key.
-* getLocalFalconReport: Retrieves a single Local Falcon scan report given a report key. Only reads the ai analysis of the returned report. Otherwise report the ai analysis is not present. Users can also enter the report key in the format of https://www.localfalcon.com/reports/view/0b38313fa35c37f where 0b38313fa35c37f is the report key.
-* getLocalFalconTrendReport: Retrieves a single Local Falcon trend report. A trend report looks like https://www.localfalcon.com/reports/trend/view/95290829819f6e8 where 95290829819f6e8 is the report key.
-* listLocalFalconKeywordReports: Retrieves a list of all keyword reports. A keyword report looks like https://www.localfalcon.com/reports/keyword/view/754ffcb0f309938 where 754ffcb0f309938 is the report key.
-* getLocalFalconKeywordReport: Retrieves a single Local Falcon keyword report.
-* getLocalFalconGrid: A helper method to create a Local Falcon grid.
-* getLocalFalconGoogleBusinessLocations: Fetches Local Falcon Google Business locations.
-* getLocalFalconRankingAtCoordinate: Retrieves search results at the specified coordinate point and gets ranking data for specified business.
-* getLocalFalconKeywordAtCoordinate: Retrieves search results at the specified coordinate point without any rank comparison data.
-* getLocalFalconCompetitorReports: Retrieves a list of all Competitor Reports within your Local Falcon account.
-* getLocalFalconCompetitorReport: Retrieves up to 20 competitor businesses from a specific Competitor Report from your Local Falcon account.
-* listLocalFalconCampaignReports: Retrieves a list of all Location Reports within your Local Falcon account.
-* getLocalFalconCampaignReport: Retrieves a full report of a Campaign from your Local Falcon account.
-* listLocalFalconGuardReports: Retrieves a list of all Falcon Guard Reports within your Local Falcon account.
-* getLocalFalconGuardReport: Retrieves a full report of a Falcon Guard Report from your Local Falcon account given a place_id.
 
-* runLocalFalconScan: Retrieves a full grid search using the passed keyword or search term to match against the specified business.
-* searchForLocalFalconBusinessLocation: Searches for business locations on the specified platform.
-* saveLocalFalconBusinessLocationToAccount: Saves a business location to your account.
-* fetchLocalFalconAccountInfo: Retrieves Local Falcon account information.
+### Scan Reports
+* **listLocalFalconScanReports**: Lists all existing scan reports. Check here first before running new scans to avoid duplicates.
+* **getLocalFalconReport**: Retrieves a specific scan report by report key (e.g., `https://www.localfalcon.com/reports/view/XXXXX`).
+* **runLocalFalconScan**: Runs a new scan at the specified coordinates to get ranking data for a business.
+
+### Campaign Management
+* **listLocalFalconCampaignReports**: Lists all campaign reports. Campaigns track rankings at scale with scheduled scans.
+* **getLocalFalconCampaignReport**: Retrieves a specific campaign report (e.g., `https://www.localfalcon.com/campaigns/view/XXXXX`).
+* **createLocalFalconCampaign**: Creates a new campaign with scheduled recurring scans.
+* **runLocalFalconCampaign**: Manually triggers a campaign to run immediately.
+* **pauseLocalFalconCampaign**: Pauses a campaign's scheduled runs.
+* **resumeLocalFalconCampaign**: Resumes a paused campaign.
+* **reactivateLocalFalconCampaign**: Reactivates a campaign deactivated due to insufficient credits.
+
+### Reviews Analysis
+* **listLocalFalconReviewsAnalysisReports**: Lists all Reviews Analysis reports with AI-powered review insights.
+* **getLocalFalconReviewsAnalysisReport**: Retrieves a specific Reviews Analysis report.
+
+### Falcon Guard (GBP Monitoring)
+* **listLocalFalconGuardReports**: Lists Falcon Guard reports for monitored locations.
+* **getLocalFalconGuardReport**: Retrieves a specific Falcon Guard report by place_id.
+* **addLocationsToFalconGuard**: Adds locations to Falcon Guard protection.
+* **pauseFalconGuardProtection**: Pauses protection for specified locations.
+* **resumeFalconGuardProtection**: Resumes protection for paused locations.
+* **removeFalconGuardProtection**: Removes locations from Falcon Guard entirely.
+
+### Trend Reports
+* **listLocalFalconTrendReports**: Lists auto-generated trend reports showing ranking changes over time.
+* **getLocalFalconTrendReport**: Retrieves a specific trend report (e.g., `https://www.localfalcon.com/reports/trend/view/XXXXX`).
+
+### Auto Scans
+* **listLocalFalconAutoScans**: Lists individually scheduled automatic scans (not campaign-based).
+
+### Location Reports
+* **listLocalFalconLocationReports**: Lists auto-generated reports aggregating scans for specific locations.
+* **getLocalFalconLocationReport**: Retrieves a specific location report (e.g., `https://www.localfalcon.com/reports/location/view/XXXXX`).
+
+### Keyword Reports
+* **listLocalFalconKeywordReports**: Lists auto-generated reports aggregating scans for specific keywords.
+* **getLocalFalconKeywordReport**: Retrieves a specific keyword report (e.g., `https://www.localfalcon.com/reports/keyword/view/XXXXX`).
+
+### Competitor Reports
+* **getLocalFalconCompetitorReports**: Lists auto-generated competitor analysis reports.
+* **getLocalFalconCompetitorReport**: Retrieves a specific competitor report (e.g., `https://www.localfalcon.com/reports/competitor/view/XXXXX`).
+
+### Location Management
+* **listAllLocalFalconLocations**: Lists all business locations saved in your account.
+* **getLocalFalconGoogleBusinessLocations**: Searches Google for business listings to find Place IDs.
+* **searchForLocalFalconBusinessLocation**: Searches for business locations on Google or Apple platforms.
+* **saveLocalFalconBusinessLocationToAccount**: Saves a business location to your account.
+
+### On-Demand Tools
+* **getLocalFalconGrid**: Helper tool that generates grid coordinates for single-point checks.
+* **getLocalFalconRankingAtCoordinate**: Single-point ranking check at one coordinate.
+* **getLocalFalconKeywordAtCoordinate**: Single-point keyword search at one coordinate.
+
+### Account
+* **viewLocalFalconAccountInformation**: Retrieves account info including user, credits, and subscription details.
 ---
 
 ## For developers

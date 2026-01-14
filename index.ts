@@ -438,7 +438,9 @@ const startUnifiedServer = (app: Application, sessionManager: SessionManager, mo
 };
 
 const startStdioServer = (): void => {
-  console.log("Starting STDIO server...");
+  // Note: In STDIO mode, stdout is reserved for JSON-RPC messages only.
+  // Use stderr for logging to avoid breaking the protocol.
+  console.error("Starting STDIO server...");
   const transport = new StdioServerTransport();
   const server = getServer(new Map<string, SessionData>());
 
@@ -457,7 +459,7 @@ const startStdioServer = (): void => {
     process.exit(1);
   });
 
-  console.log("STDIO server started successfully");
+  console.error("STDIO server started successfully");
 };
 
 // Main Execution
