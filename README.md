@@ -63,12 +63,13 @@ For all platforms use the following format:
       "command": "npx",
       "args": [
         "mcp-remote",
-        "https://mcp.localfalcon.com/sse?local_falcon_api_key=INSERT_YOUR_API_KEY_HERE"
+        "https://mcp.localfalcon.com/mcp?local_falcon_api_key=INSERT_YOUR_API_KEY_HERE"
       ]
     }
   }
 }
 ```
+** The /sse option is now considered legacy and may be removed in a future version
 
 ## Pro Users
 
@@ -81,12 +82,13 @@ For Claude Max/Team users you unlock a greater MCP tool call limit. This must be
       "command": "npx",
       "args": [
         "mcp-remote",
-        "https://mcp.localfalcon.com/sse?local_falcon_api_key=INSERT_YOUR_API_KEY_HERE&is_pro=true"
+        "https://mcp.localfalcon.com/mcp?local_falcon_api_key=INSERT_YOUR_API_KEY_HERE&is_pro=true"
       ]
     }
   }
 }
 ```
+** The /sse option is now considered legacy and may be removed in a future version
 
 ## Running via HTTP
 
