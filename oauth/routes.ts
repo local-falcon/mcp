@@ -120,6 +120,17 @@ async function handleCallback(req: Request, res: Response): Promise<void> {
 
     console.log("[OAuth] Token exchange successful, API key received");
 
+    // Store API key in secure HTTP-only cookie for automatic MCP authentication
+    res.cookie("local_falcon_api_key", apiKey, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      path: "/",
+    });
+
+    console.log("[OAuth] API key stored in cookie for automatic MCP authentication");
+
     // Return success page with API key
     res.status(200).send(generateSuccessPage(apiKey));
   } catch (error) {

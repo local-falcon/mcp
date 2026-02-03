@@ -3,6 +3,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import dotenv from "dotenv";
 import express, { Application, Request, Response, RequestHandler } from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import { v4 as uuidv4 } from "uuid";
 import { getServer } from "./server.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -75,12 +76,17 @@ class SessionManager {
 
 // Authentication Utilities
 const extractAuth = (req: Request): { apiKey?: string; isPro?: string } => {
+  // Check headers, query params, and cookies (in order of priority)
   const apiKey = (req.headers["local_falcon_api_key"] as string | undefined) ??
-    (req.query["local_falcon_api_key"] as string | undefined);
+    (req.query["local_falcon_api_key"] as string | undefined) ??
+    (req.cookies?.["local_falcon_api_key"] as string | undefined);
   const isPro = (req.headers["is_pro"] as string | undefined) ??
     (req.query["is_pro"] as string | undefined);
+  const source = req.headers["local_falcon_api_key"] ? "header" :
+    req.query["local_falcon_api_key"] ? "query" :
+    req.cookies?.["local_falcon_api_key"] ? "cookie" : "none";
   console.log(`[${new Date().toISOString()}] Extracted auth - Method: ${req.method}, URL: ${req.url}, ` +
-    `apiKey: ${apiKey ? `"${apiKey}"` : "missing"}, isPro: ${isPro || "not provided"}`);
+    `apiKey: ${apiKey ? `"${apiKey.substring(0, 8)}..."` : "missing"}, source: ${source}, isPro: ${isPro || "not provided"}`);
   return { apiKey, isPro };
 };
 
@@ -94,6 +100,7 @@ const validateAuth = (apiKey?: string): boolean => {
 const createBaseApp = (sessionManager: SessionManager): Application => {
   const app = express();
   app.use(express.json());
+  app.use(cookieParser());
   app.use(cors({
     allowedHeaders: ['Content-Type', 'mcp-session-id', 'LOCAL_FALCON_API_KEY', 'is_pro', 'last-event-id'],
     origin: "*",
