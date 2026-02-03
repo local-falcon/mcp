@@ -50,10 +50,18 @@ export async function exchangeCodeForToken(
     client_secret: OAUTH_CONFIG.clientSecret,
   });
 
+  // Create Basic auth header for client credentials
+  const basicAuth = Buffer.from(
+    `${OAUTH_CONFIG.clientId}:${OAUTH_CONFIG.clientSecret}`
+  ).toString("base64");
+
   console.log("[OAuth] Token exchange request:", {
     url: OAUTH_CONFIG.tokenUrl,
     redirect_uri: redirectUri,
     grant_type: OAUTH_CONFIG.grantType,
+    client_id: OAUTH_CONFIG.clientId,
+    client_secret: OAUTH_CONFIG.clientSecret ? "[SET]" : "[MISSING]",
+    body: body.toString(),
   });
 
   const response = await fetch(OAUTH_CONFIG.tokenUrl, {
@@ -61,6 +69,7 @@ export async function exchangeCodeForToken(
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
       Accept: "application/json",
+      Authorization: `Basic ${basicAuth}`,
     },
     body: body.toString(),
   });
