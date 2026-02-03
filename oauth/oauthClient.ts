@@ -50,6 +50,12 @@ export async function exchangeCodeForToken(
     client_secret: OAUTH_CONFIG.clientSecret,
   });
 
+  console.log("[OAuth] Token exchange request:", {
+    url: OAUTH_CONFIG.tokenUrl,
+    redirect_uri: redirectUri,
+    grant_type: OAUTH_CONFIG.grantType,
+  });
+
   const response = await fetch(OAUTH_CONFIG.tokenUrl, {
     method: "POST",
     headers: {
@@ -59,7 +65,28 @@ export async function exchangeCodeForToken(
     body: body.toString(),
   });
 
-  const data = await response.json();
+  // Get the raw response text first
+  const responseText = await response.text();
+
+  console.log("[OAuth] Token endpoint response:", {
+    status: response.status,
+    statusText: response.statusText,
+    contentType: response.headers.get("content-type"),
+    body: responseText.substring(0, 500), // Log first 500 chars
+  });
+
+  // Try to parse as JSON
+  let data: any;
+  try {
+    data = JSON.parse(responseText);
+  } catch (parseError) {
+    console.error("[OAuth] Failed to parse token response as JSON:", responseText);
+    throw new OAuthError(
+      `Token endpoint returned invalid JSON. Status: ${response.status}. Response: ${responseText.substring(0, 200)}`,
+      "invalid_response",
+      response.status
+    );
+  }
 
   if (!response.ok) {
     const errorData = data as OAuthErrorResponse;
