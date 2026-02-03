@@ -207,23 +207,56 @@ function generateSuccessPage(apiKey: string): string {
     .copy-btn.copied {
       background: #22c55e;
     }
+    .auto-close {
+      margin-top: 15px;
+      padding: 10px;
+      background: #f0fdf4;
+      border: 1px solid #22c55e;
+      border-radius: 4px;
+      color: #166534;
+      font-size: 14px;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>Authentication Successful</h1>
-    <p class="instructions">Your LocalFalcon API key has been retrieved successfully:</p>
+    <p class="instructions">Your LocalFalcon API key has been retrieved and stored.</p>
     <div class="api-key-box" id="apiKey">${escapeHtml(apiKey)}</div>
     <button class="copy-btn" onclick="copyApiKey()">Copy API Key</button>
     <p class="instructions" style="margin-top: 20px;">
-      Use this API key in the <code>LOCAL_FALCON_API_KEY</code> header or environment variable
-      when connecting to the MCP server.
+      The API key has been automatically saved. You can now make MCP calls.
     </p>
-    <p class="instructions">You can close this window now.</p>
+    <div class="auto-close" id="autoCloseMsg">
+      This window will close automatically in <span id="countdown">5</span> seconds...
+    </div>
   </div>
   <script>
+    const apiKey = document.getElementById('apiKey').textContent;
+
+    // Store API key in localStorage for the MCP client to pick up
+    try {
+      localStorage.setItem('local_falcon_api_key', apiKey);
+      localStorage.setItem('local_falcon_auth_timestamp', Date.now().toString());
+    } catch (e) {
+      console.log('Could not store in localStorage:', e);
+    }
+
+    // Notify opener window if this was opened via window.open()
+    if (window.opener) {
+      try {
+        window.opener.postMessage({
+          type: 'LOCAL_FALCON_OAUTH_SUCCESS',
+          apiKey: apiKey,
+          timestamp: Date.now()
+        }, '*');
+      } catch (e) {
+        console.log('Could not notify opener:', e);
+      }
+    }
+
+    // Copy function
     function copyApiKey() {
-      const apiKey = document.getElementById('apiKey').textContent;
       navigator.clipboard.writeText(apiKey).then(() => {
         const btn = document.querySelector('.copy-btn');
         btn.textContent = 'Copied!';
@@ -234,6 +267,25 @@ function generateSuccessPage(apiKey: string): string {
         }, 2000);
       });
     }
+
+    // Auto-close countdown
+    let secondsLeft = 5;
+    const countdownEl = document.getElementById('countdown');
+    const autoCloseInterval = setInterval(() => {
+      secondsLeft--;
+      countdownEl.textContent = secondsLeft;
+      if (secondsLeft <= 0) {
+        clearInterval(autoCloseInterval);
+        // Try to close the window
+        try {
+          window.close();
+        } catch (e) {
+          // If window.close() doesn't work (not opened by script), update message
+          document.getElementById('autoCloseMsg').innerHTML =
+            'Authentication complete! You can close this window and return to your MCP client.';
+        }
+      }
+    }, 1000);
   </script>
 </body>
 </html>`;
@@ -339,5 +391,23 @@ export function setupOAuthRoutes(app: Application): void {
     });
   });
 
-  console.log("[OAuth] Routes registered: GET /oauth/authorize, GET /oauth/callback");
+  // Status endpoint - check if authenticated (for MCP clients to poll)
+  app.get("/oauth/status", (req, res) => {
+    const apiKey = req.cookies?.["local_falcon_api_key"];
+
+    if (apiKey) {
+      res.status(200).json({
+        authenticated: true,
+        message: "API key is available. You can now make MCP calls.",
+      });
+    } else {
+      res.status(200).json({
+        authenticated: false,
+        message: "Not authenticated. Please visit /oauth/authorize to authenticate.",
+        authorize_url: "/oauth/authorize",
+      });
+    }
+  });
+
+  console.log("[OAuth] Routes registered: GET /oauth/authorize, GET /oauth/callback, GET /oauth/status");
 }
