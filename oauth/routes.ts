@@ -102,6 +102,7 @@ async function handleCallback(req: Request, res: Response): Promise<void> {
 
     // Try multiple possible field names for API key
     const apiKey =
+      (tokenResponse as any).data.api_key ||
       (tokenResponse as any).api_key ||
       (tokenResponse as any).apiKey ||
       (tokenResponse as any).access_token ||
