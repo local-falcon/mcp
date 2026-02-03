@@ -114,14 +114,23 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
     });
   });
 
-  // OAuth discovery endpoints
-  app.get("/.well-known/openid_configuration", (_req: Request, res: Response): void => {
+  // OAuth 2.0 Authorization Server Metadata (RFC 8414)
+  const oauthMetadata = (_req: Request, res: Response): void => {
+    const baseUrl = `${_req.protocol}://${_req.get("host")}`;
     res.status(200).json({
-      issuer: "Local Falcon MCP",
-      authorization_endpoint: "/oauth/authorize",
-      token_endpoint: "/oauth/callback",
+      issuer: baseUrl,
+      authorization_endpoint: `${baseUrl}/oauth/authorize`,
+      token_endpoint: `${baseUrl}/oauth/callback`,
+      response_types_supported: ["code"],
+      grant_types_supported: ["authorization_code"],
+      code_challenge_methods_supported: ["S256"],
+      token_endpoint_auth_methods_supported: ["client_secret_post"],
     });
-  });
+  };
+
+  // Support both OpenID Connect and OAuth 2.0 discovery paths
+  app.get("/.well-known/openid-configuration", oauthMetadata);
+  app.get("/.well-known/oauth-authorization-server", oauthMetadata);
 
   // Setup OAuth routes
   setupOAuthRoutes(app);
