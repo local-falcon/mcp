@@ -96,10 +96,31 @@ async function handleCallback(req: Request, res: Response): Promise<void> {
       storedState.redirectUri
     );
 
+    // Log full response to debug field names
+    console.log("[OAuth] Token response fields:", Object.keys(tokenResponse));
+    console.log("[OAuth] Full token response:", JSON.stringify(tokenResponse, null, 2));
+
+    // Try multiple possible field names for API key
+    const apiKey =
+      (tokenResponse as any).api_key ||
+      (tokenResponse as any).apiKey ||
+      (tokenResponse as any).access_token ||
+      (tokenResponse as any).token ||
+      (tokenResponse as any).key;
+
+    if (!apiKey) {
+      console.error("[OAuth] No API key found in response. Available fields:", Object.keys(tokenResponse));
+      res.status(500).send(generateErrorPage(
+        "Authentication Failed",
+        "No API key was returned from the server. Please contact support."
+      ));
+      return;
+    }
+
     console.log("[OAuth] Token exchange successful, API key received");
 
     // Return success page with API key
-    res.status(200).send(generateSuccessPage(tokenResponse.api_key));
+    res.status(200).send(generateSuccessPage(apiKey));
   } catch (error) {
     console.error("[OAuth] Token exchange failed:", error);
 
@@ -271,7 +292,11 @@ function generateErrorPage(title: string, message: string): string {
 /**
  * Escape HTML special characters to prevent XSS
  */
-function escapeHtml(text: string): string {
+function escapeHtml(text: string | undefined | null): string {
+  if (text == null) {
+    return "";
+  }
+  const str = String(text);
   const htmlEntities: Record<string, string> = {
     "&": "&amp;",
     "<": "&lt;",
@@ -279,7 +304,7 @@ function escapeHtml(text: string): string {
     '"': "&quot;",
     "'": "&#39;",
   };
-  return text.replace(/[&<>"']/g, (char) => htmlEntities[char]);
+  return str.replace(/[&<>"']/g, (char) => htmlEntities[char]);
 }
 
 /**
