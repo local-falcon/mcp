@@ -8,6 +8,7 @@ import { getServer } from "./server.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { InMemoryEventStore } from "@modelcontextprotocol/sdk/examples/shared/inMemoryEventStore.js";
+import { setupOAuthRoutes } from "./oauth/index.js";
 
 // Configure environment variables
 dotenv.config({ path: ".env.local" });
@@ -117,15 +118,13 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
   app.get("/.well-known/openid_configuration", (_req: Request, res: Response): void => {
     res.status(200).json({
       issuer: "Local Falcon MCP",
-      authorization_endpoint: "not_implemented",
-      token_endpoint: "not_implemented",
-      registration_endpoint: "/register",
+      authorization_endpoint: "/oauth/authorize",
+      token_endpoint: "/oauth/callback",
     });
   });
 
-  app.post("/register", (_req: Request, res: Response): void => {
-    res.status(501).json({ error: "Registration endpoint not implemented" });
-  });
+  // Setup OAuth routes
+  setupOAuthRoutes(app);
 
   return app;
 };
