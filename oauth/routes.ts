@@ -152,6 +152,7 @@ async function handleCallback(req: Request, res: Response): Promise<void> {
 
 /**
  * Generate HTML success page with API key
+ * Sends API key to opener via postMessage for MCP client authentication
  */
 function generateSuccessPage(apiKey: string): string {
   return `<!DOCTYPE html>
@@ -173,67 +174,41 @@ function generateSuccessPage(apiKey: string): string {
       border-radius: 8px;
       padding: 40px;
       box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      text-align: center;
     }
-    h1 {
-      color: #22c55e;
-      margin-bottom: 20px;
-    }
-    .api-key-box {
-      background: #f0f9ff;
-      border: 1px solid #0ea5e9;
-      border-radius: 4px;
-      padding: 15px;
-      margin: 20px 0;
-      word-break: break-all;
-      font-family: monospace;
-      font-size: 14px;
-    }
-    .instructions {
-      color: #666;
-      line-height: 1.6;
-    }
-    .copy-btn {
-      background: #0ea5e9;
-      color: white;
-      border: none;
-      padding: 10px 20px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 14px;
-    }
-    .copy-btn:hover {
-      background: #0284c7;
-    }
-    .copy-btn.copied {
-      background: #22c55e;
-    }
+    h1 { color: #22c55e; margin-bottom: 20px; }
+    .success-icon { font-size: 64px; color: #22c55e; margin-bottom: 10px; }
+    .instructions { color: #666; line-height: 1.6; }
   </style>
 </head>
 <body>
   <div class="container">
+    <div class="success-icon">&#10003;</div>
     <h1>Authentication Successful</h1>
-    <p class="instructions">Your LocalFalcon API key has been retrieved successfully:</p>
-    <div class="api-key-box" id="apiKey">${escapeHtml(apiKey)}</div>
-    <button class="copy-btn" onclick="copyApiKey()">Copy API Key</button>
-    <p class="instructions" style="margin-top: 20px;">
-      Use this API key in the <code>LOCAL_FALCON_API_KEY</code> header or environment variable
-      when connecting to the MCP server.
-    </p>
-    <p class="instructions">You can close this window now.</p>
+    <p class="instructions">Connecting to MCP...</p>
+    <p class="instructions" id="status">This window will close automatically.</p>
   </div>
   <script>
-    function copyApiKey() {
-      const apiKey = document.getElementById('apiKey').textContent;
-      navigator.clipboard.writeText(apiKey).then(() => {
-        const btn = document.querySelector('.copy-btn');
-        btn.textContent = 'Copied!';
-        btn.classList.add('copied');
-        setTimeout(() => {
-          btn.textContent = 'Copy API Key';
-          btn.classList.remove('copied');
-        }, 2000);
-      });
-    }
+    (function() {
+      var apiKey = '${escapeHtml(apiKey)}';
+
+      // Send API key to opener window for MCP client authentication
+      if (window.opener) {
+        window.opener.postMessage({
+          type: 'oauth_callback',
+          access_token: apiKey,
+          token_type: 'Bearer'
+        }, '*');
+
+        // Auto-close after sending
+        setTimeout(function() { window.close(); }, 1500);
+      } else {
+        // Fallback: show API key if not opened as popup
+        document.getElementById('status').innerHTML =
+          'API Key: <code style="word-break:break-all;background:#f0f9ff;padding:4px 8px;border-radius:4px;">' +
+          apiKey + '</code><br><br>Copy this key and close the window.';
+      }
+    })();
   </script>
 </body>
 </html>`;
