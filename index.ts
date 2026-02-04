@@ -121,9 +121,16 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
     });
   });
 
+  // Helper to get base URL respecting proxy headers
+  const getBaseUrl = (req: Request): string => {
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+    const host = req.headers["x-forwarded-host"] || req.get("host");
+    return `${protocol}://${host}`;
+  };
+
   // OAuth 2.0 Authorization Server Metadata (RFC 8414)
   const oauthMetadata = (_req: Request, res: Response): void => {
-    const baseUrl = `${_req.protocol}://${_req.get("host")}`;
+    const baseUrl = getBaseUrl(_req);
     res.status(200).json({
       issuer: baseUrl,
       authorization_endpoint: `${baseUrl}/oauth/authorize`,
@@ -141,7 +148,7 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
 
   // OAuth 2.0 Protected Resource Metadata (RFC 9449)
   app.get("/.well-known/oauth-protected-resource", (_req: Request, res: Response): void => {
-    const baseUrl = `${_req.protocol}://${_req.get("host")}`;
+    const baseUrl = getBaseUrl(_req);
     res.status(200).json({
       resource: baseUrl,
       authorization_servers: [baseUrl],
@@ -153,10 +160,11 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
   // Client registration endpoint - returns pre-configured client credentials
   // Dynamic registration is not actually performed; credentials are hardcoded
   app.post("/register", (_req: Request, res: Response): void => {
+    const baseUrl = getBaseUrl(_req);
     res.status(201).json({
       client_id: "74e0d6e848652234efed.localfalconapps.com",
       client_name: "LocalFalcon MCP",
-      redirect_uris: [`${_req.protocol}://${_req.get("host")}/oauth/callback`],
+      redirect_uris: [`${baseUrl}/oauth/callback`],
       grant_types: ["authorization_code"],
       response_types: ["code"],
       token_endpoint_auth_method: "none",
