@@ -7,7 +7,6 @@ import { OAUTH_CONFIG } from "./config.js";
 import { stateStore } from "./stateStore.js";
 import {
   generateSecureState,
-  generateAuthorizationUrl,
   exchangeCodeForToken,
   OAuthError,
 } from "./oauthClient.js";
@@ -69,23 +68,52 @@ function generateCallbackPage(code: string | null, error: string | null, errorDe
 /**
  * GET /oauth/authorize
  * Initiates the OAuth flow by redirecting to LocalFalcon's authorization endpoint
+ * Forwards MCP client's OAuth parameters (state, PKCE) to upstream provider
  */
 async function handleAuthorize(req: Request, res: Response): Promise<void> {
   try {
-    const state = generateSecureState();
     const redirectUri = getRedirectUri(req);
 
-    // Store state for CSRF validation
+    // Get MCP client's OAuth parameters
+    const clientState = req.query.state as string | undefined;
+    const codeChallenge = req.query.code_challenge as string | undefined;
+    const codeChallengeMethod = req.query.code_challenge_method as string | undefined;
+    const clientRedirectUri = req.query.redirect_uri as string | undefined;
+    const scope = req.query.scope as string | undefined;
+
+    // Use client's state or generate our own
+    const state = clientState || generateSecureState();
+
+    // Store state for CSRF validation, including client's redirect URI if provided
     stateStore.set(state, {
       createdAt: Date.now(),
       redirectUri,
+      clientRedirectUri,
     });
 
-    // Generate authorization URL and redirect
-    const authUrl = generateAuthorizationUrl(redirectUri, state);
+    // Build authorization URL with all parameters
+    const url = new URL(OAUTH_CONFIG.authorizationUrl);
+    url.searchParams.set("client_id", OAUTH_CONFIG.clientId);
+    url.searchParams.set("redirect_uri", redirectUri);
+    url.searchParams.set("response_type", "code");
+    url.searchParams.set("state", state);
 
-    console.log(`[OAuth] Redirecting to authorization URL: ${authUrl}`);
-    res.redirect(authUrl);
+    // Forward PKCE parameters if provided
+    if (codeChallenge) {
+      url.searchParams.set("code_challenge", codeChallenge);
+      url.searchParams.set("code_challenge_method", codeChallengeMethod || "S256");
+    }
+
+    // Forward scope if provided, otherwise use default
+    if (scope) {
+      url.searchParams.set("scope", scope);
+    } else if (OAUTH_CONFIG.scopes.length > 0) {
+      url.searchParams.set("scope", OAUTH_CONFIG.scopes.join(" "));
+    }
+
+    console.log(`[OAuth] Redirecting to authorization URL: ${url.toString()}`);
+    console.log(`[OAuth] Client params - state: ${clientState ? "provided" : "generated"}, PKCE: ${codeChallenge ? "yes" : "no"}`);
+    res.redirect(url.toString());
   } catch (error) {
     console.error("[OAuth] Error initiating authorization:", error);
     res.status(500).json({
@@ -97,7 +125,8 @@ async function handleAuthorize(req: Request, res: Response): Promise<void> {
 
 /**
  * GET /oauth/callback
- * Handles the OAuth callback - exchanges code for token and passes it to MCP client
+ * Handles the OAuth callback - returns authorization code to MCP client
+ * The MCP client will exchange the code via POST /oauth/token with its PKCE verifier
  */
 async function handleCallback(req: Request, res: Response): Promise<void> {
   const { code, state, error, error_description } = req.query;
@@ -136,113 +165,11 @@ async function handleCallback(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  console.log("[OAuth] Authorization code received, exchanging for token...");
+  console.log("[OAuth] Authorization code received, returning to MCP client");
 
-  try {
-    // Exchange the code for an access token server-side
-    const tokenResponse = await exchangeCodeForToken(
-      code as string,
-      storedState.redirectUri
-    );
-
-    // Extract API key from response
-    const apiKey =
-      (tokenResponse as any).data?.api_key ||
-      (tokenResponse as any).api_key ||
-      (tokenResponse as any).apiKey ||
-      (tokenResponse as any).access_token ||
-      (tokenResponse as any).token ||
-      (tokenResponse as any).key;
-
-    if (!apiKey) {
-      console.error("[OAuth] No API key in token response:", tokenResponse);
-      res.status(500).send(generateCallbackPage(
-        null,
-        "server_error",
-        "No access token returned from authorization server"
-      ));
-      return;
-    }
-
-    console.log("[OAuth] Token exchange successful, sending to MCP client");
-
-    // Return success page with the access token via postMessage
-    res.status(200).send(generateSuccessPage(apiKey));
-  } catch (error) {
-    console.error("[OAuth] Token exchange failed in callback:", error);
-    const errorMessage = error instanceof OAuthError
-      ? error.message
-      : "Failed to exchange authorization code for token";
-    res.status(500).send(generateCallbackPage(
-      null,
-      "token_exchange_failed",
-      errorMessage
-    ));
-  }
-}
-
-/**
- * Generate HTML success page with API key
- * Sends API key to opener via postMessage for MCP client authentication
- */
-function generateSuccessPage(apiKey: string): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Authentication Successful - LocalFalcon MCP</title>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      max-width: 600px;
-      margin: 50px auto;
-      padding: 20px;
-      background: #f5f5f5;
-    }
-    .container {
-      background: white;
-      border-radius: 8px;
-      padding: 40px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-      text-align: center;
-    }
-    h1 { color: #22c55e; margin-bottom: 20px; }
-    .success-icon { font-size: 64px; color: #22c55e; margin-bottom: 10px; }
-    .instructions { color: #666; line-height: 1.6; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="success-icon">&#10003;</div>
-    <h1>Authentication Successful</h1>
-    <p class="instructions">Connecting to MCP...</p>
-    <p class="instructions" id="status">This window will close automatically.</p>
-  </div>
-  <script>
-    (function() {
-      var apiKey = '${escapeHtml(apiKey)}';
-
-      // Send API key to opener window for MCP client authentication
-      if (window.opener) {
-        window.opener.postMessage({
-          type: 'oauth_callback',
-          access_token: apiKey,
-          token_type: 'Bearer'
-        }, '*');
-
-        // Auto-close after sending
-        setTimeout(function() { window.close(); }, 1500);
-      } else {
-        // Fallback: show API key if not opened as popup
-        document.getElementById('status').innerHTML =
-          'API Key: <code style="word-break:break-all;background:#f0f9ff;padding:4px 8px;border-radius:4px;">' +
-          apiKey + '</code><br><br>Copy this key and close the window.';
-      }
-    })();
-  </script>
-</body>
-</html>`;
+  // Return the authorization code to the MCP client via postMessage
+  // The MCP client will exchange it via POST /oauth/token with its PKCE verifier
+  res.status(200).send(generateCallbackPage(code as string, null, null));
 }
 
 /**
@@ -358,10 +285,11 @@ async function handleTokenExchange(req: Request, res: Response): Promise<void> {
   }
 
   try {
-    // Exchange code for token with LocalFalcon
+    // Exchange code for token with LocalFalcon (forwarding PKCE verifier if provided)
     const tokenResponse = await exchangeCodeForToken(
       code as string,
-      redirect_uri || getRedirectUri(req)
+      redirect_uri || getRedirectUri(req),
+      code_verifier
     );
 
     console.log("[OAuth] Token response from LocalFalcon:", Object.keys(tokenResponse));

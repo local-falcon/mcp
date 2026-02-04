@@ -22,6 +22,7 @@ export interface OAuthState {
   state: string;
   createdAt: number;
   redirectUri: string;
+  clientRedirectUri?: string; // MCP client's redirect URI for forwarding
 }
 
 /**

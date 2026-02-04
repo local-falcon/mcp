@@ -40,7 +40,8 @@ export function generateAuthorizationUrl(
  */
 export async function exchangeCodeForToken(
   code: string,
-  redirectUri: string
+  redirectUri: string,
+  codeVerifier?: string
 ): Promise<OAuthTokenResponse> {
   const body = new URLSearchParams({
     grant_type: OAUTH_CONFIG.grantType,
@@ -49,6 +50,11 @@ export async function exchangeCodeForToken(
     client_id: OAUTH_CONFIG.clientId,
     client_secret: OAUTH_CONFIG.clientSecret,
   });
+
+  // Add PKCE code_verifier if provided
+  if (codeVerifier) {
+    body.set("code_verifier", codeVerifier);
+  }
 
   // Create Basic auth header for client credentials
   const basicAuth = Buffer.from(
