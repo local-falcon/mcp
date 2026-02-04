@@ -76,13 +76,19 @@ class SessionManager {
 
 // Authentication Utilities
 const extractAuth = (req: Request): { apiKey?: string; isPro?: string } => {
-  // Check headers, query params, and cookies (in order of priority)
-  const apiKey = (req.headers["local_falcon_api_key"] as string | undefined) ??
+  // Extract Bearer token from Authorization header
+  const authHeader = req.headers["authorization"] as string | undefined;
+  const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
+
+  // Check Authorization Bearer, custom header, query params, and cookies (in order of priority)
+  const apiKey = bearerToken ??
+    (req.headers["local_falcon_api_key"] as string | undefined) ??
     (req.query["local_falcon_api_key"] as string | undefined) ??
     (req.cookies?.["local_falcon_api_key"] as string | undefined);
   const isPro = (req.headers["is_pro"] as string | undefined) ??
     (req.query["is_pro"] as string | undefined);
-  const source = req.headers["local_falcon_api_key"] ? "header" :
+  const source = bearerToken ? "bearer" :
+    req.headers["local_falcon_api_key"] ? "header" :
     req.query["local_falcon_api_key"] ? "query" :
     req.cookies?.["local_falcon_api_key"] ? "cookie" : "none";
   console.log(`[${new Date().toISOString()}] Extracted auth - Method: ${req.method}, URL: ${req.url}, ` +
