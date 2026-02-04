@@ -97,8 +97,7 @@ async function handleAuthorize(req: Request, res: Response): Promise<void> {
 
 /**
  * GET /oauth/callback
- * Handles the OAuth callback - passes authorization code back to MCP client
- * The MCP client will then exchange the code via POST /oauth/token
+ * Handles the OAuth callback - exchanges code for token and passes it to MCP client
  */
 async function handleCallback(req: Request, res: Response): Promise<void> {
   const { code, state, error, error_description } = req.query;
@@ -137,11 +136,49 @@ async function handleCallback(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  console.log("[OAuth] Authorization code received, passing to MCP client");
+  console.log("[OAuth] Authorization code received, exchanging for token...");
 
-  // Return the authorization code to the MCP client via postMessage
-  // The MCP client will exchange it via POST /oauth/token
-  res.status(200).send(generateCallbackPage(code as string, null, null));
+  try {
+    // Exchange the code for an access token server-side
+    const tokenResponse = await exchangeCodeForToken(
+      code as string,
+      storedState.redirectUri
+    );
+
+    // Extract API key from response
+    const apiKey =
+      (tokenResponse as any).data?.api_key ||
+      (tokenResponse as any).api_key ||
+      (tokenResponse as any).apiKey ||
+      (tokenResponse as any).access_token ||
+      (tokenResponse as any).token ||
+      (tokenResponse as any).key;
+
+    if (!apiKey) {
+      console.error("[OAuth] No API key in token response:", tokenResponse);
+      res.status(500).send(generateCallbackPage(
+        null,
+        "server_error",
+        "No access token returned from authorization server"
+      ));
+      return;
+    }
+
+    console.log("[OAuth] Token exchange successful, sending to MCP client");
+
+    // Return success page with the access token via postMessage
+    res.status(200).send(generateSuccessPage(apiKey));
+  } catch (error) {
+    console.error("[OAuth] Token exchange failed in callback:", error);
+    const errorMessage = error instanceof OAuthError
+      ? error.message
+      : "Failed to exchange authorization code for token";
+    res.status(500).send(generateCallbackPage(
+      null,
+      "token_exchange_failed",
+      errorMessage
+    ));
+  }
 }
 
 /**
