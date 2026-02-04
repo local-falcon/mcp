@@ -134,7 +134,7 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
     res.status(200).json({
       issuer: baseUrl,
       authorization_endpoint: `${baseUrl}/oauth/authorize`,
-      token_endpoint: `${baseUrl}/oauth/callback`,
+      token_endpoint: `${baseUrl}/oauth/token`,
       registration_endpoint: `${baseUrl}/register`,
       response_types_supported: ["code"],
       grant_types_supported: ["authorization_code"],

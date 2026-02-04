@@ -22,6 +22,51 @@ function getRedirectUri(req: Request): string {
 }
 
 /**
+ * Generate callback page that sends auth code/error to MCP client via postMessage
+ */
+function generateCallbackPage(code: string | null, error: string | null, errorDescription: string | null): string {
+  const message = code
+    ? JSON.stringify({ code })
+    : JSON.stringify({ error: error || "unknown_error", error_description: errorDescription || "Unknown error" });
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${code ? "Authorization Successful" : "Authorization Failed"} - LocalFalcon MCP</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; background: #f5f5f5; }
+    .container { background: white; border-radius: 8px; padding: 40px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; }
+    h1 { color: ${code ? "#22c55e" : "#ef4444"}; margin-bottom: 20px; }
+    .icon { font-size: 64px; color: ${code ? "#22c55e" : "#ef4444"}; margin-bottom: 10px; }
+    .instructions { color: #666; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">${code ? "&#10003;" : "&#10007;"}</div>
+    <h1>${code ? "Authorization Successful" : "Authorization Failed"}</h1>
+    <p class="instructions">${code ? "Completing authentication..." : (errorDescription || "An error occurred")}</p>
+    <p class="instructions" id="status">This window will close automatically.</p>
+  </div>
+  <script>
+    (function() {
+      var message = ${message};
+      // Send to opener via postMessage
+      if (window.opener) {
+        window.opener.postMessage(message, '*');
+        setTimeout(function() { window.close(); }, 1000);
+      } else {
+        document.getElementById('status').textContent = ${code ? "'Authorization code received. You may close this window.'" : "'Please close this window and try again.'"};
+      }
+    })();
+  </script>
+</body>
+</html>`;
+}
+
+/**
  * GET /oauth/authorize
  * Initiates the OAuth flow by redirecting to LocalFalcon's authorization endpoint
  */
@@ -52,7 +97,8 @@ async function handleAuthorize(req: Request, res: Response): Promise<void> {
 
 /**
  * GET /oauth/callback
- * Handles the OAuth callback, exchanges code for token, and returns API key
+ * Handles the OAuth callback - passes authorization code back to MCP client
+ * The MCP client will then exchange the code via POST /oauth/token
  */
 async function handleCallback(req: Request, res: Response): Promise<void> {
   const { code, state, error, error_description } = req.query;
@@ -60,9 +106,10 @@ async function handleCallback(req: Request, res: Response): Promise<void> {
   // Handle errors from OAuth provider
   if (error) {
     console.error(`[OAuth] Authorization error: ${error} - ${error_description}`);
-    res.status(400).send(generateErrorPage(
-      "Authorization Failed",
-      error_description?.toString() || error?.toString() || "Unknown error"
+    res.status(400).send(generateCallbackPage(
+      null,
+      error?.toString() || "authorization_error",
+      error_description?.toString() || "Authorization failed"
     ));
     return;
   }
@@ -70,8 +117,9 @@ async function handleCallback(req: Request, res: Response): Promise<void> {
   // Validate required parameters
   if (!code || !state) {
     console.error("[OAuth] Missing code or state parameter");
-    res.status(400).send(generateErrorPage(
-      "Invalid Request",
+    res.status(400).send(generateCallbackPage(
+      null,
+      "invalid_request",
       "Missing required parameters"
     ));
     return;
@@ -81,73 +129,19 @@ async function handleCallback(req: Request, res: Response): Promise<void> {
   const storedState = stateStore.validate(state as string);
   if (!storedState) {
     console.error("[OAuth] Invalid or expired state parameter");
-    res.status(400).send(generateErrorPage(
-      "Invalid State",
+    res.status(400).send(generateCallbackPage(
+      null,
+      "invalid_state",
       "The authorization request has expired or is invalid. Please try again."
     ));
     return;
   }
 
-  try {
-    // Exchange code for token
-    console.log("[OAuth] Exchanging authorization code for token...");
-    const tokenResponse = await exchangeCodeForToken(
-      code as string,
-      storedState.redirectUri
-    );
+  console.log("[OAuth] Authorization code received, passing to MCP client");
 
-    // Log full response to debug field names
-    console.log("[OAuth] Token response fields:", Object.keys(tokenResponse));
-    console.log("[OAuth] Full token response:", JSON.stringify(tokenResponse, null, 2));
-
-    // Try multiple possible field names for API key
-    const apiKey =
-      (tokenResponse as any).data.api_key ||
-      (tokenResponse as any).api_key ||
-      (tokenResponse as any).apiKey ||
-      (tokenResponse as any).access_token ||
-      (tokenResponse as any).token ||
-      (tokenResponse as any).key;
-
-    if (!apiKey) {
-      console.error("[OAuth] No API key found in response. Available fields:", Object.keys(tokenResponse));
-      res.status(500).send(generateErrorPage(
-        "Authentication Failed",
-        "No API key was returned from the server. Please contact support."
-      ));
-      return;
-    }
-
-    console.log("[OAuth] Token exchange successful, API key received");
-
-    // Store API key in secure HTTP-only cookie for automatic MCP authentication
-    res.cookie("local_falcon_api_key", apiKey, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-      path: "/",
-    });
-
-    console.log("[OAuth] API key stored in cookie for automatic MCP authentication");
-
-    // Return success page with API key
-    res.status(200).send(generateSuccessPage(apiKey));
-  } catch (error) {
-    console.error("[OAuth] Token exchange failed:", error);
-
-    if (error instanceof OAuthError) {
-      res.status(error.statusCode).send(generateErrorPage(
-        "Authentication Failed",
-        error.message
-      ));
-    } else {
-      res.status(500).send(generateErrorPage(
-        "Authentication Failed",
-        "An unexpected error occurred during authentication. Please try again."
-      ));
-    }
-  }
+  // Return the authorization code to the MCP client via postMessage
+  // The MCP client will exchange it via POST /oauth/token
+  res.status(200).send(generateCallbackPage(code as string, null, null));
 }
 
 /**
@@ -295,6 +289,87 @@ function escapeHtml(text: string | undefined | null): string {
 }
 
 /**
+ * Handle token exchange request from MCP client
+ * POST /oauth/token - exchanges authorization code for access token
+ */
+async function handleTokenExchange(req: Request, res: Response): Promise<void> {
+  const { grant_type, code, redirect_uri, client_id, client_secret, code_verifier } = req.body;
+
+  console.log("[OAuth] Token exchange request received:", {
+    grant_type,
+    code: code ? "[PRESENT]" : "[MISSING]",
+    redirect_uri,
+    client_id,
+    client_secret: client_secret ? "[PRESENT]" : "[MISSING]",
+    code_verifier: code_verifier ? "[PRESENT]" : "[MISSING]",
+  });
+
+  if (grant_type !== "authorization_code") {
+    res.status(400).json({
+      error: "unsupported_grant_type",
+      error_description: "Only authorization_code grant type is supported",
+    });
+    return;
+  }
+
+  if (!code) {
+    res.status(400).json({
+      error: "invalid_request",
+      error_description: "Missing authorization code",
+    });
+    return;
+  }
+
+  try {
+    // Exchange code for token with LocalFalcon
+    const tokenResponse = await exchangeCodeForToken(
+      code as string,
+      redirect_uri || getRedirectUri(req)
+    );
+
+    console.log("[OAuth] Token response from LocalFalcon:", Object.keys(tokenResponse));
+
+    // Extract API key from response
+    const apiKey =
+      (tokenResponse as any).data?.api_key ||
+      (tokenResponse as any).api_key ||
+      (tokenResponse as any).apiKey ||
+      (tokenResponse as any).access_token ||
+      (tokenResponse as any).token ||
+      (tokenResponse as any).key;
+
+    if (!apiKey) {
+      console.error("[OAuth] No API key in token response");
+      res.status(500).json({
+        error: "server_error",
+        error_description: "No access token returned from authorization server",
+      });
+      return;
+    }
+
+    // Return standard OAuth token response
+    res.status(200).json({
+      access_token: apiKey,
+      token_type: "Bearer",
+      scope: "api",
+    });
+  } catch (error) {
+    console.error("[OAuth] Token exchange failed:", error);
+    if (error instanceof OAuthError) {
+      res.status(error.statusCode).json({
+        error: error.code,
+        error_description: error.message,
+      });
+    } else {
+      res.status(500).json({
+        error: "server_error",
+        error_description: "Token exchange failed",
+      });
+    }
+  }
+}
+
+/**
  * Set up OAuth routes on the Express application
  */
 export function setupOAuthRoutes(app: Application): void {
@@ -306,7 +381,15 @@ export function setupOAuthRoutes(app: Application): void {
     });
   });
 
-  // Callback endpoint - handles OAuth response
+  // Token endpoint - exchanges code for access token (for MCP clients)
+  app.post("/oauth/token", (req, res) => {
+    handleTokenExchange(req, res).catch((err) => {
+      console.error("[OAuth] Unhandled error in token exchange:", err);
+      res.status(500).json({ error: "server_error", error_description: "Internal server error" });
+    });
+  });
+
+  // Callback endpoint - handles OAuth response (browser redirect)
   app.get("/oauth/callback", (req, res) => {
     handleCallback(req, res).catch((err) => {
       console.error("[OAuth] Unhandled error in callback:", err);
