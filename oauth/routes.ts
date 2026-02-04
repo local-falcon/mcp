@@ -151,7 +151,154 @@ async function handleCallback(req: Request, res: Response): Promise<void> {
 }
 
 /**
- * Generate HTML success page with API key
+ * Generate HTML login page that opens OAuth in a popup
+ */
+function generateLoginPage(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - LocalFalcon MCP</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 600px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      border-radius: 8px;
+      padding: 40px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    h1 {
+      color: #1e3a5f;
+      margin-bottom: 20px;
+    }
+    .description {
+      color: #666;
+      line-height: 1.6;
+      margin-bottom: 30px;
+    }
+    .login-btn {
+      background: #0ea5e9;
+      color: white;
+      border: none;
+      padding: 15px 40px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 500;
+    }
+    .login-btn:hover {
+      background: #0284c7;
+    }
+    .login-btn:disabled {
+      background: #94a3b8;
+      cursor: not-allowed;
+    }
+    .status {
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 4px;
+      display: none;
+    }
+    .status.success {
+      display: block;
+      background: #f0fdf4;
+      border: 1px solid #22c55e;
+      color: #166534;
+    }
+    .status.error {
+      display: block;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #991b1b;
+    }
+    .api-key-box {
+      background: #f0f9ff;
+      border: 1px solid #0ea5e9;
+      border-radius: 4px;
+      padding: 15px;
+      margin: 20px 0;
+      word-break: break-all;
+      font-family: monospace;
+      font-size: 14px;
+      text-align: left;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>LocalFalcon MCP</h1>
+    <p class="description">Click below to authenticate with your LocalFalcon account and retrieve your API key.</p>
+    <button class="login-btn" id="loginBtn" onclick="openOAuthPopup()">Login with LocalFalcon</button>
+    <div class="status" id="status"></div>
+    <div class="api-key-box" id="apiKeyBox" style="display: none;"></div>
+  </div>
+  <script>
+    let popup = null;
+
+    function openOAuthPopup() {
+      const width = 500;
+      const height = 600;
+      const left = (screen.width - width) / 2;
+      const top = (screen.height - height) / 2;
+
+      popup = window.open(
+        '/oauth/authorize',
+        'LocalFalcon OAuth',
+        'width=' + width + ',height=' + height + ',left=' + left + ',top=' + top + ',scrollbars=yes'
+      );
+
+      document.getElementById('loginBtn').disabled = true;
+      document.getElementById('loginBtn').textContent = 'Waiting for login...';
+    }
+
+    // Listen for message from popup
+    window.addEventListener('message', function(event) {
+      if (event.data && event.data.type === 'LOCAL_FALCON_OAUTH_SUCCESS') {
+        const apiKey = event.data.apiKey;
+
+        document.getElementById('loginBtn').style.display = 'none';
+        document.getElementById('status').className = 'status success';
+        document.getElementById('status').textContent = 'Authentication successful! Your API key has been saved.';
+        document.getElementById('apiKeyBox').style.display = 'block';
+        document.getElementById('apiKeyBox').textContent = apiKey;
+
+        if (popup && !popup.closed) {
+          popup.close();
+        }
+      } else if (event.data && event.data.type === 'LOCAL_FALCON_OAUTH_ERROR') {
+        document.getElementById('loginBtn').disabled = false;
+        document.getElementById('loginBtn').textContent = 'Login with LocalFalcon';
+        document.getElementById('status').className = 'status error';
+        document.getElementById('status').textContent = 'Authentication failed: ' + (event.data.error || 'Unknown error');
+      }
+    });
+
+    // Check if popup was closed without completing
+    setInterval(function() {
+      if (popup && popup.closed) {
+        const btn = document.getElementById('loginBtn');
+        if (btn.disabled && btn.style.display !== 'none') {
+          btn.disabled = false;
+          btn.textContent = 'Login with LocalFalcon';
+        }
+        popup = null;
+      }
+    }, 500);
+  </script>
+</body>
+</html>`;
+}
+
+/**
+ * Generate HTML success page with API key (for popup)
  */
 function generateSuccessPage(apiKey: string): string {
   return `<!DOCTYPE html>
@@ -180,31 +327,26 @@ function generateSuccessPage(apiKey: string): string {
       margin-bottom: 20px;
     }
     .success-icon {
-      font-size: 48px;
+      font-size: 64px;
+      color: #22c55e;
       margin-bottom: 20px;
     }
     .status {
       color: #666;
       line-height: 1.6;
-      margin: 20px 0;
-    }
-    .closing {
-      color: #0ea5e9;
-      font-weight: 500;
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <div class="success-icon">&#10004;</div>
+    <div class="success-icon">&#10003;</div>
     <h1>Authentication Successful</h1>
-    <p class="status">Your API key has been saved.</p>
-    <p class="status closing" id="statusMsg">Connecting to MCP server...</p>
+    <p class="status" id="statusMsg">Closing this window...</p>
   </div>
   <script>
-    const apiKey = "${apiKey.replace(/"/g, '\\"')}";
+    const apiKey = ${JSON.stringify(apiKey)};
 
-    // Notify opener window to connect to MCP
+    // Notify opener window
     if (window.opener) {
       try {
         window.opener.postMessage({
@@ -216,14 +358,11 @@ function generateSuccessPage(apiKey: string): string {
       }
     }
 
-    // Close window after brief delay
-    setTimeout(() => {
-      document.getElementById('statusMsg').textContent = 'Closing window...';
-      setTimeout(() => {
-        window.close();
-        // If window.close() fails (not opened by script), show message
-        document.getElementById('statusMsg').textContent = 'You can close this window now.';
-      }, 500);
+    // Close popup after brief delay
+    setTimeout(function() {
+      window.close();
+      // If close fails, update message
+      document.getElementById('statusMsg').textContent = 'You can close this window now.';
     }, 1500);
   </script>
 </body>
@@ -314,6 +453,11 @@ function escapeHtml(text: string | undefined | null): string {
  * Set up OAuth routes on the Express application
  */
 export function setupOAuthRoutes(app: Application): void {
+  // Login page - opens OAuth in popup
+  app.get("/oauth/login", (_req, res) => {
+    res.status(200).send(generateLoginPage());
+  });
+
   // Authorization endpoint - initiates OAuth flow
   app.get("/oauth/authorize", (req, res) => {
     handleAuthorize(req, res).catch((err) => {
@@ -330,5 +474,5 @@ export function setupOAuthRoutes(app: Application): void {
     });
   });
 
-  console.log("[OAuth] Routes registered: GET /oauth/authorize, GET /oauth/callback");
+  console.log("[OAuth] Routes registered: GET /oauth/login, GET /oauth/authorize, GET /oauth/callback");
 }
