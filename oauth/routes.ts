@@ -286,9 +286,20 @@ function escapeHtml(text: string | undefined | null): string {
  * POST /oauth/token - exchanges authorization code for access token
  */
 async function handleTokenExchange(req: Request, res: Response): Promise<void> {
+  // Ensure body exists (requires express.urlencoded middleware for OAuth requests)
+  if (!req.body || typeof req.body !== 'object') {
+    console.error("[OAuth] Token request has no body. Content-Type:", req.headers['content-type']);
+    res.status(400).json({
+      error: "invalid_request",
+      error_description: "Request body is missing or invalid. Ensure Content-Type is application/x-www-form-urlencoded or application/json.",
+    });
+    return;
+  }
+
   const { grant_type, code, redirect_uri, client_id, client_secret, code_verifier } = req.body;
 
   console.log("[OAuth] Token exchange request received:", {
+    contentType: req.headers['content-type'],
     grant_type,
     code: code ? "[PRESENT]" : "[MISSING]",
     redirect_uri,

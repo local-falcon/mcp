@@ -106,6 +106,7 @@ const validateAuth = (apiKey?: string): boolean => {
 const createBaseApp = (sessionManager: SessionManager): Application => {
   const app = express();
   app.use(express.json());
+  app.use(express.urlencoded({ extended: true })); // Required for OAuth token requests
   app.use(cookieParser());
   app.use(cors({
     allowedHeaders: ['Content-Type', 'mcp-session-id', 'LOCAL_FALCON_API_KEY', 'is_pro', 'last-event-id'],
