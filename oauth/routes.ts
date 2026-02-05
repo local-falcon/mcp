@@ -134,6 +134,23 @@ async function handleCallback(req: Request, res: Response): Promise<void> {
   // Handle errors from OAuth provider
   if (error) {
     console.error(`[OAuth] Authorization error: ${error} - ${error_description}`);
+
+    // Check if we have a stored state with client redirect URI for error redirect
+    if (state) {
+      const storedState = stateStore.get(state as string);
+      if (storedState?.clientRedirectUri) {
+        const errorRedirectUrl = new URL(storedState.clientRedirectUri);
+        errorRedirectUrl.searchParams.set("error", error?.toString() || "authorization_error");
+        if (error_description) {
+          errorRedirectUrl.searchParams.set("error_description", error_description.toString());
+        }
+        console.log(`[OAuth] Redirecting error to client: ${errorRedirectUrl.toString()}`);
+        stateStore.delete(state as string);
+        res.redirect(errorRedirectUrl.toString());
+        return;
+      }
+    }
+
     res.status(400).send(generateCallbackPage(
       null,
       error?.toString() || "authorization_error",
@@ -167,8 +184,20 @@ async function handleCallback(req: Request, res: Response): Promise<void> {
 
   console.log("[OAuth] Authorization code received, returning to MCP client");
 
-  // Return the authorization code to the MCP client via postMessage
-  // The MCP client will exchange it via POST /oauth/token with its PKCE verifier
+  // If client provided a redirect URI, redirect back with the code
+  // This is the standard OAuth 2.0 flow for MCP clients
+  if (storedState.clientRedirectUri) {
+    const redirectUrl = new URL(storedState.clientRedirectUri);
+    redirectUrl.searchParams.set("code", code as string);
+    redirectUrl.searchParams.set("state", state as string);
+    console.log(`[OAuth] Redirecting to client redirect_uri: ${redirectUrl.toString()}`);
+    res.redirect(redirectUrl.toString());
+    return;
+  }
+
+  // Fallback: Return the authorization code via postMessage for browser-based clients
+  // This only works if the window was opened via window.open() from a parent page
+  console.log("[OAuth] No client redirect_uri, using postMessage fallback");
   res.status(200).send(generateCallbackPage(code as string, null, null));
 }
 
