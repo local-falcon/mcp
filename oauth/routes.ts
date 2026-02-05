@@ -239,6 +239,11 @@ function generateSuccessRedirectPage(redirectUrl: string): string {
     setTimeout(function() {
       document.getElementById('status').innerHTML = 'If you are not redirected automatically, <a href="${escapeHtml(redirectUrl)}">click here</a>.';
     }, 3000);
+
+    // Show close message after 30 seconds
+    setTimeout(function() {
+      document.getElementById('status').innerHTML = 'Authentication complete. You may close this window.';
+    }, 30000);
   </script>
 </body>
 </html>`;
