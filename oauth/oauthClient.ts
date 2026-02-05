@@ -132,9 +132,14 @@ export async function revokeToken(token: string): Promise<void> {
     `${OAUTH_CONFIG.clientId}:${OAUTH_CONFIG.clientSecret}`
   ).toString("base64");
 
-  console.log("[OAuth] Revoking token...");
+  console.log("[OAuth] Revoking token:", {
+    url: OAUTH_CONFIG.revocationUrl,
+    tokenPrefix: token ? token.substring(0, 8) + '...' : 'none',
+    clientId: OAUTH_CONFIG.clientId,
+  });
 
   try {
+    console.log("[OAuth] Sending revocation request to:", OAUTH_CONFIG.revocationUrl);
     const response = await fetch(OAUTH_CONFIG.revocationUrl, {
       method: "POST",
       headers: {
@@ -145,19 +150,24 @@ export async function revokeToken(token: string): Promise<void> {
       body: body.toString(),
     });
 
+    const responseText = await response.text();
+
     // RFC 7009: Revocation endpoint returns 200 even if token was already invalid
     if (response.ok) {
-      console.log("[OAuth] Token revoked successfully");
+      console.log("[OAuth] Token revoked successfully:", {
+        status: response.status,
+        body: responseText.substring(0, 200),
+      });
     } else {
-      const responseText = await response.text();
       console.error("[OAuth] Token revocation failed:", {
         status: response.status,
+        statusText: response.statusText,
         body: responseText.substring(0, 200),
       });
     }
   } catch (error) {
     // Don't throw on revocation errors - it's a best-effort cleanup
-    console.error("[OAuth] Token revocation error:", error);
+    console.error("[OAuth] Token revocation network error:", error);
   }
 }
 

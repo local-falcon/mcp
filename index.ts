@@ -34,26 +34,57 @@ class SessionManager {
   private transports = new Map<string, Transport>();
 
   add(sessionId: string, data: Omit<SessionData, 'createdAt'>, transport?: Transport): void {
-    this.sessions.set(sessionId, { ...data, createdAt: Date.now() });
+    const sessionData = { ...data, createdAt: Date.now() };
+    console.log(`[Session] Adding session ${sessionId}:`, {
+      hasApiKey: !!data.apiKey,
+      apiKeyPrefix: data.apiKey ? data.apiKey.substring(0, 8) + '...' : 'none',
+      isPro: data.isPro,
+      createdAt: sessionData.createdAt,
+    });
+    this.sessions.set(sessionId, sessionData);
     if (transport) this.transports.set(sessionId, transport);
   }
 
   remove(sessionId: string): void {
+    console.log(`[Session] remove() called for session ${sessionId}`);
     const session = this.sessions.get(sessionId);
-    if (session?.apiKey) {
+
+    if (!session) {
+      console.log(`[Session] No session found for ${sessionId} - already removed or never existed`);
+      this.transports.delete(sessionId);
+      return;
+    }
+
+    console.log(`[Session] Session data for ${sessionId}:`, {
+      hasApiKey: !!session.apiKey,
+      apiKeyPrefix: session.apiKey ? session.apiKey.substring(0, 8) + '...' : 'none',
+      isPro: session.isPro,
+      createdAt: session.createdAt,
+      ageMs: Date.now() - session.createdAt,
+    });
+
+    if (session.apiKey) {
       const sessionAge = Date.now() - session.createdAt;
       // Only revoke if session was active long enough (not during OAuth setup)
       if (sessionAge >= MIN_SESSION_AGE_FOR_REVOCATION_MS) {
         console.log(`[Session] Revoking token for disconnected session ${sessionId} (age: ${Math.round(sessionAge / 1000)}s)`);
-        revokeToken(session.apiKey).catch((err) => {
-          console.error(`[Session] Failed to revoke token for session ${sessionId}:`, err);
-        });
+        revokeToken(session.apiKey)
+          .then(() => {
+            console.log(`[Session] Token revocation call completed for session ${sessionId}`);
+          })
+          .catch((err) => {
+            console.error(`[Session] Failed to revoke token for session ${sessionId}:`, err);
+          });
       } else {
-        console.log(`[Session] Skipping revocation for new session ${sessionId} (age: ${Math.round(sessionAge / 1000)}s)`);
+        console.log(`[Session] Skipping revocation for new session ${sessionId} (age: ${Math.round(sessionAge / 1000)}s, threshold: ${MIN_SESSION_AGE_FOR_REVOCATION_MS}ms)`);
       }
+    } else {
+      console.log(`[Session] No apiKey for session ${sessionId} - skipping revocation`);
     }
+
     this.sessions.delete(sessionId);
     this.transports.delete(sessionId);
+    console.log(`[Session] Session ${sessionId} removed from manager`);
   }
 
   getTransport(sessionId: string): Transport | undefined {
@@ -247,7 +278,7 @@ const setupSSERoutes = (app: Application, sessionManager: SessionManager): void 
       sessionManager.add(sessionId, { apiKey: apiKey!, isPro: isPro === "true" }, transport);
       
       transport.onclose = () => {
-        console.log(`SSE transport closed for session ${sessionId}`);
+        console.log(`[Transport] SSE transport onclose triggered for session ${sessionId}`);
         sessionManager.remove(sessionId);
       };
 
@@ -348,9 +379,12 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
 
         transport.onclose = () => {
           const sid = transport.sessionId;
+          console.log(`[Transport] HTTP transport onclose triggered, sessionId: ${sid || 'undefined'}`);
           if (sid && sessionManager.getTransport(sid)) {
-            console.log(`HTTP Transport closed for session ${sid}, removing from session manager`);
+            console.log(`[Transport] HTTP transport closed for session ${sid}, removing from session manager`);
             sessionManager.remove(sid);
+          } else {
+            console.log(`[Transport] HTTP transport onclose: session ${sid} not found in manager (already removed or not yet added)`);
           }
         };
 
