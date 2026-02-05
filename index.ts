@@ -18,7 +18,11 @@ dotenv.config({ path: ".env.local" });
 interface SessionData {
   apiKey: string;
   isPro: boolean;
+  createdAt: number;
 }
+
+// Minimum session age before revocation (prevents revoking during OAuth setup)
+const MIN_SESSION_AGE_FOR_REVOCATION_MS = 60000; // 60 seconds
 
 type Transport = SSEServerTransport | StreamableHTTPServerTransport;
 
@@ -29,19 +33,24 @@ class SessionManager {
   private sessions = new Map<string, SessionData>();
   private transports = new Map<string, Transport>();
 
-  add(sessionId: string, data: SessionData, transport?: Transport): void {
-    this.sessions.set(sessionId, data);
+  add(sessionId: string, data: Omit<SessionData, 'createdAt'>, transport?: Transport): void {
+    this.sessions.set(sessionId, { ...data, createdAt: Date.now() });
     if (transport) this.transports.set(sessionId, transport);
   }
 
   remove(sessionId: string): void {
-    // Revoke the OAuth token when client disconnects
     const session = this.sessions.get(sessionId);
     if (session?.apiKey) {
-      console.log(`[Session] Revoking token for disconnected session ${sessionId}`);
-      revokeToken(session.apiKey).catch((err) => {
-        console.error(`[Session] Failed to revoke token for session ${sessionId}:`, err);
-      });
+      const sessionAge = Date.now() - session.createdAt;
+      // Only revoke if session was active long enough (not during OAuth setup)
+      if (sessionAge >= MIN_SESSION_AGE_FOR_REVOCATION_MS) {
+        console.log(`[Session] Revoking token for disconnected session ${sessionId} (age: ${Math.round(sessionAge / 1000)}s)`);
+        revokeToken(session.apiKey).catch((err) => {
+          console.error(`[Session] Failed to revoke token for session ${sessionId}:`, err);
+        });
+      } else {
+        console.log(`[Session] Skipping revocation for new session ${sessionId} (age: ${Math.round(sessionAge / 1000)}s)`);
+      }
     }
     this.sessions.delete(sessionId);
     this.transports.delete(sessionId);
