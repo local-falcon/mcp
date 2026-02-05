@@ -9,7 +9,7 @@ import { getServer } from "./server.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { InMemoryEventStore } from "@modelcontextprotocol/sdk/examples/shared/inMemoryEventStore.js";
-import { setupOAuthRoutes } from "./oauth/index.js";
+import { setupOAuthRoutes, revokeToken } from "./oauth/index.js";
 
 // Configure environment variables
 dotenv.config({ path: ".env.local" });
@@ -35,6 +35,14 @@ class SessionManager {
   }
 
   remove(sessionId: string): void {
+    // Revoke the OAuth token when client disconnects
+    const session = this.sessions.get(sessionId);
+    if (session?.apiKey) {
+      console.log(`[Session] Revoking token for disconnected session ${sessionId}`);
+      revokeToken(session.apiKey).catch((err) => {
+        console.error(`[Session] Failed to revoke token for session ${sessionId}:`, err);
+      });
+    }
     this.sessions.delete(sessionId);
     this.transports.delete(sessionId);
   }
@@ -61,6 +69,27 @@ class SessionManager {
 
   async cleanup(): Promise<void> {
     console.log("Cleaning up sessions...");
+
+    // Revoke all OAuth tokens
+    const revocationPromises: Promise<void>[] = [];
+    for (const [sessionId, session] of this.sessions) {
+      if (session.apiKey) {
+        console.log(`[Session] Revoking token for session ${sessionId}`);
+        revocationPromises.push(
+          revokeToken(session.apiKey).catch((err) => {
+            console.error(`[Session] Failed to revoke token for session ${sessionId}:`, err);
+          })
+        );
+      }
+    }
+
+    // Wait for all revocations to complete (with timeout)
+    await Promise.race([
+      Promise.all(revocationPromises),
+      new Promise(resolve => setTimeout(resolve, 5000)) // 5 second timeout
+    ]);
+
+    // Close all transports
     for (const [sessionId, transport] of this.transports) {
       try {
         console.log(`Closing transport for session ${sessionId}`);

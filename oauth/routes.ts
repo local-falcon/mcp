@@ -8,6 +8,7 @@ import { stateStore } from "./stateStore.js";
 import {
   generateSecureState,
   exchangeCodeForToken,
+  revokeToken,
   OAuthError,
 } from "./oauthClient.js";
 
@@ -423,6 +424,47 @@ async function handleTokenExchange(req: Request, res: Response): Promise<void> {
 }
 
 /**
+ * Handle token revocation request (RFC 7009)
+ * POST /oauth/revoke - revokes an access token
+ */
+async function handleRevoke(req: Request, res: Response): Promise<void> {
+  // Ensure body exists
+  if (!req.body || typeof req.body !== 'object') {
+    console.error("[OAuth] Revoke request has no body. Content-Type:", req.headers['content-type']);
+    res.status(400).json({
+      error: "invalid_request",
+      error_description: "Request body is missing or invalid.",
+    });
+    return;
+  }
+
+  const { token, token_type_hint } = req.body;
+
+  console.log("[OAuth] Revoke request received:", {
+    token: token ? "[PRESENT]" : "[MISSING]",
+    token_type_hint,
+  });
+
+  if (!token) {
+    res.status(400).json({
+      error: "invalid_request",
+      error_description: "Missing token parameter",
+    });
+    return;
+  }
+
+  try {
+    await revokeToken(token);
+    // RFC 7009: Return 200 OK regardless of whether token was valid
+    res.status(200).json({ revoked: true });
+  } catch (error) {
+    console.error("[OAuth] Revocation failed:", error);
+    // Still return 200 per RFC 7009 - revocation is best-effort
+    res.status(200).json({ revoked: true });
+  }
+}
+
+/**
  * Set up OAuth routes on the Express application
  */
 export function setupOAuthRoutes(app: Application): void {
@@ -450,5 +492,13 @@ export function setupOAuthRoutes(app: Application): void {
     });
   });
 
-  console.log("[OAuth] Routes registered: GET /oauth/authorize, GET /oauth/callback");
+  // Revocation endpoint - revokes access tokens (RFC 7009)
+  app.post("/oauth/revoke", (req, res) => {
+    handleRevoke(req, res).catch((err) => {
+      console.error("[OAuth] Unhandled error in revoke:", err);
+      res.status(200).json({ revoked: true }); // Per RFC 7009, always return 200
+    });
+  });
+
+  console.log("[OAuth] Routes registered: GET /oauth/authorize, POST /oauth/token, GET /oauth/callback, POST /oauth/revoke");
 }

@@ -116,6 +116,52 @@ export async function exchangeCodeForToken(
 }
 
 /**
+ * Revoke an access token (RFC 7009)
+ * Called when a client disconnects to invalidate their token
+ */
+export async function revokeToken(token: string): Promise<void> {
+  const body = new URLSearchParams({
+    token: token,
+    token_type_hint: "access_token",
+    client_id: OAUTH_CONFIG.clientId,
+    client_secret: OAUTH_CONFIG.clientSecret,
+  });
+
+  // Create Basic auth header for client credentials
+  const basicAuth = Buffer.from(
+    `${OAUTH_CONFIG.clientId}:${OAUTH_CONFIG.clientSecret}`
+  ).toString("base64");
+
+  console.log("[OAuth] Revoking token...");
+
+  try {
+    const response = await fetch(OAUTH_CONFIG.revocationUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+        Authorization: `Basic ${basicAuth}`,
+      },
+      body: body.toString(),
+    });
+
+    // RFC 7009: Revocation endpoint returns 200 even if token was already invalid
+    if (response.ok) {
+      console.log("[OAuth] Token revoked successfully");
+    } else {
+      const responseText = await response.text();
+      console.error("[OAuth] Token revocation failed:", {
+        status: response.status,
+        body: responseText.substring(0, 200),
+      });
+    }
+  } catch (error) {
+    // Don't throw on revocation errors - it's a best-effort cleanup
+    console.error("[OAuth] Token revocation error:", error);
+  }
+}
+
+/**
  * Refresh an access token using a refresh token
  */
 export async function refreshAccessToken(

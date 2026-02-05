@@ -26,6 +26,7 @@ export {
   generateAuthorizationUrl,
   exchangeCodeForToken,
   refreshAccessToken,
+  revokeToken,
   OAuthError,
 } from "./oauthClient.js";
 
