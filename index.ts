@@ -451,7 +451,13 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
       const transport = sessionManager.getTransport(sessionId);
       
       res.on('close', () => {
-        console.log(`HTTP SSE connection closed for session ${sessionId}`);
+        console.log(`[Transport] HTTP SSE connection closed for session ${sessionId}`);
+        // When the SSE stream closes, the client has disconnected
+        // Remove the session which will trigger token revocation
+        if (sessionManager.getSession(sessionId)) {
+          console.log(`[Transport] Client disconnected via SSE close, removing session ${sessionId}`);
+          sessionManager.remove(sessionId);
+        }
       });
       
       console.log(`Starting HTTP SSE transport.handleRequest for session ${sessionId}...`);
