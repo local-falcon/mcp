@@ -19,10 +19,17 @@ interface SessionData {
   apiKey: string;
   isPro: boolean;
   createdAt: number;
+  lastActivity: number;
 }
 
 // Minimum session age before revocation (prevents revoking during OAuth setup)
 const MIN_SESSION_AGE_FOR_REVOCATION_MS = 60000; // 60 seconds
+
+// Session inactivity timeout - revoke tokens for sessions inactive longer than this
+const SESSION_INACTIVITY_TIMEOUT_MS = 10 * 24 * 60 * 60 * 1000; // 10 days
+
+// How often to check for inactive sessions
+const INACTIVITY_CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
 type Transport = SSEServerTransport | StreamableHTTPServerTransport;
 
@@ -33,8 +40,9 @@ class SessionManager {
   private sessions = new Map<string, SessionData>();
   private transports = new Map<string, Transport>();
 
-  add(sessionId: string, data: Omit<SessionData, 'createdAt'>, transport?: Transport): void {
-    const sessionData = { ...data, createdAt: Date.now() };
+  add(sessionId: string, data: Omit<SessionData, 'createdAt' | 'lastActivity'>, transport?: Transport): void {
+    const now = Date.now();
+    const sessionData = { ...data, createdAt: now, lastActivity: now };
     console.log(`[Session] Adding session ${sessionId}:`, {
       hasApiKey: !!data.apiKey,
       apiKeyPrefix: data.apiKey ? data.apiKey.substring(0, 8) + '...' : 'none',
@@ -107,7 +115,45 @@ class SessionManager {
     return this.sessions.size;
   }
 
+  updateActivity(sessionId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      session.lastActivity = Date.now();
+    }
+  }
+
+  private inactivityInterval: ReturnType<typeof setInterval> | null = null;
+
+  startInactivityChecker(): void {
+    this.inactivityInterval = setInterval(() => {
+      const now = Date.now();
+      for (const [sessionId, session] of this.sessions) {
+        const inactiveMs = now - session.lastActivity;
+        if (inactiveMs >= SESSION_INACTIVITY_TIMEOUT_MS) {
+          console.log(`[Session] Session ${sessionId} inactive for ${Math.round(inactiveMs / 1000 / 60 / 60)}h, revoking token and removing`);
+          // Grab transport before remove() deletes it from the map
+          const transport = this.transports.get(sessionId);
+          this.remove(sessionId);
+          // Also close the transport to free resources
+          if (transport) {
+            transport.close().catch((err) => {
+              console.error(`[Session] Failed to close transport for stale session ${sessionId}:`, err);
+            });
+          }
+        }
+      }
+    }, INACTIVITY_CHECK_INTERVAL_MS);
+  }
+
+  stopInactivityChecker(): void {
+    if (this.inactivityInterval) {
+      clearInterval(this.inactivityInterval);
+      this.inactivityInterval = null;
+    }
+  }
+
   async cleanup(): Promise<void> {
+    this.stopInactivityChecker();
     console.log("Cleaning up sessions...");
 
     // Revoke all OAuth tokens
@@ -315,13 +361,14 @@ const setupSSERoutes = (app: Application, sessionManager: SessionManager): void 
     }
 
     try {
+      sessionManager.updateActivity(sessionId);
       await transport.handlePostMessage(req, res, req.body);
     } catch (error: unknown) {
       console.error("Error handling SSE message:", error);
       if (!res.headersSent) {
-        res.status(500).json({ 
-          error: "Error handling request", 
-          details: String(error) 
+        res.status(500).json({
+          error: "Error handling request",
+          details: String(error)
         });
       }
     }
@@ -351,6 +398,7 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
       if (sessionId && sessionManager.getTransport(sessionId)) {
         // Reuse existing transport
         console.log(`Reusing HTTP session: ${sessionId}`);
+        sessionManager.updateActivity(sessionId);
         transport = sessionManager.getTransport(sessionId) as StreamableHTTPServerTransport;
       } else if (!sessionId && isInitializeRequest(req.body)) {
         // New initialization request
@@ -457,6 +505,12 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
         if (sessionManager.getSession(sessionId)) {
           console.log(`[Transport] Client disconnected via SSE close, removing session ${sessionId}`);
           sessionManager.remove(sessionId);
+          // Also close the transport to free resources and trigger transport.onclose
+          if (transport) {
+            (transport as StreamableHTTPServerTransport).close().catch((err) => {
+              console.error(`[Transport] Failed to close transport after SSE disconnect for session ${sessionId}:`, err);
+            });
+          }
         }
       });
       
@@ -539,6 +593,8 @@ const createUnifiedServer = (sessionManager: SessionManager, modes: string[]): A
 // Server Startup
 const startUnifiedServer = (app: Application, sessionManager: SessionManager, modes: string[]): void => {
   const port = parseInt(process.env.PORT ?? "8000", 10);
+  sessionManager.startInactivityChecker();
+
   const server = app.listen(port, () => {
     console.log(`Unified MCP server listening on port ${port}`);
     console.log(`Active modes: ${modes.join(', ').toUpperCase()}`);
@@ -550,6 +606,7 @@ const startUnifiedServer = (app: Application, sessionManager: SessionManager, mo
       console.log(`  - HTTP: POST /mcp, GET /mcp, DELETE /mcp`);
     }
     console.log(`  - Health: GET /ping, GET /healthz`);
+    console.log(`  - Session inactivity timeout: ${SESSION_INACTIVITY_TIMEOUT_MS / 1000 / 60 / 60 / 24} days`);
   });
 
   process.on("SIGINT", async () => {
