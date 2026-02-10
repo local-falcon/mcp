@@ -11,9 +11,9 @@ export const OAUTH_CONFIG = {
   clientSecret: "71fdc6383c274334095fec457fb2085d73451a79fd030e460c69a6f3db00af0b",
 
   // OAuth endpoints
-  authorizationUrl: "https://staging.localfalcon.com/oauth-v2/authorize",
-  tokenUrl: "https://staging.localfalcon.com/oauth-v2/token",
-  revocationUrl: "https://staging.localfalcon.com/oauth-v2/revoke",
+  authorizationUrl: "https://www.localfalcon.com/oauth-v2/authorize",
+  tokenUrl: "https://www.localfalcon.com/oauth-v2/token",
+  revocationUrl: "https://www.localfalcon.com/oauth-v2/revoke",
 
   // OAuth settings
   scopes: ["api"],
