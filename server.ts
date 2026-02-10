@@ -43,8 +43,8 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
     version: "1.0.0",
     icons: [
       {
-        src: "https://www.localfalcon.com/uploads/identity/logos/298093_local-falcon-logo.svg",
-        mimeType: "image/svg+xml",
+        src: "https://www.localfalcon.com/uploads/identity/logos/471387_local-falcon-logo.png",
+        mimeType: "image/png",
       },
     ],
     description: `You are a Local Falcon MCP Server. You are able to interact with the Local Falcon API to retrieve information about your Local Falcon reports and locations.
