@@ -288,6 +288,7 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
       client_id: "74e0d6e848652234efed.localfalconapps.com",
       client_secret: "71fdc6383c274334095fec457fb2085d73451a79fd030e460c69a6f3db00af0b",
       client_name: "LocalFalcon MCP",
+      logo_uri: "https://www.localfalcon.com/uploads/identity/logos/471387_local-falcon-logo.png",
       redirect_uris: [`${baseUrl}/oauth/callback`],
       grant_types: ["authorization_code"],
       response_types: ["code"],
