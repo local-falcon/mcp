@@ -41,6 +41,12 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
   const server = new McpServer({
     name: "Local Falcon MCP Server",
     version: "1.0.0",
+    icons: [
+      {
+        src: "https://www.localfalcon.com/uploads/identity/logos/298093_local-falcon-logo.svg",
+        mimeType: "image/svg+xml",
+      },
+    ],
     description: `You are a Local Falcon MCP Server. You are able to interact with the Local Falcon API to retrieve information about your Local Falcon reports and locations.
       Note that sometimes you will run into an issue where responses are too verbose. If this happens use the lowDateMode option by default. If the user seems to be unsatisfied with the quanity of data returned, set lowDataMode to false.
       Don't run a ton of tools sequentially with no direction, for example if the user asks for a scan reports don't run the tool for every other kind of report as well unless you're trying to do something important. Instead in that case you'd just summarize the scan reports for them.
