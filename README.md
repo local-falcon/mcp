@@ -8,21 +8,100 @@ An MCP (Model Context Protocol) server for the [Local Falcon API](https://www.lo
 
 - [Node.js](https://nodejs.org/) (install the LTS version)
 
-### Getting Started in Claude Desktop
+## Authentication
 
-1. Create a new directory for the MCP server and install the package.
-```bash
-mkdir lf-mcp
-cd lf-mcp 
-npm i @local-falcon/mcp
+### OAuth (Recommended)
+
+OAuth is the recommended way to connect to the Local Falcon MCP server. It provides a secure, token-based authentication flow — no API key management required. You'll be redirected to Local Falcon to authorize access, and tokens are handled automatically.
+
+1. Set the URL to `https://mcp.localfalcon.com/mcp`
+2. Set **Authentication** to **OAuth**
+3. Leave **Client ID** and **Client Secret** empty — the server handles client registration automatically
+4. Connect and authorize when redirected to Local Falcon
+
+### Bearer Token
+
+If your MCP client does not support OAuth, you can use your Local Falcon API key as a Bearer token.
+
+1. Set the URL to `https://mcp.localfalcon.com/mcp`
+2. Set **Authentication** to **Bearer Token**
+3. Enter your Local Falcon API key as the token value
+
+### API Key via Query String
+
+If your MCP client does not support OAuth or Bearer Token authentication, you can pass your API key directly in the URL:
+
+```
+https://mcp.localfalcon.com/mcp?local_falcon_api_key=INSERT_YOUR_API_KEY_HERE
 ```
 
-2. Copy the path to the installed npm module and add it to the args in the mcp.json file making sure to point to the index.js file under /dist.
-3. Add your API key to the env in the mcp.json file.
+---
+
+## Running via Remote (HTTP)
+
+For MCP clients that use `mcp-remote` (all platforms):
+
+```json
+{
+  "mcpServers": {
+    "local-falcon-mcp": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://mcp.localfalcon.com/mcp?local_falcon_api_key=INSERT_YOUR_API_KEY_HERE"
+      ]
+    }
+  }
+}
+```
+
+### Pro Users
+
+For Claude Max/Team users you unlock a greater MCP tool call limit. This must be enabled by appending `is_pro=true` in the query string of the URL. For example:
+
+```json
+{
+  "mcpServers": {
+    "local-falcon-mcp": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://mcp.localfalcon.com/mcp?local_falcon_api_key=INSERT_YOUR_API_KEY_HERE&is_pro=true"
+      ]
+    }
+  }
+}
+```
+
+## Running via Remote (SSE — Legacy)
+
+** The /sse endpoint is considered legacy and will be removed in a future version. Use the /mcp endpoint instead.
+
+```json
+{
+  "mcpServers": {
+    "local-falcon-mcp": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://mcp.localfalcon.com/sse?local_falcon_api_key=INSERT_YOUR_API_KEY_HERE"
+      ]
+    }
+  }
+}
+```
 
 ## Running via STDIO
 
-For MacOS/Unix use the following format:
+For local installations, first install the package:
+
+```bash
+mkdir lf-mcp
+cd lf-mcp
+npm i @local-falcon/mcp
+```
+
+For MacOS/Unix:
 ```json
 {
   "mcpServers": {
@@ -37,7 +116,7 @@ For MacOS/Unix use the following format:
 }
 ```
 
-For Windows use the following format:
+For Windows:
 ```json
 {
   "mcpServers": {
@@ -51,92 +130,6 @@ For Windows use the following format:
   }
 }
 ```
-
-## Running via SSE via a STDIO Gateway
-
-For all platforms use the following format:
-
-```json
-{
-  "mcpServers": {
-    "local-falcon-mcp": {
-      "command": "npx",
-      "args": [
-        "mcp-remote",
-        "https://mcp.localfalcon.com/mcp?local_falcon_api_key=INSERT_YOUR_API_KEY_HERE"
-      ]
-    }
-  }
-}
-```
-** The /sse option is now considered legacy and may be removed in a future version
-
-## Pro Users
-
-For Claude Max/Team users you unlock a greater MCP tool call limit. This must be enabled by appending the `is_pro=true` in the query string of the URL. For example:
-
-```json
-{
-  "mcpServers": {
-    "local-falcon-mcp": {
-      "command": "npx",
-      "args": [
-        "mcp-remote",
-        "https://mcp.localfalcon.com/mcp?local_falcon_api_key=INSERT_YOUR_API_KEY_HERE&is_pro=true"
-      ]
-    }
-  }
-}
-```
-** The /sse option is now considered legacy and may be removed in a future version
-
-## Running via HTTP
-
-For all platforms use the following format:
-
-```json
-{
-  "mcpServers": {
-    "local-falcon-mcp": {
-      "command": "npx",
-      "args": [
-        "mcp-remote",
-        "https://mcp.localfalcon.com/mcp?local_falcon_api_key=INSERT_YOUR_API_KEY_HERE"
-      ]
-    }
-  }
-}
-```
-
-## Pro Users
-
-For Claude Max/Team users you unlock a greater MCP tool call limit. This must be enabled by appending the `is_pro=true` in the query string of the URL. For example:
-
-```json
-{
-  "mcpServers": {
-    "local-falcon-mcp": {
-      "command": "npx",
-      "args": [
-        "mcp-remote",
-        "https://mcp.localfalcon.com/mcp?local_falcon_api_key=INSERT_YOUR_API_KEY_HERE&is_pro=true"
-      ]
-    }
-  }
-}
-```
-
-## Running via Claude Integrations (SSE)
-
-If connecting to Claude integrations:
-1. name the server `Local Falcon MCP SSE`
-2. add the following url: https://mcp.localfalcon.com/sse?local_falcon_api_key=YOUR_API_KEY_HERE
-
-## Running via Claude Integrations (HTTP)
-
-If connecting to Claude integrations:
-1. name the server `Local Falcon MCP HTTP`
-2. add the following url: https://mcp.localfalcon.com/mcp?local_falcon_api_key=YOUR_API_KEY_HERE
 
 ## Tools List
 
