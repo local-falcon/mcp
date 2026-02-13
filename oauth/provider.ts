@@ -45,6 +45,7 @@ async function verifyAccessToken(token: string): Promise<AuthInfo> {
       token,
       clientId: "localfalcon-mcp",
       scopes: ["api"],
+      expiresAt: cached.expiresAt / 1000, // SDK expects Unix seconds
       extra: { isPro: cached.isPro },
     };
   }
@@ -64,15 +65,17 @@ async function verifyAccessToken(token: string): Promise<AuthInfo> {
       false;
 
     // Cache the result
+    const cacheExpiresAt = Date.now() + IS_PRO_CACHE_TTL_MS;
     authCache.set(token, {
       isPro,
-      expiresAt: Date.now() + IS_PRO_CACHE_TTL_MS,
+      expiresAt: cacheExpiresAt,
     });
 
     return {
       token,
       clientId: "localfalcon-mcp",
       scopes: ["api"],
+      expiresAt: cacheExpiresAt / 1000, // SDK expects Unix seconds
       extra: { isPro },
     };
   } catch (error) {
