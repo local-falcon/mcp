@@ -74,6 +74,47 @@ function generateCallbackPage(code: string | null, error: string | null, errorDe
 }
 
 /**
+ * Generate a success page shown after OAuth authorization completes.
+ * Displays a brief confirmation, then redirects the browser to the MCP client's
+ * callback URL. Uses <meta http-equiv="refresh"> so it works even without JS,
+ * with a JS redirect as a faster path and a clickable link as the final fallback.
+ */
+function generateSuccessPage(redirectUrl: string): string {
+  // Escape for safe embedding in HTML attribute and JS string contexts
+  const safeUrl = redirectUrl.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+  const jsUrl = redirectUrl.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="refresh" content="2;url=${safeUrl}">
+  <title>Authorization Successful - LocalFalcon MCP</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; background: #f5f5f5; }
+    .container { background: white; border-radius: 8px; padding: 40px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; }
+    h1 { color: #22c55e; margin-bottom: 20px; }
+    .icon { font-size: 64px; color: #22c55e; margin-bottom: 10px; }
+    .instructions { color: #666; line-height: 1.6; }
+    a { color: #3b82f6; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">&#10003;</div>
+    <h1>Authorization Successful</h1>
+    <p class="instructions">Completing authentication&hellip;</p>
+    <p class="instructions">If you are not redirected automatically, <a href="${safeUrl}">click here</a>.</p>
+  </div>
+  <script>
+    setTimeout(function() { window.location.href = '${jsUrl}'; }, 1000);
+  </script>
+</body>
+</html>`;
+}
+
+/**
  * GET /oauth/authorize
  * Initiates the OAuth 2.1 flow by redirecting to LocalFalcon's authorization endpoint.
  * Enforces PKCE with S256 as required by OAuth 2.1.
@@ -202,15 +243,14 @@ async function handleCallback(req: Request, res: Response): Promise<void> {
 
   console.log("[OAuth] Authorization code received, returning to MCP client");
 
-  // If client provided a redirect URI, redirect back with the authorization code.
-  // Use a proper HTTP 302 redirect for maximum compatibility with MCP clients
-  // (CLI tools, headless browsers, etc. may not execute JavaScript redirects).
+  // If client provided a redirect URI, show a brief success page then redirect
+  // to the client with the authorization code and state.
   if (storedState.clientRedirectUri) {
     const redirectUrl = new URL(storedState.clientRedirectUri);
     redirectUrl.searchParams.set("code", code as string);
     redirectUrl.searchParams.set("state", state as string);
-    console.log(`[OAuth] Redirecting to client redirect_uri: ${redirectUrl.toString()}`);
-    res.redirect(redirectUrl.toString());
+    console.log(`[OAuth] Showing success page, will redirect to: ${redirectUrl.toString()}`);
+    res.status(200).send(generateSuccessPage(redirectUrl.toString()));
     return;
   }
 
