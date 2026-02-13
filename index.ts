@@ -289,15 +289,36 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
   return app;
 };
 
-// SSE Transport Handlers
-const setupSSERoutes = (app: Application, sessionManager: SessionManager): void => {
-  // Bearer auth middleware for SSE endpoint
-  const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT ?? "8000"}`;
-  const bearerAuth = requireBearerAuth({
+// Helper: create Bearer auth middleware that dynamically sets resource_metadata
+// from the incoming request's host, avoiding hard-coded BASE_URL mismatches.
+const createDynamicBearerAuth = (): RequestHandler => {
+  const staticAuth = requireBearerAuth({
     verifier: tokenVerifier,
     requiredScopes: ["api"],
-    resourceMetadataUrl: `${baseUrl}/.well-known/oauth-protected-resource`,
   });
+
+  return ((req: Request, res: Response, next: Function) => {
+    // Wrap res.set so we can inject a dynamic resource_metadata URL
+    const originalSet = res.set.bind(res);
+    res.set = function (field: any, val?: any) {
+      if (typeof field === 'string' && field.toLowerCase() === 'www-authenticate' && typeof val === 'string') {
+        // Inject resource_metadata from the actual request host
+        const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+        const host = req.headers["x-forwarded-host"] || req.get("host");
+        const resourceMetadataUrl = `${protocol}://${host}/.well-known/oauth-protected-resource`;
+        val = `${val}, resource_metadata="${resourceMetadataUrl}"`;
+      }
+      return originalSet(field, val);
+    } as any;
+
+    return (staticAuth as Function)(req, res, next);
+  }) as RequestHandler;
+};
+
+// SSE Transport Handlers
+const setupSSERoutes = (app: Application, sessionManager: SessionManager): void => {
+  // Bearer auth middleware for SSE endpoint — uses dynamic resource_metadata
+  const bearerAuth = createDynamicBearerAuth();
 
   // SSE endpoint for establishing streams — protected by Bearer auth (OAuth 2.1)
   const sseHandler: AsyncRequestHandler = async (req, res) => {
@@ -373,13 +394,8 @@ const setupSSERoutes = (app: Application, sessionManager: SessionManager): void 
 
 // HTTP Transport Handlers
 const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void => {
-  // Bearer auth middleware for HTTP endpoint
-  const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT ?? "8000"}`;
-  const bearerAuth = requireBearerAuth({
-    verifier: tokenVerifier,
-    requiredScopes: ["api"],
-    resourceMetadataUrl: `${baseUrl}/.well-known/oauth-protected-resource`,
-  });
+  // Bearer auth middleware for HTTP endpoint — uses dynamic resource_metadata
+  const bearerAuth = createDynamicBearerAuth();
 
   // Main MCP HTTP endpoint
   const mcpHandler: AsyncRequestHandler = async (req, res) => {
