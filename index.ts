@@ -256,19 +256,23 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
     });
   });
 
-  // Client registration endpoint - returns pre-configured client credentials
-  // Dynamic registration is not actually performed; credentials are hardcoded
-  app.post("/register", (_req: Request, res: Response): void => {
-    const baseUrl = getBaseUrl(_req);
+  // Dynamic Client Registration (RFC 7591)
+  // Echoes back the client's metadata merged with our pre-configured credentials.
+  // The MCP SDK client expects redirect_uris from its request to be reflected.
+  app.post("/register", (req: Request, res: Response): void => {
+    const clientMetadata = req.body || {};
+
     res.status(201).json({
+      // Echo client's metadata so the SDK's Zod parse succeeds
+      ...clientMetadata,
+      // Override with our server-assigned credentials
       client_id: "74e0d6e848652234efed.localfalconapps.com",
       client_secret: "71fdc6383c274334095fec457fb2085d73451a79fd030e460c69a6f3db00af0b",
-      client_name: "LocalFalcon MCP",
+      client_name: clientMetadata.client_name || "LocalFalcon MCP",
       logo_uri: "https://www.localfalcon.com/uploads/identity/logos/471387_local-falcon-logo.png",
-      redirect_uris: [`${baseUrl}/oauth/callback`],
       grant_types: ["authorization_code"],
       response_types: ["code"],
-      token_endpoint_auth_method: "client_secret_post",
+      token_endpoint_auth_method: "none",
     });
   });
 
