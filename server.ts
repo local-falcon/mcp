@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import dotenv from "dotenv";
-import { fetchLocalFalconAutoScans, fetchLocalFalconFullGridSearch, fetchLocalFalconGoogleBusinessLocations, fetchLocalFalconGrid, fetchLocalFalconKeywordAtCoordinate, fetchLocalFalconKeywordReport, fetchLocalFalconKeywordReports, fetchLocalFalconLocationReport, fetchLocalFalconLocationReports, fetchAllLocalFalconLocations, fetchLocalFalconRankingAtCoordinate, fetchLocalFalconReport, fetchLocalFalconReports, fetchLocalFalconTrendReport, fetchLocalFalconTrendReports, fetchLocalFalconCompetitorReports, fetchLocalFalconCompetitorReport, fetchLocalFalconCampaignReports, fetchLocalFalconCampaignReport, fetchLocalFalconGuardReports, fetchLocalFalconGuardReport, runLocalFalconScan, searchForLocalFalconBusinessLocation, fetchLocalFalconAccountInfo, saveLocalFalconBusinessLocationToAccount, addLocationsToFalconGuard, pauseFalconGuardProtection, resumeFalconGuardProtection, removeFalconGuardProtection, createLocalFalconCampaign, runLocalFalconCampaign, pauseLocalFalconCampaign, resumeLocalFalconCampaign, reactivateLocalFalconCampaign, fetchLocalFalconReviewsAnalysisReports, fetchLocalFalconReviewsAnalysisReport } from "./localfalcon.js";
+import { fetchLocalFalconAutoScans, fetchLocalFalconFullGridSearch, fetchLocalFalconGoogleBusinessLocations, fetchLocalFalconGrid, fetchLocalFalconKeywordAtCoordinate, fetchLocalFalconKeywordReport, fetchLocalFalconKeywordReports, fetchLocalFalconLocationReport, fetchLocalFalconLocationReports, fetchAllLocalFalconLocations, fetchLocalFalconRankingAtCoordinate, fetchLocalFalconReport, fetchLocalFalconReports, fetchLocalFalconTrendReport, fetchLocalFalconTrendReports, fetchLocalFalconCompetitorReports, fetchLocalFalconCompetitorReport, fetchLocalFalconCampaignReports, fetchLocalFalconCampaignReport, fetchLocalFalconGuardReports, fetchLocalFalconGuardReport, runLocalFalconScan, searchForLocalFalconBusinessLocation, fetchLocalFalconAccountInfo, saveLocalFalconBusinessLocationToAccount, addLocationsToFalconGuard, pauseFalconGuardProtection, resumeFalconGuardProtection, removeFalconGuardProtection, createLocalFalconCampaign, runLocalFalconCampaign, pauseLocalFalconCampaign, resumeLocalFalconCampaign, reactivateLocalFalconCampaign, fetchLocalFalconReviewsAnalysisReports, fetchLocalFalconReviewsAnalysisReport, searchLocalFalconKnowledgeBase, getLocalFalconKnowledgeBaseArticle } from "./localfalcon.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
@@ -810,6 +810,45 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     },
   )
+
+  // Search Knowledge Base
+  server.tool(
+    "searchLocalFalconKnowledgeBase",
+    "Searches the Local Falcon Knowledge Base for help articles, how-to guides, and platform documentation. USE THIS TOOL when a user asks how to do something in Local Falcon, needs help understanding a feature, wants setup or configuration instructions, or is looking for best practices and tips. This is the go-to tool for any 'how do I...', 'what is...', 'how does... work', or 'help me with...' questions about the Local Falcon platform. Returns a list of matching articles with titles and summaries. Use getLocalFalconKnowledgeBaseArticle after this to retrieve the full step-by-step content of a specific article.",
+    {
+      q: z.string().nullish().describe("Search query to find relevant articles. Use natural language keywords like 'how to run a scan', 'campaign setup', 'grid size', 'credits', etc."),
+      categoryId: z.string().nullish().describe("Optional category ID to narrow results to a specific topic area."),
+      limit: z.string().nullish().describe("Maximum number of articles to return."),
+      nextToken: z.string().nullish().describe("Pagination token for additional results."),
+    },
+    async ({ q, categoryId, limit, nextToken }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) {
+        return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      }
+      const resp = await searchLocalFalconKnowledgeBase(apiKey, handleNullOrUndefined(q), handleNullOrUndefined(categoryId), handleNullOrUndefined(limit), handleNullOrUndefined(nextToken));
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
+
+  // Get Knowledge Base Article
+  server.tool(
+    "getLocalFalconKnowledgeBaseArticle",
+    "Retrieves the complete content of a specific Local Falcon Knowledge Base article, including full step-by-step instructions in markdown format. Use this AFTER searchLocalFalconKnowledgeBase to get the full guide for a specific article. If the user references an article by number (e.g. 'KB70', 'article 70', '#70'), strip any prefix and pass just the numeric ID. This is the tool that gives you the actual detailed instructions, walkthroughs, and explanations — the search tool only returns summaries.",
+    {
+      articleId: z.string().describe("The numeric ID of the Knowledge Base article to retrieve (e.g. '70'). If the user says 'KB70' or 'article 70', just pass '70'."),
+    },
+    async ({ articleId }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) {
+        return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      }
+      // Strip any non-numeric prefix (e.g. "KB70" -> "70")
+      const cleanId = articleId.replace(/^[^0-9]+/, '');
+      const resp = await getLocalFalconKnowledgeBaseArticle(apiKey, cleanId);
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
 
   return server;
 };

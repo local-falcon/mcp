@@ -1949,3 +1949,74 @@ export async function fetchLocalFalconReviewsAnalysisReport(
     throw error;
   }
 }
+
+/**
+ * Searches the Local Falcon Knowledge Base for help articles, how-to guides, and platform documentation.
+ * @param {string} apiKey - Your Local Falcon API key
+ * @param {string} [q] - Optional search query to filter articles
+ * @param {string} [categoryId] - Optional category ID to filter articles
+ * @param {string} [limit] - Optional limit for number of results
+ * @param {string} [nextToken] - Optional pagination token for additional results
+ * @returns {Promise<any>} API response with matching knowledge base articles
+ */
+export async function searchLocalFalconKnowledgeBase(
+  apiKey: string,
+  q?: string,
+  categoryId?: string,
+  limit?: string,
+  nextToken?: string
+): Promise<any> {
+  const url = new URL(`${API_BASE_V2}/knowledge-base/`);
+  url.searchParams.set("api_key", apiKey);
+
+  if (q) url.searchParams.set("q", q);
+  if (categoryId) url.searchParams.set("category_id", categoryId);
+  if (limit) url.searchParams.set("limit", limit);
+  if (nextToken) url.searchParams.set("next_token", nextToken);
+
+  await rateLimiter.waitForAvailableSlot();
+
+  return withRetry(async () => {
+    const res = await fetchWithTimeout(url.toString(), {
+      method: "GET",
+      headers: HEADERS,
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
+    }
+
+    return await safeParseJson(res);
+  });
+}
+
+/**
+ * Retrieves a specific Local Falcon Knowledge Base article by ID.
+ * @param {string} apiKey - Your Local Falcon API key
+ * @param {string} articleId - The numeric ID of the article to retrieve
+ * @returns {Promise<any>} API response with the full article content
+ */
+export async function getLocalFalconKnowledgeBaseArticle(
+  apiKey: string,
+  articleId: string
+): Promise<any> {
+  const url = new URL(`${API_BASE_V2}/knowledge-base/${articleId}`);
+  url.searchParams.set("api_key", apiKey);
+
+  await rateLimiter.waitForAvailableSlot();
+
+  return withRetry(async () => {
+    const res = await fetchWithTimeout(url.toString(), {
+      method: "GET",
+      headers: HEADERS,
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
+    }
+
+    return await safeParseJson(res);
+  });
+}
