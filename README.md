@@ -1,11 +1,11 @@
 # Local Falcon MCP Server
 
 <p align="center">
-  <img src="local-falcon-ai-logo.svg" alt="Local Falcon" width="120" />
+  <img src="https://www.localfalcon.com/uploads/identity/logos/742656_falcon-ai-logo.svg" alt="Local Falcon" width="120" />
 </p>
 
 <p align="center">
-  <strong>An MCP (Model Context Protocol) server for the [Local Falcon](https://www.localfalcon.com/) local SEO and AI Visibility platform</strong>
+  <strong>An MCP (Model Context Protocol) server for the Local Falcon local SEO and AI Visibility platform</strong>
 </p>
 
 <p align="center">
