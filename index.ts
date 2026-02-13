@@ -245,9 +245,9 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
   // Wildcard variants handle RFC 9728 path-aware discovery: when the MCP server
   // URL includes a path (e.g. /mcp), clients try /.well-known/{type}/mcp first.
   app.get("/.well-known/openid-configuration", oauthMetadata);
-  app.get("/.well-known/openid-configuration/*", oauthMetadata);
+  app.get("/.well-known/openid-configuration/*path", oauthMetadata);
   app.get("/.well-known/oauth-authorization-server", oauthMetadata);
-  app.get("/.well-known/oauth-authorization-server/*", oauthMetadata);
+  app.get("/.well-known/oauth-authorization-server/*path", oauthMetadata);
 
   // OAuth 2.1 Protected Resource Metadata (RFC 9728)
   // The wildcard variant handles path-aware discovery (e.g. /.well-known/oauth-protected-resource/mcp)
@@ -261,7 +261,7 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
     });
   };
   app.get("/.well-known/oauth-protected-resource", protectedResourceMetadata);
-  app.get("/.well-known/oauth-protected-resource/*", protectedResourceMetadata);
+  app.get("/.well-known/oauth-protected-resource/*path", protectedResourceMetadata);
 
   // Dynamic Client Registration (RFC 7591)
   // Echoes back the client's metadata merged with our pre-configured credentials.
