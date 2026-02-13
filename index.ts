@@ -9,6 +9,14 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { InMemoryEventStore } from "@modelcontextprotocol/sdk/examples/shared/inMemoryEventStore.js";
 import { setupOAuthRoutes, revokeToken, createTokenVerifier } from "./oauth/index.js";
+import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
+
+// Augment Express Request to include auth info set by our bearer auth middleware
+declare module "express" {
+  interface Request {
+    auth?: AuthInfo;
+  }
+}
 
 // Configure environment variables
 dotenv.config({ path: ".env.local" });
