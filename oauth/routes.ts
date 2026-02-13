@@ -348,10 +348,17 @@ async function handleTokenExchange(req: Request, res: Response): Promise<void> {
   }
 
   try {
-    // Exchange code for token with LocalFalcon (forwarding PKCE verifier and resource)
+    // Always use OUR callback URL when calling LocalFalcon's token endpoint.
+    // The client sends its own redirect_uri, but LocalFalcon requires the one
+    // used during the authorize step, which is our /oauth/callback.
+    const ourRedirectUri = getRedirectUri(req);
+    if (redirect_uri && redirect_uri !== ourRedirectUri) {
+      console.log("[OAuth] Client redirect_uri:", redirect_uri, "-> using ours:", ourRedirectUri);
+    }
+
     const tokenResponse = await exchangeCodeForToken(
       code as string,
-      redirect_uri || getRedirectUri(req),
+      ourRedirectUri,
       code_verifier,
       resource
     );
