@@ -19,7 +19,13 @@ export function generateSecureState(): string {
  */
 export function generateAuthorizationUrl(
   redirectUri: string,
-  state: string
+  state: string,
+  options?: {
+    codeChallenge?: string;
+    codeChallengeMethod?: string;
+    scope?: string;
+    resource?: string;
+  }
 ): string {
   const url = new URL(OAUTH_CONFIG.authorizationUrl);
 
@@ -28,8 +34,22 @@ export function generateAuthorizationUrl(
   url.searchParams.set("response_type", OAUTH_CONFIG.responseType);
   url.searchParams.set("state", state);
 
-  if (OAUTH_CONFIG.scopes.length > 0) {
+  // Forward PKCE parameters
+  if (options?.codeChallenge) {
+    url.searchParams.set("code_challenge", options.codeChallenge);
+    url.searchParams.set("code_challenge_method", options.codeChallengeMethod || "S256");
+  }
+
+  // Forward scope
+  if (options?.scope) {
+    url.searchParams.set("scope", options.scope);
+  } else if (OAUTH_CONFIG.scopes.length > 0) {
     url.searchParams.set("scope", OAUTH_CONFIG.scopes.join(" "));
+  }
+
+  // Forward resource indicator (RFC 8707)
+  if (options?.resource) {
+    url.searchParams.set("resource", options.resource);
   }
 
   return url.toString();
@@ -41,7 +61,8 @@ export function generateAuthorizationUrl(
 export async function exchangeCodeForToken(
   code: string,
   redirectUri: string,
-  codeVerifier?: string
+  codeVerifier?: string,
+  resource?: string
 ): Promise<OAuthTokenResponse> {
   const body = new URLSearchParams({
     grant_type: OAUTH_CONFIG.grantType,
@@ -54,6 +75,11 @@ export async function exchangeCodeForToken(
   // Add PKCE code_verifier if provided
   if (codeVerifier) {
     body.set("code_verifier", codeVerifier);
+  }
+
+  // Add resource indicator (RFC 8707) if provided
+  if (resource) {
+    body.set("resource", resource);
   }
 
   // Create Basic auth header for client credentials

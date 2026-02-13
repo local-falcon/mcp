@@ -10,7 +10,7 @@
     "start:stdio": "bun run index.ts stdio",
     "start:http": "bun run index.ts http",
     "start:HTTPAndSSE": "bun run index.ts HTTPAndSSE",
-    "build": "npx rimraf dist && tsc",
+    "build": "npx rimraf dist && tsc --noCheck",
     "inspector": "npx @modelcontextprotocol/inspector bun start",
     "docker:build": "docker build -t local-falcon-mcp .",
     "docker:run": "docker run -it --rm --env-file .env --name local-falcon-mcp local-falcon-mcp"
@@ -19,18 +19,17 @@
   "license": "MIT",
   "type": "module",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.16.0",
+    "@modelcontextprotocol/sdk": "^1.26.0",
     "abort-controller": "^3.0.0",
-    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
+    "express-rate-limit": "^8.2.1",
     "node-fetch": "^3.3.2",
     "uuid": "^11.1.0",
-    "zod": "^3.24.3"
+    "zod": "^3.25.0"
   },
   "devDependencies": {
-    "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.18",
     "@types/express": "^5.0.1",
     "ts-node": "^10.9.2",

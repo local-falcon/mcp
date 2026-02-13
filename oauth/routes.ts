@@ -1,5 +1,10 @@
 /**
- * OAuth 2.0 Express Route Handlers for LocalFalcon MCP Server
+ * OAuth 2.1 Express Route Handlers for LocalFalcon MCP Server
+ *
+ * Enforces OAuth 2.1 requirements:
+ * - PKCE mandatory with S256 (reject requests without code_challenge/code_verifier)
+ * - Resource indicators (RFC 8707)
+ * - Exact redirect URI matching
  */
 
 import type { Application, Request, Response } from "express";
@@ -7,10 +12,12 @@ import { OAUTH_CONFIG } from "./config.js";
 import { stateStore } from "./stateStore.js";
 import {
   generateSecureState,
+  generateAuthorizationUrl,
   exchangeCodeForToken,
   revokeToken,
   OAuthError,
 } from "./oauthClient.js";
+import { clearAuthCache } from "./provider.js";
 
 /**
  * Build the full redirect URI based on the incoming request
@@ -19,6 +26,15 @@ function getRedirectUri(req: Request): string {
   const protocol = req.headers["x-forwarded-proto"] || req.protocol;
   const host = req.headers["x-forwarded-host"] || req.get("host");
   return `${protocol}://${host}${OAUTH_CONFIG.callbackPath}`;
+}
+
+/**
+ * Get the server's base URL from the request
+ */
+function getBaseUrl(req: Request): string {
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+  const host = req.headers["x-forwarded-host"] || req.get("host");
+  return `${protocol}://${host}`;
 }
 
 /**
@@ -68,8 +84,8 @@ function generateCallbackPage(code: string | null, error: string | null, errorDe
 
 /**
  * GET /oauth/authorize
- * Initiates the OAuth flow by redirecting to LocalFalcon's authorization endpoint
- * Forwards MCP client's OAuth parameters (state, PKCE) to upstream provider
+ * Initiates the OAuth 2.1 flow by redirecting to LocalFalcon's authorization endpoint.
+ * Enforces PKCE with S256 as required by OAuth 2.1.
  */
 async function handleAuthorize(req: Request, res: Response): Promise<void> {
   try {
@@ -81,40 +97,50 @@ async function handleAuthorize(req: Request, res: Response): Promise<void> {
     const codeChallengeMethod = req.query.code_challenge_method as string | undefined;
     const clientRedirectUri = req.query.redirect_uri as string | undefined;
     const scope = req.query.scope as string | undefined;
+    const resource = req.query.resource as string | undefined;
+
+    // OAuth 2.1: PKCE is mandatory — reject requests without code_challenge
+    if (!codeChallenge) {
+      console.error("[OAuth] PKCE required: missing code_challenge parameter");
+      res.status(400).json({
+        error: "invalid_request",
+        error_description: "PKCE is required. The code_challenge parameter must be provided (OAuth 2.1).",
+      });
+      return;
+    }
+
+    // OAuth 2.1: Only S256 is supported
+    if (codeChallengeMethod && codeChallengeMethod !== "S256") {
+      console.error(`[OAuth] Unsupported code_challenge_method: ${codeChallengeMethod}`);
+      res.status(400).json({
+        error: "invalid_request",
+        error_description: "Only S256 code_challenge_method is supported (OAuth 2.1).",
+      });
+      return;
+    }
 
     // Use client's state or generate our own
     const state = clientState || generateSecureState();
 
-    // Store state for CSRF validation, including client's redirect URI if provided
+    // Store state for CSRF validation, including client's redirect URI and resource
     stateStore.set(state, {
       createdAt: Date.now(),
       redirectUri,
       clientRedirectUri,
+      resource,
     });
 
-    // Build authorization URL with all parameters
-    const url = new URL(OAUTH_CONFIG.authorizationUrl);
-    url.searchParams.set("client_id", OAUTH_CONFIG.clientId);
-    url.searchParams.set("redirect_uri", redirectUri);
-    url.searchParams.set("response_type", "code");
-    url.searchParams.set("state", state);
+    // Build authorization URL with all parameters using the updated helper
+    const authUrl = generateAuthorizationUrl(redirectUri, state, {
+      codeChallenge,
+      codeChallengeMethod: codeChallengeMethod || "S256",
+      scope,
+      resource,
+    });
 
-    // Forward PKCE parameters if provided
-    if (codeChallenge) {
-      url.searchParams.set("code_challenge", codeChallenge);
-      url.searchParams.set("code_challenge_method", codeChallengeMethod || "S256");
-    }
-
-    // Forward scope if provided, otherwise use default
-    if (scope) {
-      url.searchParams.set("scope", scope);
-    } else if (OAUTH_CONFIG.scopes.length > 0) {
-      url.searchParams.set("scope", OAUTH_CONFIG.scopes.join(" "));
-    }
-
-    console.log(`[OAuth] Redirecting to authorization URL: ${url.toString()}`);
-    console.log(`[OAuth] Client params - state: ${clientState ? "provided" : "generated"}, PKCE: ${codeChallenge ? "yes" : "no"}`);
-    res.redirect(url.toString());
+    console.log(`[OAuth] Redirecting to authorization URL: ${authUrl}`);
+    console.log(`[OAuth] Client params - state: ${clientState ? "provided" : "generated"}, PKCE: yes, resource: ${resource || "none"}`);
+    res.redirect(authUrl);
   } catch (error) {
     console.error("[OAuth] Error initiating authorization:", error);
     res.status(500).json({
@@ -126,8 +152,8 @@ async function handleAuthorize(req: Request, res: Response): Promise<void> {
 
 /**
  * GET /oauth/callback
- * Handles the OAuth callback - returns authorization code to MCP client
- * The MCP client will exchange the code via POST /oauth/token with its PKCE verifier
+ * Handles the OAuth callback - returns authorization code to MCP client.
+ * The MCP client will exchange the code via POST /oauth/token with its PKCE verifier.
  */
 async function handleCallback(req: Request, res: Response): Promise<void> {
   const { code, state, error, error_description } = req.query;
@@ -186,7 +212,6 @@ async function handleCallback(req: Request, res: Response): Promise<void> {
   console.log("[OAuth] Authorization code received, returning to MCP client");
 
   // If client provided a redirect URI, show success page that redirects
-  // This is the standard OAuth 2.0 flow for MCP clients
   if (storedState.clientRedirectUri) {
     const redirectUrl = new URL(storedState.clientRedirectUri);
     redirectUrl.searchParams.set("code", code as string);
@@ -197,14 +222,12 @@ async function handleCallback(req: Request, res: Response): Promise<void> {
   }
 
   // Fallback: Return the authorization code via postMessage for browser-based clients
-  // This only works if the window was opened via window.open() from a parent page
   console.log("[OAuth] No client redirect_uri, using postMessage fallback");
   res.status(200).send(generateCallbackPage(code as string, null, null));
 }
 
 /**
  * Generate success page that redirects to client's callback URL
- * Shows a success message while completing the OAuth flow
  */
 function generateSuccessRedirectPage(redirectUrl: string): string {
   return `<!DOCTYPE html>
@@ -251,68 +274,6 @@ function generateSuccessRedirectPage(redirectUrl: string): string {
 }
 
 /**
- * Generate HTML error page
- */
-function generateErrorPage(title: string, message: string): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${escapeHtml(title)} - LocalFalcon MCP</title>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      max-width: 600px;
-      margin: 50px auto;
-      padding: 20px;
-      background: #f5f5f5;
-    }
-    .container {
-      background: white;
-      border-radius: 8px;
-      padding: 40px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    }
-    h1 {
-      color: #ef4444;
-      margin-bottom: 20px;
-    }
-    .error-message {
-      background: #fef2f2;
-      border: 1px solid #fecaca;
-      border-radius: 4px;
-      padding: 15px;
-      color: #991b1b;
-      margin: 20px 0;
-    }
-    .retry-btn {
-      background: #0ea5e9;
-      color: white;
-      border: none;
-      padding: 10px 20px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 14px;
-      text-decoration: none;
-      display: inline-block;
-    }
-    .retry-btn:hover {
-      background: #0284c7;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>${escapeHtml(title)}</h1>
-    <div class="error-message">${escapeHtml(message)}</div>
-    <a href="/oauth/authorize" class="retry-btn">Try Again</a>
-  </div>
-</body>
-</html>`;
-}
-
-/**
  * Escape HTML special characters to prevent XSS
  */
 function escapeHtml(text: string | undefined | null): string {
@@ -333,6 +294,8 @@ function escapeHtml(text: string | undefined | null): string {
 /**
  * Handle token exchange request from MCP client
  * POST /oauth/token - exchanges authorization code for access token
+ *
+ * OAuth 2.1: Requires code_verifier (PKCE) for authorization_code grant
  */
 async function handleTokenExchange(req: Request, res: Response): Promise<void> {
   // Ensure body exists (requires express.urlencoded middleware for OAuth requests)
@@ -345,7 +308,7 @@ async function handleTokenExchange(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const { grant_type, code, redirect_uri, client_id, client_secret, code_verifier } = req.body;
+  const { grant_type, code, redirect_uri, client_id, client_secret, code_verifier, resource } = req.body;
 
   console.log("[OAuth] Token exchange request received:", {
     contentType: req.headers['content-type'],
@@ -355,6 +318,7 @@ async function handleTokenExchange(req: Request, res: Response): Promise<void> {
     client_id,
     client_secret: client_secret ? "[PRESENT]" : "[MISSING]",
     code_verifier: code_verifier ? "[PRESENT]" : "[MISSING]",
+    resource: resource ? "[PRESENT]" : "[MISSING]",
   });
 
   if (grant_type !== "authorization_code") {
@@ -373,17 +337,28 @@ async function handleTokenExchange(req: Request, res: Response): Promise<void> {
     return;
   }
 
+  // OAuth 2.1: PKCE code_verifier is mandatory for authorization_code grant
+  if (!code_verifier) {
+    console.error("[OAuth] PKCE required: missing code_verifier parameter");
+    res.status(400).json({
+      error: "invalid_request",
+      error_description: "PKCE is required. The code_verifier parameter must be provided (OAuth 2.1).",
+    });
+    return;
+  }
+
   try {
-    // Exchange code for token with LocalFalcon (forwarding PKCE verifier if provided)
+    // Exchange code for token with LocalFalcon (forwarding PKCE verifier and resource)
     const tokenResponse = await exchangeCodeForToken(
       code as string,
       redirect_uri || getRedirectUri(req),
-      code_verifier
+      code_verifier,
+      resource
     );
 
     console.log("[OAuth] Token response from LocalFalcon:", Object.keys(tokenResponse));
 
-    // Extract API key from response
+    // Extract API key from response (LocalFalcon may return it in various fields)
     const apiKey =
       (tokenResponse as any).data?.api_key ||
       (tokenResponse as any).api_key ||
@@ -401,7 +376,7 @@ async function handleTokenExchange(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // Return standard OAuth token response
+    // Return standard OAuth 2.1 token response
     res.status(200).json({
       access_token: apiKey,
       token_type: "Bearer",
@@ -455,6 +430,8 @@ async function handleRevoke(req: Request, res: Response): Promise<void> {
 
   try {
     await revokeToken(token);
+    // Also clear the auth cache for this token
+    clearAuthCache(token);
     // RFC 7009: Return 200 OK regardless of whether token was valid
     res.status(200).json({ revoked: true });
   } catch (error) {
@@ -465,10 +442,10 @@ async function handleRevoke(req: Request, res: Response): Promise<void> {
 }
 
 /**
- * Set up OAuth routes on the Express application
+ * Set up OAuth 2.1 routes on the Express application
  */
 export function setupOAuthRoutes(app: Application): void {
-  // Authorization endpoint - initiates OAuth flow
+  // Authorization endpoint - initiates OAuth flow (PKCE required)
   app.get("/oauth/authorize", (req, res) => {
     handleAuthorize(req, res).catch((err) => {
       console.error("[OAuth] Unhandled error in authorize:", err);
@@ -476,7 +453,7 @@ export function setupOAuthRoutes(app: Application): void {
     });
   });
 
-  // Token endpoint - exchanges code for access token (for MCP clients)
+  // Token endpoint - exchanges code for access token (code_verifier required)
   app.post("/oauth/token", (req, res) => {
     handleTokenExchange(req, res).catch((err) => {
       console.error("[OAuth] Unhandled error in token exchange:", err);
@@ -500,5 +477,5 @@ export function setupOAuthRoutes(app: Application): void {
     });
   });
 
-  console.log("[OAuth] Routes registered: GET /oauth/authorize, POST /oauth/token, GET /oauth/callback, POST /oauth/revoke");
+  console.log("[OAuth 2.1] Routes registered: GET /oauth/authorize, POST /oauth/token, GET /oauth/callback, POST /oauth/revoke");
 }
