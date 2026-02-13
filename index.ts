@@ -8,8 +8,7 @@ import { getServer } from "./server.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { InMemoryEventStore } from "@modelcontextprotocol/sdk/examples/shared/inMemoryEventStore.js";
-import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
-import { setupOAuthRoutes, revokeToken, createTokenVerifier, clearAuthCache } from "./oauth/index.js";
+import { setupOAuthRoutes, revokeToken, createTokenVerifier } from "./oauth/index.js";
 
 // Configure environment variables
 dotenv.config({ path: ".env.local" });
@@ -289,36 +288,58 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
   return app;
 };
 
-// Helper: create Bearer auth middleware that dynamically sets resource_metadata
-// from the incoming request's host, avoiding hard-coded BASE_URL mismatches.
-const createDynamicBearerAuth = (): RequestHandler => {
-  const staticAuth = requireBearerAuth({
-    verifier: tokenVerifier,
-    requiredScopes: ["api"],
-  });
+// Custom Bearer auth middleware that dynamically sets resource_metadata
+// from the incoming request's host. This avoids hard-coded BASE_URL mismatches
+// that cause OAuth discovery to fail when the client can't reach a static URL.
+const bearerAuthMiddleware: RequestHandler = (async (req: Request, res: Response, next: Function) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      throw { code: "invalid_token", message: "Missing Authorization header", status: 401 };
+    }
 
-  return ((req: Request, res: Response, next: Function) => {
-    // Wrap res.set so we can inject a dynamic resource_metadata URL
-    const originalSet = res.set.bind(res);
-    res.set = function (field: any, val?: any) {
-      if (typeof field === 'string' && field.toLowerCase() === 'www-authenticate' && typeof val === 'string') {
-        // Inject resource_metadata from the actual request host
-        const protocol = req.headers["x-forwarded-proto"] || req.protocol;
-        const host = req.headers["x-forwarded-host"] || req.get("host");
-        const resourceMetadataUrl = `${protocol}://${host}/.well-known/oauth-protected-resource`;
-        val = `${val}, resource_metadata="${resourceMetadataUrl}"`;
-      }
-      return originalSet(field, val);
-    } as any;
+    const [type, token] = authHeader.split(" ");
+    if (type.toLowerCase() !== "bearer" || !token) {
+      throw { code: "invalid_token", message: "Invalid Authorization header format, expected 'Bearer TOKEN'", status: 401 };
+    }
 
-    return (staticAuth as Function)(req, res, next);
-  }) as RequestHandler;
-};
+    const authInfo = await tokenVerifier.verifyAccessToken(token);
+
+    // Check required scopes
+    if (!authInfo.scopes.includes("api")) {
+      throw { code: "insufficient_scope", message: "Insufficient scope", status: 403 };
+    }
+
+    // Check expiration
+    if (typeof authInfo.expiresAt !== "number" || isNaN(authInfo.expiresAt)) {
+      throw { code: "invalid_token", message: "Token has no expiration time", status: 401 };
+    }
+    if (authInfo.expiresAt < Date.now() / 1000) {
+      throw { code: "invalid_token", message: "Token has expired", status: 401 };
+    }
+
+    req.auth = authInfo;
+    next();
+  } catch (error: any) {
+    const errCode = error?.code || "invalid_token";
+    const errMsg = error?.message || "Unauthorized";
+    const status = error?.status || 401;
+
+    // Build WWW-Authenticate header with dynamic resource_metadata from request host
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+    const host = req.headers["x-forwarded-host"] || req.get("host");
+    const resourceMetadataUrl = `${protocol}://${host}/.well-known/oauth-protected-resource`;
+
+    let wwwAuth = `Bearer error="${errCode}", error_description="${errMsg}", scope="api"`;
+    wwwAuth += `, resource_metadata="${resourceMetadataUrl}"`;
+
+    res.set("WWW-Authenticate", wwwAuth);
+    res.status(status).json({ error: errCode, error_description: errMsg });
+  }
+}) as RequestHandler;
 
 // SSE Transport Handlers
 const setupSSERoutes = (app: Application, sessionManager: SessionManager): void => {
-  // Bearer auth middleware for SSE endpoint — uses dynamic resource_metadata
-  const bearerAuth = createDynamicBearerAuth();
 
   // SSE endpoint for establishing streams — protected by Bearer auth (OAuth 2.1)
   const sseHandler: AsyncRequestHandler = async (req, res) => {
@@ -388,14 +409,12 @@ const setupSSERoutes = (app: Application, sessionManager: SessionManager): void 
     }
   };
 
-  app.get("/sse", bearerAuth as RequestHandler, sseHandler);
+  app.get("/sse", bearerAuthMiddleware, sseHandler);
   app.post("/sse/messages", sseMessagesHandler);
 };
 
 // HTTP Transport Handlers
 const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void => {
-  // Bearer auth middleware for HTTP endpoint — uses dynamic resource_metadata
-  const bearerAuth = createDynamicBearerAuth();
 
   // Main MCP HTTP endpoint
   const mcpHandler: AsyncRequestHandler = async (req, res) => {
@@ -590,7 +609,7 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
       return next();
     }
     // New request (initialization) — require Bearer token
-    return (bearerAuth as RequestHandler)(req, res, next);
+    return bearerAuthMiddleware(req, res, next);
   };
 
   app.post('/mcp', conditionalBearerAuth, mcpHandler);
