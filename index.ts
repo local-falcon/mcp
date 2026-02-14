@@ -217,6 +217,13 @@ const validateAuth = (apiKey?: string): boolean => {
   return isValid;
 };
 
+// Helper to get base URL respecting proxy headers
+const getBaseUrl = (req: Request): string => {
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+  const host = req.headers["x-forwarded-host"] || req.get("host");
+  return `${protocol}://${host}`;
+};
+
 // Base Application Setup
 const createBaseApp = (sessionManager: SessionManager): Application => {
   const app = express();
@@ -242,13 +249,6 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
       connectedSessions: sessionManager.getSessionCount(),
     });
   });
-
-  // Helper to get base URL respecting proxy headers
-  const getBaseUrl = (req: Request): string => {
-    const protocol = req.headers["x-forwarded-proto"] || req.protocol;
-    const host = req.headers["x-forwarded-host"] || req.get("host");
-    return `${protocol}://${host}`;
-  };
 
   // OAuth 2.0 Authorization Server Metadata (RFC 8414)
   const oauthMetadata = (_req: Request, res: Response): void => {
@@ -310,11 +310,9 @@ const setupSSERoutes = (app: Application, sessionManager: SessionManager): void 
     const { apiKey, isPro } = extractAuth(req);
 
     if (!validateAuth(apiKey)) {
-      res.status(401).json({ 
-        error: "Missing or invalid LOCAL_FALCON_API_KEY", 
-        headers: req.headers, 
-        query: req.query 
-      });
+      const baseUrl = getBaseUrl(req);
+      res.set('WWW-Authenticate', `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource"`);
+      res.status(401).json({ error: "Unauthorized" });
       return;
     }
 
@@ -407,11 +405,9 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
         const { apiKey, isPro } = extractAuth(req);
         
         if (!validateAuth(apiKey)) {
-          res.status(401).json({
-            error: "Missing or invalid LOCAL_FALCON_API_KEY",
-            headers: req.headers,
-            query: req.query,
-          });
+          const baseUrl = getBaseUrl(req);
+          res.set('WWW-Authenticate', `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource"`);
+          res.status(401).json({ error: "Unauthorized" });
           return;
         }
 
@@ -572,6 +568,11 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
   app.post('/mcp', mcpHandler);
   app.get('/mcp', mcpGetHandler);
   app.delete('/mcp', mcpDeleteHandler);
+
+  // Mount the same handlers on root so https://mcp.localfalcon.com works as a connector URL
+  app.post('/', mcpHandler);
+  app.get('/', mcpGetHandler);
+  app.delete('/', mcpDeleteHandler);
 };
 
 // Unified Server Creation
@@ -605,6 +606,7 @@ const startUnifiedServer = (app: Application, sessionManager: SessionManager, mo
     }
     if (modes.includes('http')) {
       console.log(`  - HTTP: POST /mcp, GET /mcp, DELETE /mcp`);
+      console.log(`  - HTTP (root): POST /, GET /, DELETE /`);
     }
     console.log(`  - Health: GET /ping, GET /healthz`);
     console.log(`  - Session inactivity timeout: ${SESSION_INACTIVITY_TIMEOUT_MS / 1000 / 60 / 60 / 24} days`);
