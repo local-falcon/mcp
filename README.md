@@ -1,6 +1,23 @@
 # Local Falcon MCP Server
 
-An MCP (Model Context Protocol) server for the [Local Falcon API](https://www.localfalcon.com/), implemented in TypeScript, using the official MCP SDK. This server exposes Local Falcon reporting capabilities as MCP tools, enabling integration with agentic AI systems and workflows.
+<p align="center">
+  <img src="https://www.localfalcon.com/uploads/identity/logos/742656_falcon-ai-logo.svg" alt="Local Falcon" width="120" />
+</p>
+
+<p align="center">
+  <strong>An MCP (Model Context Protocol) server for the Local Falcon local SEO and AI Visibility platform</strong>
+</p>
+
+<p align="center">
+    <a href="https://github.com/local-falcon/mcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  <a href="https://www.localfalcon.com"><img src="https://img.shields.io/badge/Local%20Falcon-Website-red" alt="Local Falcon"></a>
+</p>
+
+---
+
+## Local SEO and AI Visibility Monitoring MCP Server
+
+An MCP (Model Context Protocol) server for the [Local Falcon platform](https://www.localfalcon.com/), implemented in TypeScript, using the official MCP SDK. This server exposes Local Falcon scanning, tracking and reporting capabilities as MCP tools, enabling integration with agentic AI systems and workflows.
 
 ---
 
