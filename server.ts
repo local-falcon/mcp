@@ -8,8 +8,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 dotenv.config({ path: ".env.local" });
 
 
-const LOW_LIMIT = "3"
-const HIGH_LIMIT = "7"
+const DEFAULT_LIMIT = "7"
 
 function handleNullOrUndefined(value: string | null | undefined): string {
   if (value === null || value === undefined) {
@@ -19,7 +18,7 @@ function handleNullOrUndefined(value: string | null | undefined): string {
 }
 
 
-export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: boolean }>) => {
+export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
   const getApiKey = (ctx: any) => {
     const sessionId = ctx?.sessionId;
     const sessionHeaders = sessionMapping.get(sessionId)
@@ -27,15 +26,6 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
       return process.env.LOCAL_FALCON_API_KEY;
     }
     return sessionHeaders.apiKey;
-  };
-
-  const isProUser = (ctx: any) => {
-    const sessionId = ctx?.sessionId;
-    const sessionHeaders = sessionMapping.get(sessionId)
-    if (!sessionHeaders) {
-      return false;
-    }
-    return sessionHeaders.isPro;
   };
 
   const server = new McpServer({
@@ -80,7 +70,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
     },
     async ({ nextToken, startDate, endDate, placeId, keyword, gridSize, campaignKey, platform }, ctx) => {
       const apiKey = getApiKey(ctx);
-      const limit = isProUser(ctx) ? HIGH_LIMIT : LOW_LIMIT;
+      const limit = DEFAULT_LIMIT;
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
@@ -181,7 +171,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const limit = isProUser(ctx) ? HIGH_LIMIT : LOW_LIMIT;
+      const limit = DEFAULT_LIMIT;
       const resp = await fetchLocalFalconCampaignReports(apiKey, limit, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(placeId), handleNullOrUndefined(runDate), handleNullOrUndefined(nextToken));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
@@ -386,7 +376,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const limit = isProUser(ctx) ? HIGH_LIMIT : LOW_LIMIT;
+      const limit = DEFAULT_LIMIT;
       const resp = await fetchLocalFalconGuardReports(apiKey, limit, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(status), handleNullOrUndefined(nextToken));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
@@ -503,7 +493,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
     },
     async ({ nextToken, placeId, keyword, startDate, endDate, platform }, ctx) => {
       const apiKey = getApiKey(ctx);
-      const limit = isProUser(ctx) ? HIGH_LIMIT : LOW_LIMIT;
+      const limit = DEFAULT_LIMIT;
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
@@ -567,7 +557,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const limit = isProUser(ctx) ? HIGH_LIMIT : LOW_LIMIT;
+      const limit = DEFAULT_LIMIT;
       const resp = await fetchLocalFalconLocationReports(apiKey, limit, handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate),  handleNullOrUndefined(nextToken));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
@@ -603,7 +593,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const limit = isProUser(ctx) ? HIGH_LIMIT : LOW_LIMIT;
+      const limit = DEFAULT_LIMIT;
       const resp = await fetchLocalFalconKeywordReports(apiKey, limit, handleNullOrUndefined(nextToken), handleNullOrUndefined(keyword), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
@@ -641,7 +631,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const limit = isProUser(ctx) ? HIGH_LIMIT : LOW_LIMIT;
+      const limit = DEFAULT_LIMIT;
       const resp = await fetchLocalFalconCompetitorReports(apiKey, limit, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(gridSize), handleNullOrUndefined(nextToken));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }

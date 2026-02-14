@@ -17,7 +17,6 @@ dotenv.config({ path: ".env.local" });
 // Types
 interface SessionData {
   apiKey: string;
-  isPro: boolean;
   createdAt: number;
   lastActivity: number;
 }
@@ -46,7 +45,6 @@ class SessionManager {
     console.log(`[Session] Adding session ${sessionId}:`, {
       hasApiKey: !!data.apiKey,
       apiKeyPrefix: data.apiKey ? data.apiKey.substring(0, 8) + '...' : 'none',
-      isPro: data.isPro,
       createdAt: sessionData.createdAt,
     });
     this.sessions.set(sessionId, sessionData);
@@ -66,7 +64,6 @@ class SessionManager {
     console.log(`[Session] Session data for ${sessionId}:`, {
       hasApiKey: !!session.apiKey,
       apiKeyPrefix: session.apiKey ? session.apiKey.substring(0, 8) + '...' : 'none',
-      isPro: session.isPro,
       createdAt: session.createdAt,
       ageMs: Date.now() - session.createdAt,
     });
@@ -190,7 +187,7 @@ class SessionManager {
 }
 
 // Authentication Utilities
-const extractAuth = (req: Request): { apiKey?: string; isPro?: string } => {
+const extractAuth = (req: Request): { apiKey?: string } => {
   // Extract Bearer token from Authorization header
   const authHeader = req.headers["authorization"] as string | undefined;
   const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
@@ -200,15 +197,13 @@ const extractAuth = (req: Request): { apiKey?: string; isPro?: string } => {
     (req.headers["local_falcon_api_key"] as string | undefined) ??
     (req.query["local_falcon_api_key"] as string | undefined) ??
     (req.cookies?.["local_falcon_api_key"] as string | undefined);
-  const isPro = (req.headers["is_pro"] as string | undefined) ??
-    (req.query["is_pro"] as string | undefined);
   const source = bearerToken ? "bearer" :
     req.headers["local_falcon_api_key"] ? "header" :
     req.query["local_falcon_api_key"] ? "query" :
     req.cookies?.["local_falcon_api_key"] ? "cookie" : "none";
   console.log(`[${new Date().toISOString()}] Extracted auth - Method: ${req.method}, URL: ${req.url}, ` +
-    `apiKey: ${apiKey ? `"${apiKey.substring(0, 8)}..."` : "missing"}, source: ${source}, isPro: ${isPro || "not provided"}`);
-  return { apiKey, isPro };
+    `apiKey: ${apiKey ? `"${apiKey.substring(0, 8)}..."` : "missing"}, source: ${source}`);
+  return { apiKey };
 };
 
 const validateAuth = (apiKey?: string): boolean => {
@@ -231,7 +226,7 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
   app.use(express.urlencoded({ extended: true })); // Required for OAuth token requests
   app.use(cookieParser());
   app.use(cors({
-    allowedHeaders: ['Content-Type', 'mcp-session-id', 'LOCAL_FALCON_API_KEY', 'is_pro', 'last-event-id'],
+    allowedHeaders: ['Content-Type', 'mcp-session-id', 'LOCAL_FALCON_API_KEY', 'last-event-id'],
     origin: "*",
     exposedHeaders: ['mcp-session-id'],
   }));
@@ -307,7 +302,7 @@ const setupSSERoutes = (app: Application, sessionManager: SessionManager): void 
   // SSE endpoint for establishing streams
   const sseHandler: AsyncRequestHandler = async (req, res) => {
     console.log("Establishing SSE stream...");
-    const { apiKey, isPro } = extractAuth(req);
+    const { apiKey } = extractAuth(req);
 
     if (!validateAuth(apiKey)) {
       const baseUrl = getBaseUrl(req);
@@ -320,7 +315,7 @@ const setupSSERoutes = (app: Application, sessionManager: SessionManager): void 
       const transport = new SSEServerTransport("/sse/messages", res);
       const sessionId = transport.sessionId;
 
-      sessionManager.add(sessionId, { apiKey: apiKey!, isPro: isPro === "true" }, transport);
+      sessionManager.add(sessionId, { apiKey: apiKey! }, transport);
       
       transport.onclose = () => {
         console.log(`[Transport] SSE transport onclose triggered for session ${sessionId}`);
@@ -402,8 +397,8 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
       } else if (!sessionId && isInitializeRequest(req.body)) {
         // New initialization request
         console.log(`New HTTP session request: ${req.body.method}`);
-        const { apiKey, isPro } = extractAuth(req);
-        
+        const { apiKey } = extractAuth(req);
+
         if (!validateAuth(apiKey)) {
           const baseUrl = getBaseUrl(req);
           res.set('WWW-Authenticate', `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource"`);
@@ -418,7 +413,7 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
           eventStore,
           onsessioninitialized: (sessionId) => {
             console.log(`HTTP Session initialized: ${sessionId}`);
-            sessionManager.add(sessionId, { apiKey: apiKey!, isPro: isPro === "true" }, transport);
+            sessionManager.add(sessionId, { apiKey: apiKey! }, transport);
           }
         });
 
