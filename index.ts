@@ -207,7 +207,7 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
   app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization', 'mcp-session-id', 'last-event-id'],
     origin: "*",
-    exposedHeaders: ['mcp-session-id'],
+    exposedHeaders: ['mcp-session-id', 'WWW-Authenticate'],
   }));
 
   // Health check endpoints
@@ -626,9 +626,15 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
     return bearerAuthMiddleware(req, res, next);
   };
 
+  // Mount on both /mcp and / so clients can connect to either path.
+  // Root path mounting ensures OAuth discovery works when the server URL has no path.
   app.post('/mcp', conditionalBearerAuth, mcpHandler);
   app.get('/mcp', mcpGetHandler);
   app.delete('/mcp', mcpDeleteHandler);
+
+  app.post('/', conditionalBearerAuth, mcpHandler);
+  app.get('/', mcpGetHandler);
+  app.delete('/', mcpDeleteHandler);
 };
 
 // Unified Server Creation
@@ -661,7 +667,7 @@ const startUnifiedServer = (app: Application, sessionManager: SessionManager, mo
       console.log(`  - SSE: GET /sse, POST /sse/messages`);
     }
     if (modes.includes('http')) {
-      console.log(`  - HTTP: POST /mcp, GET /mcp, DELETE /mcp`);
+      console.log(`  - HTTP: POST|GET|DELETE /mcp and /`);
     }
     console.log(`  - Health: GET /ping, GET /healthz`);
     console.log(`  - Session inactivity timeout: ${SESSION_INACTIVITY_TIMEOUT_MS / 1000 / 60 / 60 / 24} days`);
