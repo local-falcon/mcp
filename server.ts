@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import dotenv from "dotenv";
-import { fetchLocalFalconAutoScans, fetchLocalFalconFullGridSearch, fetchLocalFalconGoogleBusinessLocations, fetchLocalFalconGrid, fetchLocalFalconKeywordAtCoordinate, fetchLocalFalconKeywordReport, fetchLocalFalconKeywordReports, fetchLocalFalconLocationReport, fetchLocalFalconLocationReports, fetchAllLocalFalconLocations, fetchLocalFalconRankingAtCoordinate, fetchLocalFalconReport, fetchLocalFalconReports, fetchLocalFalconTrendReport, fetchLocalFalconTrendReports, fetchLocalFalconCompetitorReports, fetchLocalFalconCompetitorReport, fetchLocalFalconCampaignReports, fetchLocalFalconCampaignReport, fetchLocalFalconGuardReports, fetchLocalFalconGuardReport, runLocalFalconScan, searchForLocalFalconBusinessLocation, fetchLocalFalconAccountInfo, saveLocalFalconBusinessLocationToAccount, addLocationsToFalconGuard, pauseFalconGuardProtection, resumeFalconGuardProtection, removeFalconGuardProtection, createLocalFalconCampaign, runLocalFalconCampaign, pauseLocalFalconCampaign, resumeLocalFalconCampaign, reactivateLocalFalconCampaign, fetchLocalFalconReviewsAnalysisReports, fetchLocalFalconReviewsAnalysisReport, searchLocalFalconKnowledgeBase, getLocalFalconKnowledgeBaseArticle } from "./localfalcon.js";
+import { fetchLocalFalconAutoScans, fetchLocalFalconFullGridSearch, fetchLocalFalconGoogleBusinessLocations, fetchLocalFalconGrid, fetchLocalFalconKeywordAtCoordinate, fetchLocalFalconKeywordReport, fetchLocalFalconKeywordReports, fetchLocalFalconLocationReport, fetchLocalFalconLocationReports, fetchAllLocalFalconLocations, fetchLocalFalconRankingAtCoordinate, fetchLocalFalconReport, fetchLocalFalconReports, fetchLocalFalconTrendReport, fetchLocalFalconTrendReports, fetchLocalFalconCompetitorReports, fetchLocalFalconCompetitorReport, fetchLocalFalconCampaignReports, fetchLocalFalconCampaignReport, fetchLocalFalconGuardReports, fetchLocalFalconGuardReport, runLocalFalconScan, searchForLocalFalconBusinessLocation, fetchLocalFalconAccountInfo, saveLocalFalconBusinessLocationToAccount, addLocationsToFalconGuard, pauseFalconGuardProtection, resumeFalconGuardProtection, removeFalconGuardProtection, createLocalFalconCampaign, runLocalFalconCampaign, pauseLocalFalconCampaign, resumeLocalFalconCampaign, reactivateLocalFalconCampaign, fetchLocalFalconReviewsAnalysisReports, fetchLocalFalconReviewsAnalysisReport, searchLocalFalconKnowledgeBase, getLocalFalconKnowledgeBaseArticle, fetchImageAsBase64, fetchImagesAsBase64 } from "./localfalcon.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
@@ -15,6 +15,93 @@ function handleNullOrUndefined(value: string | null | undefined): string {
     return "";
   }
   return value;
+}
+
+/**
+ * Collects image/heatmap URLs from a response object.
+ * Returns an array of { url, label } pairs for fetching.
+ */
+function collectImageUrls(data: any, prefix = ""): { url: string; label: string }[] {
+  const urls: { url: string; label: string }[] = [];
+  if (!data) return urls;
+
+  if (typeof data.image === "string" && data.image) {
+    urls.push({ url: data.image, label: prefix ? `${prefix} Grid Image` : "Grid Image" });
+  }
+  if (typeof data.heatmap === "string" && data.heatmap) {
+    urls.push({ url: data.heatmap, label: prefix ? `${prefix} Heatmap` : "Heatmap" });
+  }
+  return urls;
+}
+
+/**
+ * Extracts image URLs from a JSON object by searching all string values recursively.
+ * Looks for URLs ending in common image extensions or matching known Local Falcon image URL patterns.
+ */
+function extractImageUrlsFromResponse(data: any): { url: string; label: string }[] {
+  const urls: { url: string; label: string }[] = [];
+  const seen = new Set<string>();
+
+  const imageUrlPattern = /https?:\/\/[^\s"'<>)]+\.(?:png|jpg|jpeg|gif|webp|svg)(?:\?[^\s"'<>)]*)?/gi;
+  const lfImagePattern = /https?:\/\/lf-static[^\s"'<>)]+/gi;
+
+  function search(obj: any) {
+    if (!obj) return;
+    if (typeof obj === "string") {
+      const allMatches = [
+        ...obj.matchAll(imageUrlPattern),
+        ...obj.matchAll(lfImagePattern),
+      ];
+      for (const match of allMatches) {
+        const url = match[0];
+        if (!seen.has(url)) {
+          seen.add(url);
+          urls.push({ url, label: "Article Image" });
+        }
+      }
+    } else if (Array.isArray(obj)) {
+      for (const item of obj) search(item);
+    } else if (typeof obj === "object") {
+      for (const value of Object.values(obj)) search(value);
+    }
+  }
+
+  search(data);
+  return urls;
+}
+
+type TextContent = { type: "text"; text: string };
+type ImageContent = { type: "image"; data: string; mimeType: string };
+type ContentBlock = TextContent | ImageContent;
+
+/**
+ * Fetches images and builds MCP content blocks (text + images).
+ * Images are additive — the text block is always returned.
+ */
+async function buildContentWithImages(
+  textData: any,
+  imageEntries: { url: string; label: string }[]
+): Promise<ContentBlock[]> {
+  const content: ContentBlock[] = [
+    { type: "text" as const, text: JSON.stringify(textData, null, 2) }
+  ];
+
+  if (imageEntries.length === 0) return content;
+
+  const results = await fetchImagesAsBase64(imageEntries.map(e => e.url));
+
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    if (result) {
+      content.push({
+        type: "image" as const,
+        data: result.data,
+        mimeType: result.mimeType,
+      });
+    }
+  }
+
+  return content;
 }
 
 
@@ -90,7 +177,9 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await fetchLocalFalconReport(apiKey, reportKey);
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      const imageEntries = collectImageUrls(resp);
+      const content = await buildContentWithImages(resp, imageEntries);
+      return { content };
     }
   );
 
@@ -837,7 +926,9 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
       // Strip any non-numeric prefix (e.g. "KB70" -> "70")
       const cleanId = articleId.replace(/^[^0-9]+/, '');
       const resp = await getLocalFalconKnowledgeBaseArticle(apiKey, cleanId);
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      const imageEntries = extractImageUrlsFromResponse(resp);
+      const content = await buildContentWithImages(resp, imageEntries);
+      return { content };
     }
   );
 

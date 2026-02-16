@@ -121,6 +121,35 @@ export interface LocalFalconTrendReportsResponse {
 
 const API_BASE = "https://api.localfalcon.com/v1";
 const API_BASE_V2 = "https://api.localfalcon.com/v2";
+
+// Image fetching timeout (shorter than API calls since images are static assets)
+const IMAGE_FETCH_TIMEOUT_MS = 15000;
+
+/**
+ * Fetches an image from a URL and returns it as a base64-encoded string.
+ * Returns null if the fetch fails (to avoid breaking the whole response).
+ */
+export async function fetchImageAsBase64(imageUrl: string): Promise<{ data: string; mimeType: string } | null> {
+  try {
+    const res = await fetchWithTimeout(imageUrl, {}, IMAGE_FETCH_TIMEOUT_MS);
+    if (!res.ok) return null;
+
+    const contentType = res.headers.get("content-type") || "image/png";
+    const buffer = await res.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString("base64");
+    return { data: base64, mimeType: contentType.split(";")[0].trim() };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetches multiple images in parallel from a list of URLs.
+ * Returns an array of results in the same order, with null for failed fetches.
+ */
+export async function fetchImagesAsBase64(imageUrls: string[]): Promise<({ data: string; mimeType: string } | null)[]> {
+  return Promise.all(imageUrls.map(url => fetchImageAsBase64(url)));
+}
 const HEADERS = {
   "Content-Type": "application/json",
 };
@@ -548,6 +577,8 @@ export async function fetchLocalFalconReport(apiKey: string, reportKey: string) 
         radius: report.radius,
         measurement: report.measurement,
         ai_analysis: report.ai_analysis,
+        image: report.image,
+        heatmap: report.heatmap,
       };
     } catch (err) {
       throw new Error(`Failed to parse report data: ${err}`);
