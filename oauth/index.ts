@@ -40,7 +40,7 @@ export {
 export { createTokenVerifier, clearAuthCache } from "./provider.js";
 
 // Client registration store (redirect URI validation)
-export { registerRedirectUris, isRedirectUriRegistered } from "./clientStore.js";
+export { registerRedirectUris, isRedirectUriAllowed } from "./clientStore.js";
 
 // Express routes
 export { setupOAuthRoutes } from "./routes.js";

@@ -5,10 +5,17 @@
  * registered via Dynamic Client Registration (RFC 7591), enforcing
  * OAuth 2.1's exact redirect URI matching requirement.
  *
+ * Loopback redirect URIs (localhost, 127.0.0.1, [::1]) are always
+ * allowed per RFC 8252 Section 7.3 (OAuth for Native Apps), since
+ * MCP clients typically start a local HTTP server to receive callbacks.
+ *
+ * Non-loopback URIs must be registered via POST /register first.
  * Entries expire after 30 minutes to prevent unbounded growth.
  */
 
 const REGISTRATION_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 interface RegisteredEntry {
   expiresAt: number;
@@ -37,10 +44,22 @@ export function registerRedirectUris(uris: string[]): void {
 }
 
 /**
- * Check whether a redirect URI was previously registered and is still valid.
- * Performs exact string matching per OAuth 2.1.
+ * Check whether a redirect URI is allowed.
+ *
+ * - Loopback URIs are always allowed (RFC 8252 Section 7.3).
+ * - Non-loopback URIs must have been registered via POST /register
+ *   and the registration must not have expired.
  */
-export function isRedirectUriRegistered(uri: string): boolean {
+export function isRedirectUriAllowed(uri: string): boolean {
+  try {
+    const parsed = new URL(uri);
+    if (LOOPBACK_HOSTS.has(parsed.hostname)) {
+      return true;
+    }
+  } catch {
+    // Malformed URI — fall through to registration check
+  }
+
   const entry = registeredRedirectUris.get(uri);
   if (!entry) return false;
   if (Date.now() > entry.expiresAt) {

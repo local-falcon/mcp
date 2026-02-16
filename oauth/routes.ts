@@ -18,7 +18,7 @@ import {
   OAuthError,
 } from "./oauthClient.js";
 import { clearAuthCache } from "./provider.js";
-import { isRedirectUriRegistered } from "./clientStore.js";
+import { isRedirectUriAllowed } from "./clientStore.js";
 
 /**
  * Build the full redirect URI based on the incoming request
@@ -152,12 +152,14 @@ async function handleAuthorize(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // OAuth 2.1: Exact redirect URI matching against registered values
-    if (clientRedirectUri && !isRedirectUriRegistered(clientRedirectUri)) {
-      console.error(`[OAuth] Unregistered redirect_uri: ${clientRedirectUri}`);
+    // OAuth 2.1: Redirect URI validation.
+    // Loopback URIs (localhost/127.0.0.1/[::1]) are always allowed per RFC 8252.
+    // Non-loopback URIs must be registered via POST /register.
+    if (clientRedirectUri && !isRedirectUriAllowed(clientRedirectUri)) {
+      console.error(`[OAuth] Disallowed redirect_uri: ${clientRedirectUri}`);
       res.status(400).json({
         error: "invalid_request",
-        error_description: "The redirect_uri is not registered. Register the client via POST /register first.",
+        error_description: "The redirect_uri is not allowed. Non-loopback URIs must be registered via POST /register.",
       });
       return;
     }
