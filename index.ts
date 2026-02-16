@@ -24,7 +24,6 @@ dotenv.config({ path: ".env.local" });
 // Types
 interface SessionData {
   apiKey: string;
-  isPro: boolean;
   createdAt: number;
   lastActivity: number;
 }
@@ -53,7 +52,6 @@ class SessionManager {
     console.log(`[Session] Adding session ${sessionId}:`, {
       hasApiKey: !!data.apiKey,
       apiKeyPrefix: data.apiKey ? data.apiKey.substring(0, 8) + '...' : 'none',
-      isPro: data.isPro,
       createdAt: sessionData.createdAt,
     });
     this.sessions.set(sessionId, sessionData);
@@ -73,7 +71,6 @@ class SessionManager {
     console.log(`[Session] Session data for ${sessionId}:`, {
       hasApiKey: !!session.apiKey,
       apiKeyPrefix: session.apiKey ? session.apiKey.substring(0, 8) + '...' : 'none',
-      isPro: session.isPro,
       createdAt: session.createdAt,
       ageMs: Date.now() - session.createdAt,
     });
@@ -362,15 +359,14 @@ const setupSSERoutes = (app: Application, sessionManager: SessionManager): void 
     // Auth is validated by requireBearerAuth middleware — req.auth is guaranteed
     const authInfo = req.auth!;
     const apiKey = authInfo.token;
-    const isPro = (authInfo.extra?.isPro as boolean) || false;
 
-    console.log(`[${new Date().toISOString()}] SSE auth - apiKey: "${apiKey.substring(0, 8)}...", isPro: ${isPro}`);
+    console.log(`[${new Date().toISOString()}] SSE auth - apiKey: "${apiKey.substring(0, 8)}..."`);
 
     try {
       const transport = new SSEServerTransport("/sse/messages", res);
       const sessionId = transport.sessionId;
 
-      sessionManager.add(sessionId, { apiKey, isPro }, transport);
+      sessionManager.add(sessionId, { apiKey }, transport);
 
       transport.onclose = () => {
         console.log(`[Transport] SSE transport onclose triggered for session ${sessionId}`);
@@ -455,9 +451,8 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
         console.log(`New HTTP session request: ${req.body.method}`);
         const authInfo = req.auth!;
         const apiKey = authInfo.token;
-        const isPro = (authInfo.extra?.isPro as boolean) || false;
 
-        console.log(`[${new Date().toISOString()}] HTTP auth - apiKey: "${apiKey.substring(0, 8)}...", isPro: ${isPro}`);
+        console.log(`[${new Date().toISOString()}] HTTP auth - apiKey: "${apiKey.substring(0, 8)}..."`);
 
         const eventStore = new InMemoryEventStore();
         transport = new StreamableHTTPServerTransport({
@@ -466,7 +461,7 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
           eventStore,
           onsessioninitialized: (sessionId) => {
             console.log(`HTTP Session initialized: ${sessionId}`);
-            sessionManager.add(sessionId, { apiKey, isPro }, transport);
+            sessionManager.add(sessionId, { apiKey }, transport);
           }
         });
 

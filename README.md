@@ -72,24 +72,6 @@ For MCP clients that use `mcp-remote` (all platforms):
 }
 ```
 
-### Pro Users
-
-For Claude Max/Team users you unlock a greater MCP tool call limit. This must be enabled by appending `is_pro=true` in the query string of the URL. For example:
-
-```json
-{
-  "mcpServers": {
-    "local-falcon-mcp": {
-      "command": "npx",
-      "args": [
-        "mcp-remote",
-        "https://mcp.localfalcon.com/mcp?local_falcon_api_key=INSERT_YOUR_API_KEY_HERE&is_pro=true"
-      ]
-    }
-  }
-}
-```
-
 ## Running via Remote (SSE — Legacy)
 
 ** The /sse endpoint is considered legacy and will be removed in a future version. Use the /mcp endpoint instead.

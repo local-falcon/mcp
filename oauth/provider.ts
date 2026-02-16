@@ -2,7 +2,7 @@
  * OAuth 2.1 Token Verifier for LocalFalcon MCP Server
  *
  * Implements OAuthTokenVerifier from the MCP SDK to verify Bearer tokens
- * and determine isPro status by calling the LocalFalcon account API.
+ * by calling the LocalFalcon account API.
  * Results are cached to avoid excessive API calls.
  */
 
@@ -10,10 +10,9 @@ import type { OAuthTokenVerifier } from "@modelcontextprotocol/sdk/server/auth/p
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { fetchLocalFalconAccountInfo } from "../localfalcon.js";
 
-const IS_PRO_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 interface CachedAuthInfo {
-  isPro: boolean;
   expiresAt: number;
 }
 
@@ -31,7 +30,7 @@ setInterval(() => {
 
 /**
  * Verify an access token by calling LocalFalcon's account endpoint.
- * Determines isPro status and caches the result.
+ * Caches the result to avoid redundant API calls.
  */
 async function verifyAccessToken(token: string): Promise<AuthInfo> {
   if (!token || token.trim() === "") {
@@ -46,28 +45,16 @@ async function verifyAccessToken(token: string): Promise<AuthInfo> {
       clientId: "localfalcon-mcp",
       scopes: ["api"],
       expiresAt: cached.expiresAt / 1000, // SDK expects Unix seconds
-      extra: { isPro: cached.isPro },
     };
   }
 
   // Verify token by calling account endpoint
   try {
-    const accountInfo = await fetchLocalFalconAccountInfo(token, "subscription");
-
-    // Determine isPro from subscription data
-    // The exact field depends on LocalFalcon's API response structure
-    const isPro =
-      accountInfo?.data?.is_pro === true ||
-      accountInfo?.data?.plan === "pro" ||
-      accountInfo?.data?.subscription_type === "pro" ||
-      accountInfo?.is_pro === true ||
-      accountInfo?.plan === "pro" ||
-      false;
+    await fetchLocalFalconAccountInfo(token, "subscription");
 
     // Cache the result
-    const cacheExpiresAt = Date.now() + IS_PRO_CACHE_TTL_MS;
+    const cacheExpiresAt = Date.now() + CACHE_TTL_MS;
     authCache.set(token, {
-      isPro,
       expiresAt: cacheExpiresAt,
     });
 
@@ -76,7 +63,6 @@ async function verifyAccessToken(token: string): Promise<AuthInfo> {
       clientId: "localfalcon-mcp",
       scopes: ["api"],
       expiresAt: cacheExpiresAt / 1000, // SDK expects Unix seconds
-      extra: { isPro },
     };
   } catch (error) {
     // If account lookup fails, the token is likely invalid
