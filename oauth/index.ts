@@ -39,5 +39,8 @@ export {
 // Token verifier for SDK's requireBearerAuth middleware
 export { createTokenVerifier, clearAuthCache } from "./provider.js";
 
+// Client registration store (redirect URI validation)
+export { registerRedirectUris, isRedirectUriRegistered } from "./clientStore.js";
+
 // Express routes
 export { setupOAuthRoutes } from "./routes.js";

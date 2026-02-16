@@ -18,6 +18,7 @@ import {
   OAuthError,
 } from "./oauthClient.js";
 import { clearAuthCache } from "./provider.js";
+import { isRedirectUriRegistered } from "./clientStore.js";
 
 /**
  * Build the full redirect URI based on the incoming request
@@ -147,6 +148,16 @@ async function handleAuthorize(req: Request, res: Response): Promise<void> {
       res.status(400).json({
         error: "invalid_request",
         error_description: "Only S256 code_challenge_method is supported (OAuth 2.1).",
+      });
+      return;
+    }
+
+    // OAuth 2.1: Exact redirect URI matching against registered values
+    if (clientRedirectUri && !isRedirectUriRegistered(clientRedirectUri)) {
+      console.error(`[OAuth] Unregistered redirect_uri: ${clientRedirectUri}`);
+      res.status(400).json({
+        error: "invalid_request",
+        error_description: "The redirect_uri is not registered. Register the client via POST /register first.",
       });
       return;
     }
@@ -356,6 +367,7 @@ async function handleTokenExchange(req: Request, res: Response): Promise<void> {
     res.status(200).json({
       access_token: apiKey,
       token_type: "Bearer",
+      expires_in: 86400, // 24 hours
       scope: "api",
     });
   } catch (error) {

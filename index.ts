@@ -8,7 +8,7 @@ import { getServer } from "./server.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { InMemoryEventStore } from "@modelcontextprotocol/sdk/examples/shared/inMemoryEventStore.js";
-import { setupOAuthRoutes, revokeToken, createTokenVerifier } from "./oauth/index.js";
+import { setupOAuthRoutes, revokeToken, createTokenVerifier, registerRedirectUris } from "./oauth/index.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 
 // Augment Express Request to include auth info set by our bearer auth middleware
@@ -275,6 +275,12 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
   // The MCP SDK client expects redirect_uris from its request to be reflected.
   app.post("/register", (req: Request, res: Response): void => {
     const clientMetadata = req.body || {};
+
+    // Store registered redirect URIs for exact-match validation in /oauth/authorize
+    const redirectUris: string[] = clientMetadata.redirect_uris || [];
+    if (redirectUris.length > 0) {
+      registerRedirectUris(redirectUris);
+    }
 
     res.status(201).json({
       // Echo client's metadata so the SDK's Zod parse succeeds
