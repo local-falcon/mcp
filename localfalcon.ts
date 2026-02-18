@@ -2020,3 +2020,27 @@ export async function getLocalFalconKnowledgeBaseArticle(
     return await safeParseJson(res);
   });
 }
+
+/**
+ * Fetches an image from a URL and returns it as base64-encoded data.
+ * Used to convert image URLs in API responses to inline MCP image content.
+ * @param {string} imageUrl - The image URL to fetch
+ * @returns {Promise<{ data: string; mimeType: string } | null>} Base64 data and MIME type, or null on failure
+ */
+export async function fetchImageAsBase64(imageUrl: string): Promise<{ data: string; mimeType: string } | null> {
+  try {
+    const res = await fetchWithTimeout(imageUrl, {}, 10000);
+    if (!res.ok) return null;
+
+    const contentType = res.headers.get('content-type') || 'image/png';
+    const arrayBuffer = await res.arrayBuffer();
+
+    // Skip images larger than 5MB
+    if (arrayBuffer.byteLength > 5 * 1024 * 1024) return null;
+
+    const base64 = Buffer.from(arrayBuffer).toString('base64');
+    return { data: base64, mimeType: contentType };
+  } catch {
+    return null;
+  }
+}

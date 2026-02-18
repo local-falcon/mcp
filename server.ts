@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import dotenv from "dotenv";
-import { fetchLocalFalconAutoScans, fetchLocalFalconFullGridSearch, fetchLocalFalconGoogleBusinessLocations, fetchLocalFalconGrid, fetchLocalFalconKeywordAtCoordinate, fetchLocalFalconKeywordReport, fetchLocalFalconKeywordReports, fetchLocalFalconLocationReport, fetchLocalFalconLocationReports, fetchAllLocalFalconLocations, fetchLocalFalconRankingAtCoordinate, fetchLocalFalconReport, fetchLocalFalconReports, fetchLocalFalconTrendReport, fetchLocalFalconTrendReports, fetchLocalFalconCompetitorReports, fetchLocalFalconCompetitorReport, fetchLocalFalconCampaignReports, fetchLocalFalconCampaignReport, fetchLocalFalconGuardReports, fetchLocalFalconGuardReport, runLocalFalconScan, searchForLocalFalconBusinessLocation, fetchLocalFalconAccountInfo, saveLocalFalconBusinessLocationToAccount, addLocationsToFalconGuard, pauseFalconGuardProtection, resumeFalconGuardProtection, removeFalconGuardProtection, createLocalFalconCampaign, runLocalFalconCampaign, pauseLocalFalconCampaign, resumeLocalFalconCampaign, reactivateLocalFalconCampaign, fetchLocalFalconReviewsAnalysisReports, fetchLocalFalconReviewsAnalysisReport, searchLocalFalconKnowledgeBase, getLocalFalconKnowledgeBaseArticle } from "./localfalcon.js";
+import { fetchLocalFalconAutoScans, fetchLocalFalconFullGridSearch, fetchLocalFalconGoogleBusinessLocations, fetchLocalFalconGrid, fetchLocalFalconKeywordAtCoordinate, fetchLocalFalconKeywordReport, fetchLocalFalconKeywordReports, fetchLocalFalconLocationReport, fetchLocalFalconLocationReports, fetchAllLocalFalconLocations, fetchLocalFalconRankingAtCoordinate, fetchLocalFalconReport, fetchLocalFalconReports, fetchLocalFalconTrendReport, fetchLocalFalconTrendReports, fetchLocalFalconCompetitorReports, fetchLocalFalconCompetitorReport, fetchLocalFalconCampaignReports, fetchLocalFalconCampaignReport, fetchLocalFalconGuardReports, fetchLocalFalconGuardReport, runLocalFalconScan, searchForLocalFalconBusinessLocation, fetchLocalFalconAccountInfo, saveLocalFalconBusinessLocationToAccount, addLocationsToFalconGuard, pauseFalconGuardProtection, resumeFalconGuardProtection, removeFalconGuardProtection, createLocalFalconCampaign, runLocalFalconCampaign, pauseLocalFalconCampaign, resumeLocalFalconCampaign, reactivateLocalFalconCampaign, fetchLocalFalconReviewsAnalysisReports, fetchLocalFalconReviewsAnalysisReport, searchLocalFalconKnowledgeBase, getLocalFalconKnowledgeBaseArticle, fetchImageAsBase64 } from "./localfalcon.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
@@ -15,6 +15,60 @@ function handleNullOrUndefined(value: string | null | undefined): string {
     return "";
   }
   return value;
+}
+
+// Image URL fields to extract from API responses
+const IMAGE_FIELDS = new Set(['image', 'heatmap']);
+const MAX_INLINE_IMAGES = 5;
+
+/** Recursively extract image URLs from known fields in API response objects */
+function extractImageUrls(obj: any, path = ''): { url: string; label: string }[] {
+  const results: { url: string; label: string }[] = [];
+  if (!obj || typeof obj !== 'object') return results;
+
+  if (Array.isArray(obj)) {
+    for (let i = 0; i < obj.length; i++) {
+      results.push(...extractImageUrls(obj[i], `${path}[${i}]`));
+    }
+  } else {
+    for (const [key, value] of Object.entries(obj)) {
+      if (IMAGE_FIELDS.has(key) && typeof value === 'string' && value.startsWith('http')) {
+        results.push({ url: value, label: `${path ? path + '.' : ''}${key}` });
+      } else if (typeof value === 'object' && value !== null) {
+        results.push(...extractImageUrls(value, `${path ? path + '.' : ''}${key}`));
+      }
+    }
+  }
+
+  return results;
+}
+
+/** Build MCP content array with text JSON and inline base64 images */
+async function buildContentWithImages(resp: any): Promise<any[]> {
+  const content: any[] = [{ type: "text", text: JSON.stringify(resp, null, 2) }];
+
+  const imageUrls = extractImageUrls(resp);
+  if (imageUrls.length === 0) return content;
+
+  const toFetch = imageUrls.slice(0, MAX_INLINE_IMAGES);
+
+  const imageResults = await Promise.allSettled(
+    toFetch.map(async ({ url }) => {
+      return await fetchImageAsBase64(url);
+    })
+  );
+
+  for (const result of imageResults) {
+    if (result.status === 'fulfilled' && result.value) {
+      content.push({
+        type: "image",
+        data: result.value.data,
+        mimeType: result.value.mimeType,
+      });
+    }
+  }
+
+  return content;
 }
 
 
@@ -76,7 +130,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await fetchLocalFalconReports(apiKey, limit, handleNullOrUndefined(nextToken), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(gridSize), handleNullOrUndefined(campaignKey), handleNullOrUndefined(platform));
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     }
   );
 
@@ -91,7 +145,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await fetchLocalFalconReport(apiKey, reportKey);
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     }
   );
 
@@ -108,7 +162,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await fetchAllLocalFalconLocations(apiKey, handleNullOrUndefined(query));
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     }
   );
 
@@ -127,7 +181,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await fetchLocalFalconGoogleBusinessLocations(apiKey, handleNullOrUndefined(nextToken), query, handleNullOrUndefined(near));
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     }
   );
 
@@ -153,7 +207,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await runLocalFalconScan(apiKey, placeId, keyword, lat, lng, gridSize, radius, measurement, platform, aiAnalysis);
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     },
   );
 
@@ -175,7 +229,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
       }
       const limit = DEFAULT_LIMIT;
       const resp = await fetchLocalFalconCampaignReports(apiKey, limit, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(placeId), handleNullOrUndefined(runDate), handleNullOrUndefined(nextToken));
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     }
   );
 
@@ -193,7 +247,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await fetchLocalFalconCampaignReport(apiKey, reportKey, handleNullOrUndefined(run));
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     },
   );
 
@@ -245,7 +299,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         emailSubject: handleNullOrUndefined(emailSubject) || undefined,
         emailBody: handleNullOrUndefined(emailBody) || undefined,
       });
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     },
   );
 
@@ -262,7 +316,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await runLocalFalconCampaign(apiKey, campaignKey);
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     },
   );
 
@@ -279,7 +333,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await pauseLocalFalconCampaign(apiKey, campaignKey);
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     },
   );
 
@@ -298,7 +352,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await resumeLocalFalconCampaign(apiKey, campaignKey, handleNullOrUndefined(startDate), handleNullOrUndefined(startTime));
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     },
   );
 
@@ -315,7 +369,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await reactivateLocalFalconCampaign(apiKey, campaignKey);
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     },
   );
 
@@ -344,7 +398,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         limit ?? undefined,
         handleNullOrUndefined(nextToken)
       );
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     },
   );
 
@@ -361,7 +415,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await fetchLocalFalconReviewsAnalysisReport(apiKey, reportKey);
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     },
   );
 
@@ -383,7 +437,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
       }
       const limit = DEFAULT_LIMIT;
       const resp = await fetchLocalFalconGuardReports(apiKey, limit, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(status), handleNullOrUndefined(nextToken));
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     }
   );
 
@@ -400,7 +454,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await fetchLocalFalconGuardReport(apiKey, placeId);
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     },
   );
 
@@ -417,7 +471,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await addLocationsToFalconGuard(apiKey, placeId);
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     },
   );
 
@@ -438,7 +492,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Either guardKey or placeId must be provided." }] };
       }
       const resp = await pauseFalconGuardProtection(apiKey, handleNullOrUndefined(guardKey), handleNullOrUndefined(placeId));
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     },
   );
 
@@ -459,7 +513,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Either guardKey or placeId must be provided." }] };
       }
       const resp = await resumeFalconGuardProtection(apiKey, handleNullOrUndefined(guardKey), handleNullOrUndefined(placeId));
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     },
   );
 
@@ -480,7 +534,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Either guardKey or placeId must be provided." }] };
       }
       const resp = await removeFalconGuardProtection(apiKey, handleNullOrUndefined(guardKey), handleNullOrUndefined(placeId));
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     },
   );
 
@@ -503,7 +557,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await fetchLocalFalconTrendReports(apiKey, limit, handleNullOrUndefined(nextToken), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(platform));
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     }
   );
 
@@ -518,7 +572,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await fetchLocalFalconTrendReport(apiKey, reportKey);
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     }
   );
 
@@ -542,7 +596,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await fetchLocalFalconAutoScans(apiKey, handleNullOrUndefined(nextToken), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(gridSize), handleNullOrUndefined(frequency), handleNullOrUndefined(status), handleNullOrUndefined(platform));
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     }
   );
 
@@ -564,7 +618,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
       }
       const limit = DEFAULT_LIMIT;
       const resp = await fetchLocalFalconLocationReports(apiKey, limit, handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate),  handleNullOrUndefined(nextToken));
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     }
   );
 
@@ -579,7 +633,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await fetchLocalFalconLocationReport(apiKey, reportKey);
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     }
   );
 
@@ -600,7 +654,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
       }
       const limit = DEFAULT_LIMIT;
       const resp = await fetchLocalFalconKeywordReports(apiKey, limit, handleNullOrUndefined(nextToken), handleNullOrUndefined(keyword), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate));
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     }
   );
 
@@ -615,7 +669,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await fetchLocalFalconKeywordReport(apiKey, reportKey);
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     }
   );
 
@@ -638,7 +692,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
       }
       const limit = DEFAULT_LIMIT;
       const resp = await fetchLocalFalconCompetitorReports(apiKey, limit, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(gridSize), handleNullOrUndefined(nextToken));
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     }
   );
 
@@ -656,7 +710,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await fetchLocalFalconCompetitorReport(apiKey, reportKey, (lowDataMode as any === "null" || lowDataMode as any === "undefined") ? false : !!lowDataMode);
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     },
   );
 
@@ -678,7 +732,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await fetchLocalFalconGrid(apiKey, lat, lng, gridSize, radius, handleNullOrUndefined(measurement));
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     }
   );
 
@@ -698,7 +752,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await fetchLocalFalconRankingAtCoordinate(apiKey, lat, lng, keyword, zoom ? zoom : "13");
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     }
   );
 
@@ -720,7 +774,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await fetchLocalFalconKeywordAtCoordinate(apiKey, lat, lng, keyword, zoom ? zoom : "13");
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     }
   );
 
@@ -740,7 +794,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await searchForLocalFalconBusinessLocation(apiKey, term, platform, proximity ? proximity : undefined);
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     },
   )
 
@@ -772,14 +826,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
 
       try {
         const resp = await saveLocalFalconBusinessLocationToAccount(apiKey, platform, placeId, handleNullOrUndefined(name), handleNullOrUndefined(lat), handleNullOrUndefined(lng));
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(resp, null, 2),
-            },
-          ],
-        };
+        return { content: await buildContentWithImages(resp) };
       } catch (error: any) {
         return {
           content: [
@@ -807,7 +854,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await fetchLocalFalconAccountInfo(apiKey, handleNullOrUndefined(returnField) as any);
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     },
   )
 
@@ -827,7 +874,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await searchLocalFalconKnowledgeBase(apiKey, handleNullOrUndefined(q), handleNullOrUndefined(categoryId), handleNullOrUndefined(limit), handleNullOrUndefined(nextToken));
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      return { content: await buildContentWithImages(resp) };
     }
   );
 
