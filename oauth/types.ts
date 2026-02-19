@@ -23,6 +23,7 @@ export interface OAuthState {
   createdAt: number;
   redirectUri: string;
   clientRedirectUri?: string; // MCP client's redirect URI for forwarding
+  resource?: string; // RFC 8707 resource indicator
 }
 
 /**

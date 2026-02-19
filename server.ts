@@ -8,8 +8,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 dotenv.config({ path: ".env.local" });
 
 
-const LOW_LIMIT = "3"
-const HIGH_LIMIT = "7"
+const DEFAULT_LIMIT = "7"
 
 function handleNullOrUndefined(value: string | null | undefined): string {
   if (value === null || value === undefined) {
@@ -19,7 +18,7 @@ function handleNullOrUndefined(value: string | null | undefined): string {
 }
 
 
-export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: boolean }>) => {
+export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
   const getApiKey = (ctx: any) => {
     const sessionId = ctx?.sessionId;
     const sessionHeaders = sessionMapping.get(sessionId)
@@ -27,15 +26,6 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
       return process.env.LOCAL_FALCON_API_KEY;
     }
     return sessionHeaders.apiKey;
-  };
-
-  const isProUser = (ctx: any) => {
-    const sessionId = ctx?.sessionId;
-    const sessionHeaders = sessionMapping.get(sessionId)
-    if (!sessionHeaders) {
-      return false;
-    }
-    return sessionHeaders.isPro;
   };
 
   const server = new McpServer({
@@ -65,6 +55,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
   });
 
   // Get list of Scan Reports
+  // @ts-expect-error TS2589 — SDK Zod type inference depth limit
   server.tool(
     "listLocalFalconScanReports",
     "ALWAYS USE THIS FIRST before running new scans. Shows all existing scan reports to check if the data you need already exists. Prevents duplicate scans and saves time. Check here before using runLocalFalconScan to see if a recent report is available. Lists reports with dates, keywords, and locations for easy identification. NOTE: If a scan shows a campaign_key, it means a campaign report exists with broader multi-location/keyword data. Campaign scans won't have separate location/keyword reports - all that data is consolidated in the campaign report instead.",
@@ -80,7 +71,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
     },
     async ({ nextToken, startDate, endDate, placeId, keyword, gridSize, campaignKey, platform }, ctx) => {
       const apiKey = getApiKey(ctx);
-      const limit = isProUser(ctx) ? HIGH_LIMIT : LOW_LIMIT;
+      const limit = DEFAULT_LIMIT;
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
@@ -141,6 +132,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
   );
 
   // Run a Dashboard Scan v2
+  // @ts-expect-error TS2589 — SDK Zod type inference depth limit
   server.tool(
     "runLocalFalconScan",
     "Runs a scan at the specified coordinate point and gets ranking data for a specified business.",
@@ -181,7 +173,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const limit = isProUser(ctx) ? HIGH_LIMIT : LOW_LIMIT;
+      const limit = DEFAULT_LIMIT;
       const resp = await fetchLocalFalconCampaignReports(apiKey, limit, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(placeId), handleNullOrUndefined(runDate), handleNullOrUndefined(nextToken));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
@@ -206,6 +198,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
   );
 
   // Create a new Campaign
+  // @ts-expect-error TS2589 — SDK Zod type inference depth limit
   server.tool(
     "createLocalFalconCampaign",
     "Creates a new campaign in Local Falcon. Campaigns allow you to schedule recurring scans for one or multiple locations with one or multiple keywords. Locations must already exist in your Saved Locations (use listAllLocalFalconLocations to verify).",
@@ -327,6 +320,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
   );
 
   // List all Reviews Analysis Reports
+  // @ts-expect-error TS2589 — SDK Zod type inference depth limit
   server.tool(
     "listLocalFalconReviewsAnalysisReports",
     "Retrieves the full list of all Reviews Analysis Reports within your Local Falcon account. Reviews Analysis Reports provide AI-powered analysis of your business reviews.",
@@ -372,6 +366,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
   );
 
   // Get list of Falcon Guard Reports
+  // @ts-expect-error TS2589 — SDK Zod type inference depth limit
   server.tool(
     "listLocalFalconGuardReports",
     "Lists Falcon Guard reports IF they exist for your locations. Falcon Guard monitors Google Business Profile health and changes. NOTE: Not all locations have Guard reports. For OAuth-connected locations, reports include calls/clicks/directions data. For manually added locations, reports only show historical GBP changes.",
@@ -386,7 +381,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const limit = isProUser(ctx) ? HIGH_LIMIT : LOW_LIMIT;
+      const limit = DEFAULT_LIMIT;
       const resp = await fetchLocalFalconGuardReports(apiKey, limit, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(status), handleNullOrUndefined(nextToken));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
@@ -503,7 +498,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
     },
     async ({ nextToken, placeId, keyword, startDate, endDate, platform }, ctx) => {
       const apiKey = getApiKey(ctx);
-      const limit = isProUser(ctx) ? HIGH_LIMIT : LOW_LIMIT;
+      const limit = DEFAULT_LIMIT;
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
@@ -567,7 +562,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const limit = isProUser(ctx) ? HIGH_LIMIT : LOW_LIMIT;
+      const limit = DEFAULT_LIMIT;
       const resp = await fetchLocalFalconLocationReports(apiKey, limit, handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate),  handleNullOrUndefined(nextToken));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
@@ -603,7 +598,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const limit = isProUser(ctx) ? HIGH_LIMIT : LOW_LIMIT;
+      const limit = DEFAULT_LIMIT;
       const resp = await fetchLocalFalconKeywordReports(apiKey, limit, handleNullOrUndefined(nextToken), handleNullOrUndefined(keyword), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
@@ -641,7 +636,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const limit = isProUser(ctx) ? HIGH_LIMIT : LOW_LIMIT;
+      const limit = DEFAULT_LIMIT;
       const resp = await fetchLocalFalconCompetitorReports(apiKey, limit, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(gridSize), handleNullOrUndefined(nextToken));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
@@ -666,6 +661,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
   );
 
   // On-Demand Endpoints for Single-Point Checks
+  // @ts-expect-error TS2589 — SDK Zod type inference depth limit
   server.tool(
     "getLocalFalconGrid",
     "Helper tool that generates grid coordinates for use with getLocalFalconRankingAtCoordinate or getLocalFalconKeywordAtCoordinate. Creates an array of lat/lng points based on your specified grid size and radius. NOTE: This is only useful if you're doing manual single-point checks. For comprehensive ranking analysis, skip this and use runLocalFalconScan instead, which handles grid creation automatically and provides full reports.",
@@ -708,6 +704,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
 
 
   // On-Demand Endpoint - Single Point Keyword Search
+  // @ts-expect-error TS2589 — SDK Zod type inference depth limit
   server.tool(
     "getLocalFalconKeywordAtCoordinate",
     "LIMITED TOOL - Shows raw search results at ONE SINGLE point without ranking analysis. Does not provide ranking positions or competitive insights. Only use for debugging or checking raw SERP data. For actual ranking analysis, use runLocalFalconScan.",
@@ -728,6 +725,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
   );
 
   // Search for Business Location on Google or Apple
+  // @ts-expect-error TS2589 — SDK Zod type inference depth limit
   server.tool(
     "searchForLocalFalconBusinessLocation",
     "Searches for business locations on the specified platform. Returns a list of locations that match the search term.",
@@ -796,6 +794,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string; isPro: b
   );
 
   // View Local Falcon Account Information
+  // @ts-expect-error TS2589 — SDK Zod type inference depth limit
   server.tool(
     "viewLocalFalconAccountInformation",
     "Retrieves Local Falcon account information. Returns user, credit package, subscription, and credits.",
