@@ -236,7 +236,6 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
   });
 
   // Get list of Scan Reports
-  // @ts-expect-error TS2589 — SDK Zod type inference depth limit
   server.tool(
     "listLocalFalconScanReports",
     "Lists existing scan reports. ALWAYS check here before running new scans to avoid duplicates and save credits. Returns report metadata including date, keyword, location, ARP, ATRP, SoLV, grid size, and platform. Use filters to narrow results. If a report has a campaign_key, its data is consolidated in the campaign report — no separate trend/location/keyword reports exist for campaign scans. Use fieldmask to control returned fields. Recommended fieldmask for browsing: \"report_key,date,keyword,location.name,arp,atrp,solv,grid_size,platform\". Returns limited results per page; use nextToken for pagination.",
@@ -319,7 +318,6 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
   );
 
   // Run a Dashboard Scan v2
-  // @ts-expect-error TS2589 — SDK Zod type inference depth limit
   server.tool(
     "runLocalFalconScan",
     "Runs a new ranking scan for a business. COSTS CREDITS — always confirm with the user before running. Requires: Place ID (business must be saved first), keyword, center coordinates (lat/lng), grid size, radius, measurement unit, and platform. Returns ranking data across the grid. Available platforms: google (Maps), apple (Apple Maps), gaio (Google AI Overviews), chatgpt (ChatGPT), gemini (Gemini), grok (Grok), aimode (Google AI Mode), giao (Google Immersive AI Overviews). Enable aiAnalysis for AI-generated insights on the results (Google Maps only). Grid size and radius should match the business type and service area.",
@@ -387,7 +385,6 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
   );
 
   // Create a new Campaign
-  // @ts-expect-error TS2589 — SDK Zod type inference depth limit
   server.tool(
     "createLocalFalconCampaign",
     "Creates a new campaign in Local Falcon. Campaigns allow you to schedule recurring scans for one or multiple locations with one or multiple keywords. Locations must already exist in your Saved Locations (use listAllLocalFalconLocations to verify).",
@@ -509,7 +506,6 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
   );
 
   // List all Reviews Analysis Reports
-  // @ts-expect-error TS2589 — SDK Zod type inference depth limit
   server.tool(
     "listLocalFalconReviewsAnalysisReports",
     `Lists Reviews Analysis reports in the account. These are premium AI-powered review analyses ($19/location) that evaluate up to 1M Google reviews for a target business plus up to 3 competitors. Separate from ranking scan reports. Filter by placeId, frequency, or reviewsKey. Use fieldmask to control returned fields. Recommended fieldmask: "reviews_key,name,date,locations,frequency,statistics.metrics.primaryBusiness". Use getLocalFalconReviewsAnalysisReport with a report key to see full results.`,
@@ -558,7 +554,6 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
   );
 
   // Get list of Falcon Guard Reports
-  // @ts-expect-error TS2589 — SDK Zod type inference depth limit
   server.tool(
     "listLocalFalconGuardReports",
     `Lists locations monitored by Falcon Guard. Guard monitors Google Business Profiles for unwanted changes, checking twice daily. $1/month for up to 10 locations. OAuth-connected locations include enhanced metrics: calls, website clicks, directions, impressions (up to 18 months historical). Non-OAuth locations only show GBP change history. Use fieldmask to control returned fields. Recommended fieldmask: "report_key,place_id,location.name,location.address,location.rating,location.reviews,status,date_added,date_last". Filter by date range or status (protected/paused).`,
@@ -871,7 +866,6 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
   );
 
   // On-Demand Endpoints for Single-Point Checks
-  // @ts-expect-error TS2589 — SDK Zod type inference depth limit
   server.tool(
     "getLocalFalconGrid",
     "Helper tool that generates grid coordinates for use with getLocalFalconRankingAtCoordinate or getLocalFalconKeywordAtCoordinate. Creates an array of lat/lng points based on your specified grid size and radius. NOTE: This is only useful if you're doing manual single-point checks. For comprehensive ranking analysis, skip this and use runLocalFalconScan instead, which handles grid creation automatically and provides full reports.",
@@ -914,7 +908,6 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
 
 
   // On-Demand Endpoint - Single Point Keyword Search
-  // @ts-expect-error TS2589 — SDK Zod type inference depth limit
   server.tool(
     "getLocalFalconKeywordAtCoordinate",
     "LIMITED TOOL - Shows raw search results at ONE SINGLE point without ranking analysis. Does not provide ranking positions or competitive insights. Only use for debugging or checking raw SERP data. For actual ranking analysis, use runLocalFalconScan.",
@@ -935,7 +928,6 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
   );
 
   // Search for Business Location on Google or Apple
-  // @ts-expect-error TS2589 — SDK Zod type inference depth limit
   server.tool(
     "searchForLocalFalconBusinessLocation",
     "Searches for business locations on the specified platform. Returns a list of locations that match the search term.",
@@ -1003,7 +995,6 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
   );
 
   // View Local Falcon Account Information
-  // @ts-expect-error TS2589 — SDK Zod type inference depth limit
   server.tool(
     "viewLocalFalconAccountInformation",
     "Retrieves Local Falcon account information. Returns user, credit package, subscription, and credits.",
