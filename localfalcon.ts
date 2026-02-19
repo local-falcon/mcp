@@ -1009,10 +1009,10 @@ export async function fetchLocalFalconCompetitorReports(apiKey: string, limit: s
  * Fetches a competitor report from the Local Falcon API.
  * @param {string} apiKey - Your Local Falcon API key
  * @param {string} reportKey - Report key
- * @param {boolean} lowDataMode - Whether to return less data
+ * @param {string} [fieldmask] - Optional fieldmask for server-side field filtering
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconCompetitorReport(apiKey: string, reportKey: string, lowDataMode = true, fieldmask?: string) {
+export async function fetchLocalFalconCompetitorReport(apiKey: string, reportKey: string, fieldmask?: string) {
   // Clean up the report key if it's a URL
   const cleanReportKey = reportKey.includes('/')
     ? reportKey.split('/').pop()
@@ -1035,34 +1035,7 @@ export async function fetchLocalFalconCompetitorReport(apiKey: string, reportKey
       throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
     }
 
-    const data = await safeParseJson(res);
-
-    // Validate the response
-    if (!data || !data.data || !data.data.businesses) {
-      throw new Error('Invalid response format from Local Falcon API');
-    }
-
-    const limit = lowDataMode ? 10 : 20;
-
-    return {
-      date: data.data.date,
-      keyword: data.data.keyword,
-      grid_size: data.data.grid_size,
-      radius: data.data.radius,
-      measurement: data.data.measurement,
-      businesses: data.data.businesses.slice(0, limit).map((business: any) => {
-        const {
-          data_points,
-          url,
-          claimed,
-          display_url,
-          platform,
-          phone,
-          ...cleanBusiness
-        } = business;
-        return cleanBusiness;
-      })
-    };
+    return await safeParseJson(res);
   });
 }
 
@@ -1212,9 +1185,11 @@ export async function fetchLocalFalconGuardReports(apiKey: string, limit: string
  * @param {string} placeId - Place ID
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconGuardReport(apiKey: string, placeId: string, fieldmask?: string) {
+export async function fetchLocalFalconGuardReport(apiKey: string, placeId: string, startDate?: string, endDate?: string, fieldmask?: string) {
   const url = new URL(`${API_BASE}/guard/${placeId}`);
   url.searchParams.set("api_key", apiKey);
+  if (startDate) url.searchParams.set("start_date", startDate);
+  if (endDate) url.searchParams.set("end_date", endDate);
   if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
 
   await rateLimiter.waitForAvailableSlot();
@@ -1230,15 +1205,7 @@ export async function fetchLocalFalconGuardReport(apiKey: string, placeId: strin
       throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
     }
 
-    const data = await safeParseJson(res);
-
-    // Validate the response and remove metrics to save space
-    if (!data || !data.data) {
-      throw new Error('Invalid response format from Local Falcon API');
-    }
-
-    const { metrics, ...cleanData } = data.data;
-    return { data: cleanData };
+    return await safeParseJson(res);
   });
 }
 
