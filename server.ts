@@ -68,14 +68,15 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
       gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15', '17', '19', '20']).nullish().describe("Filter only for specific grid sizes. Expects 3, 5, 7, 9, 11, 13, 15, 17, 19, or 20."), 
       campaignKey: z.string().nullish().describe("Filter only results for a specific campaign using the campaign_key."), 
       platform: z.enum(['google', 'apple', 'gaio', 'chatgpt','gemini','grok']).nullish().describe("Filter only results for a specific platform."),
+      fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
-    async ({ nextToken, startDate, endDate, placeId, keyword, gridSize, campaignKey, platform }, ctx) => {
+    async ({ nextToken, startDate, endDate, placeId, keyword, gridSize, campaignKey, platform, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       const limit = DEFAULT_LIMIT;
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconReports(apiKey, limit, handleNullOrUndefined(nextToken), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(gridSize), handleNullOrUndefined(campaignKey), handleNullOrUndefined(platform));
+      const resp = await fetchLocalFalconReports(apiKey, limit, handleNullOrUndefined(nextToken), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(gridSize), handleNullOrUndefined(campaignKey), handleNullOrUndefined(platform), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -84,13 +85,16 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
   server.tool(
     "getLocalFalconReport",
     `EXISTING REPORT VIEWER ONLY - Retrieves previously created scan reports. CANNOT create new reports. WARNING: Only use this if you have a report_key from listLocalFalconScanReports. If you need NEW ranking data, use runLocalFalconScan instead. Common mistake: DO NOT use this hoping to generate a report - it only displays reports that already exist. The report URL format (https://www.localfalcon.com/reports/view/XXXXX) contains the report_key needed. NOTE: If this scan was part of a campaign, there will be a corresponding campaign report available (but NO separate location/keyword reports). Campaign reports provide a broader view across multiple locations/keywords which may be more valuable for comprehensive analysis.`,
-    { reportKey: z.string().describe("The report key of the scan report.") },
-    async ({ reportKey }, ctx) => {
+    {
+      reportKey: z.string().describe("The report key of the scan report."),
+      fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
+    },
+    async ({ reportKey, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconReport(apiKey, reportKey);
+      const resp = await fetchLocalFalconReport(apiKey, reportKey, handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -100,14 +104,15 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
     "listAllLocalFalconLocations",
     "Lists all business locations already configured in the Local Falcon account. Check here BEFORE using getLocalFalconGoogleBusinessLocations - if the business is already in the account, you'll get the Place ID instantly without needing to search Google. Saves time and ensures consistency with previous scans.",
     {
-      query: z.string().nullish().describe("Search query. Matches against location name, address, Place ID, or store code.")
+      query: z.string().nullish().describe("Search query. Matches against location name, address, Place ID, or store code."),
+      fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
-    async ({ query }, ctx) => {
+    async ({ query, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchAllLocalFalconLocations(apiKey, handleNullOrUndefined(query));
+      const resp = await fetchAllLocalFalconLocations(apiKey, handleNullOrUndefined(query), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -120,13 +125,14 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
       nextToken: z.string().nullish().describe("Pagination token for additional results."),
       query: z.string().describe("The query to search for."),
       near: z.string().nullish().describe("Narrow results by location. City, state, country, etc."),
+      fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
-    async ({ nextToken, query, near }, ctx) => {
+    async ({ nextToken, query, near, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconGoogleBusinessLocations(apiKey, handleNullOrUndefined(nextToken), query, handleNullOrUndefined(near));
+      const resp = await fetchLocalFalconGoogleBusinessLocations(apiKey, handleNullOrUndefined(nextToken), query, handleNullOrUndefined(near), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -167,14 +173,15 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
       placeId: z.string().nullish().describe("Filter only results for specific Google Place ID. Supports multiple Google Place IDs, seperated by commas."),
       runDate: z.string().date().nullish().describe("Filter only results for a specific Campaign run date. Expects date formatted as MM/DD/YYYY. Defaults to the last report run."),
       nextToken: z.string().nullish().describe("This parameter is used to get the next 'page' of results. The value used with the parameter is provided from a previous response by this endpoint if more 'pages' of results exist."),
+      fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
-    async ({ startDate, endDate, placeId, runDate, nextToken }, ctx) => {
+    async ({ startDate, endDate, placeId, runDate, nextToken, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const limit = DEFAULT_LIMIT;
-      const resp = await fetchLocalFalconCampaignReports(apiKey, limit, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(placeId), handleNullOrUndefined(runDate), handleNullOrUndefined(nextToken));
+      const resp = await fetchLocalFalconCampaignReports(apiKey, limit, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(placeId), handleNullOrUndefined(runDate), handleNullOrUndefined(nextToken), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -186,13 +193,14 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
     {
       reportKey: z.string().describe("The report_key of the Campaign Report you wish to retrieve."),
       run: z.string().nullish().describe("Optional specific campaign run date to retrieve (MM/DD/YYYY). Defaults to latest run."),
+      fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
-    async ({ reportKey, run }, ctx) => {
+    async ({ reportKey, run, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconCampaignReport(apiKey, reportKey, handleNullOrUndefined(run));
+      const resp = await fetchLocalFalconCampaignReport(apiKey, reportKey, handleNullOrUndefined(run), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     },
   );
@@ -330,8 +338,9 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
       frequency: z.enum(['one_time', 'daily', 'weekly', 'two_weeks', 'three_weeks', 'four_weeks', 'monthly']).nullish().describe("Filter by analysis frequency."),
       limit: z.number().min(1).max(100).nullish().describe("Number of results to retrieve (1-100). Defaults to 10."),
       nextToken: z.string().nullish().describe("Pagination token for retrieving the next page of results."),
+      fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
-    async ({ reviewsKey, placeId, frequency, limit, nextToken }, ctx) => {
+    async ({ reviewsKey, placeId, frequency, limit, nextToken, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
@@ -342,7 +351,8 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         handleNullOrUndefined(placeId),
         handleNullOrUndefined(frequency),
         limit ?? undefined,
-        handleNullOrUndefined(nextToken)
+        handleNullOrUndefined(nextToken),
+        handleNullOrUndefined(fieldmask)
       );
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     },
@@ -354,13 +364,14 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
     "Retrieves the full result of a specific Reviews Analysis Report. Use listLocalFalconReviewsAnalysisReports to find the report_key for the report you want to retrieve.",
     {
       reportKey: z.string().describe("The key of the Reviews Analysis report you wish to retrieve."),
+      fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
-    async ({ reportKey }, ctx) => {
+    async ({ reportKey, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconReviewsAnalysisReport(apiKey, reportKey);
+      const resp = await fetchLocalFalconReviewsAnalysisReport(apiKey, reportKey, handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     },
   );
@@ -375,14 +386,15 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
       endDate: z.string().date().nullish().describe("Upper limit date you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
       status: z.enum(['protected', 'paused']).nullish().describe("Filter results by status: protected or paused."),
       nextToken: z.string().nullish().describe("This parameter is used to get the next 'page' of results. The value used with the parameter is provided from a previous response by this endpoint if more 'pages' of results exist."),
+      fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
-    async ({ startDate, endDate, status, nextToken }, ctx) => {
+    async ({ startDate, endDate, status, nextToken, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const limit = DEFAULT_LIMIT;
-      const resp = await fetchLocalFalconGuardReports(apiKey, limit, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(status), handleNullOrUndefined(nextToken));
+      const resp = await fetchLocalFalconGuardReports(apiKey, limit, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(status), handleNullOrUndefined(nextToken), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -393,13 +405,14 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
     "Retrieves a Falcon Guard report IF it exists for the location given a place_id. Shows Google Business Profile monitoring data. OAuth-connected locations include full metrics (calls, clicks, directions) plus historical changes. Manually added locations only show historical GBP changes. Returns an error if Guard is not enabled for this location.",
     {
       placeId: z.string().describe("The place_id of the Falcon Guard Report you wish to retrieve."),
+      fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
-    async ({ placeId }, ctx) => {
+    async ({ placeId, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconGuardReport(apiKey, placeId);
+      const resp = await fetchLocalFalconGuardReport(apiKey, placeId, handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     },
   );
@@ -495,14 +508,15 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
       startDate: z.string().nullish().describe("A lower limit date of a scan report you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
       endDate: z.string().nullish().describe("Upper limit date of a scan report you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
       platform: z.enum(['google', 'apple', 'gaio', 'chatgpt','gemini','grok']).nullish().describe("Filter only results for a specific platform."),
+      fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
-    async ({ nextToken, placeId, keyword, startDate, endDate, platform }, ctx) => {
+    async ({ nextToken, placeId, keyword, startDate, endDate, platform, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       const limit = DEFAULT_LIMIT;
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconTrendReports(apiKey, limit, handleNullOrUndefined(nextToken), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(platform));
+      const resp = await fetchLocalFalconTrendReports(apiKey, limit, handleNullOrUndefined(nextToken), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(platform), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -511,13 +525,16 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
   server.tool(
     "getLocalFalconTrendReport",
     "Retrieves an AUTO-GENERATED trend report showing ranking changes over time. A trend report looks like https://www.localfalcon.com/reports/trend/view/95290829819f6e8 where 95290829819f6e8 is the report key. These are automatically created when you run multiple scans with IDENTICAL settings (same place ID, keyword, coordinates, grid, radius, platform). Requires at least 2 identical scans to generate. Cannot be created manually.",
-    { reportKey: z.string().describe("The report key of the trend report.") },
-    async ({ reportKey }, ctx) => {
+    {
+      reportKey: z.string().describe("The report key of the trend report."),
+      fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
+    },
+    async ({ reportKey, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconTrendReport(apiKey, reportKey);
+      const resp = await fetchLocalFalconTrendReport(apiKey, reportKey, handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -535,13 +552,14 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
       frequency: z.enum(["one-time", "daily", "weekly", "biweekly", "monthly"]).nullish().describe("The frequency of the scan."),
       status: z.string().nullish().describe("The status of the scan."),
       platform: z.enum(['google', 'apple', 'gaio', 'chatgpt','gemini','grok']).nullish().describe("The platform of the scan."),
+      fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
-    async ({ nextToken, placeId, keyword, gridSize, frequency, status, platform }, ctx) => {
+    async ({ nextToken, placeId, keyword, gridSize, frequency, status, platform, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconAutoScans(apiKey, handleNullOrUndefined(nextToken), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(gridSize), handleNullOrUndefined(frequency), handleNullOrUndefined(status), handleNullOrUndefined(platform));
+      const resp = await fetchLocalFalconAutoScans(apiKey, handleNullOrUndefined(nextToken), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(gridSize), handleNullOrUndefined(frequency), handleNullOrUndefined(status), handleNullOrUndefined(platform), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -555,15 +573,16 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
       keyword: z.string().nullish().describe("The keyword to search for."),
       startDate: z.string().nullish().describe("A lower limit date of a scan report you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
       endDate: z.string().nullish().describe("Upper limit date of a scan report you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
-      nextToken: z.string().nullish().describe("Pagination token for additional results.")
+      nextToken: z.string().nullish().describe("Pagination token for additional results."),
+      fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
-    async ({ placeId, keyword, startDate, endDate, nextToken }, ctx) => {
+    async ({ placeId, keyword, startDate, endDate, nextToken, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const limit = DEFAULT_LIMIT;
-      const resp = await fetchLocalFalconLocationReports(apiKey, limit, handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate),  handleNullOrUndefined(nextToken));
+      const resp = await fetchLocalFalconLocationReports(apiKey, limit, handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(nextToken), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -572,13 +591,16 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
   server.tool(
     "getLocalFalconLocationReport",
     "Retrieves a single location report. A location report looks like https://www.localfalcon.com/reports/location/view/c60c325a8665c4a where c60c325a8665c4a is the report key. Retrieves an AUTO-GENERATED location report that aggregates scan data for a specific business location. These are automatically created with runLocalFalconScan EXCEPT when scans are run from campaigns (campaign reports contain this data instead). Cannot be created manually. These will only be generated after a location has been scanned for at least 2 keywords outside of a campaign.",
-    { reportKey: z.string().describe("The report key of the location report.") },
-    async ({ reportKey }, ctx) => {
+    {
+      reportKey: z.string().describe("The report key of the location report."),
+      fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
+    },
+    async ({ reportKey, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconLocationReport(apiKey, reportKey);
+      const resp = await fetchLocalFalconLocationReport(apiKey, reportKey, handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -592,14 +614,15 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
       keyword: z.string().nullish().describe("The keyword to search for."),
       startDate: z.string().nullish().describe("A lower limit date of a scan report you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
       endDate: z.string().nullish().describe("Upper limit date of a scan report you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
+      fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
-    async ({ nextToken, keyword, startDate, endDate  }, ctx) => {
+    async ({ nextToken, keyword, startDate, endDate, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const limit = DEFAULT_LIMIT;
-      const resp = await fetchLocalFalconKeywordReports(apiKey, limit, handleNullOrUndefined(nextToken), handleNullOrUndefined(keyword), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate));
+      const resp = await fetchLocalFalconKeywordReports(apiKey, limit, handleNullOrUndefined(nextToken), handleNullOrUndefined(keyword), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -608,13 +631,16 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
   server.tool(
     "getLocalFalconKeywordReport",
     "Retrieves an AUTO-GENERATED keyword report that aggregates scan data for a specific keyword. These are automatically created with runLocalFalconScan EXCEPT when scans are run from campaigns (campaign reports contain this data instead). Cannot be created manually. These will only be generated after a keyword has been scanned for at least 2 locations outside of a campaign. ",
-    { reportKey: z.string() },
-    async ({ reportKey }, ctx) => {
+    {
+      reportKey: z.string(),
+      fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
+    },
+    async ({ reportKey, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconKeywordReport(apiKey, reportKey);
+      const resp = await fetchLocalFalconKeywordReport(apiKey, reportKey, handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -630,14 +656,15 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
       keyword: z.string().nullish().describe("Filter only results similar to specified keyword (loose match)."),
       gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15']).nullish().describe("Filter only for specific grid sizes. Expects 3, 5, 7, 9, 11, 13, or 15."),
       nextToken: z.string().nullish().describe("This parameter is used to get the next 'page' of results. The value used with the parameter is provided from a previous response by this endpoint if more 'pages' of results exist."),
+      fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
-    async ({ startDate, endDate, placeId, keyword, gridSize, nextToken }, ctx) => {
+    async ({ startDate, endDate, placeId, keyword, gridSize, nextToken, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const limit = DEFAULT_LIMIT;
-      const resp = await fetchLocalFalconCompetitorReports(apiKey, limit, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(gridSize), handleNullOrUndefined(nextToken));
+      const resp = await fetchLocalFalconCompetitorReports(apiKey, limit, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(gridSize), handleNullOrUndefined(nextToken), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -649,13 +676,14 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
     {
       reportKey: z.string().describe("The report_key of the Competitor Report you wish to retrieve."),
       lowDataMode: z.boolean().nullish().default(true).describe("Set to false to retrieve more data."),
+      fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
-    async ({ reportKey, lowDataMode }, ctx) => {
+    async ({ reportKey, lowDataMode, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconCompetitorReport(apiKey, reportKey, (lowDataMode as any === "null" || lowDataMode as any === "undefined") ? false : !!lowDataMode);
+      const resp = await fetchLocalFalconCompetitorReport(apiKey, reportKey, (lowDataMode as any === "null" || lowDataMode as any === "undefined") ? false : !!lowDataMode, handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     },
   );
@@ -799,13 +827,14 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
     "Retrieves Local Falcon account information. Returns user, credit package, subscription, and credits.",
     {
       returnField: z.enum(['user', 'credit package', 'subscription', 'credits']).nullish().describe("Optional specific return information"),
+      fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
-    async ({ returnField }, ctx) => {
+    async ({ returnField, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconAccountInfo(apiKey, handleNullOrUndefined(returnField) as any);
+      const resp = await fetchLocalFalconAccountInfo(apiKey, handleNullOrUndefined(returnField) as any, handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     },
   )
