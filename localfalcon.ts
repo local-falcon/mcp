@@ -534,21 +534,7 @@ export async function fetchLocalFalconReport(apiKey: string, reportKey: string) 
         throw new Error('Invalid response format from Local Falcon API');
       }
 
-      const report = data.data;
-      return {
-        report_key: report.report_key,
-        timestamp: report.timestamp,
-        date: report.date,
-        place_id: report.place_id,
-        location: report.location,
-        keyword: report.keyword,
-        lat: report.lat,
-        lng: report.lng,
-        grid_size: report.grid_size,
-        radius: report.radius,
-        measurement: report.measurement,
-        ai_analysis: report.ai_analysis,
-      };
+      return data.data;
     } catch (err) {
       throw new Error(`Failed to parse report data: ${err}`);
     }
@@ -1052,12 +1038,9 @@ export async function fetchLocalFalconCompetitorReport(apiKey: string, reportKey
       radius: data.data.radius,
       measurement: data.data.measurement,
       businesses: data.data.businesses.slice(0, limit).map((business: any) => {
-        // Remove unnecessary fields to save bandwidth
         const {
           data_points,
           url,
-          lat,
-          lng,
           claimed,
           display_url,
           platform,
@@ -1116,15 +1099,9 @@ export async function fetchLocalFalconCampaignReports(apiKey: string, limit: str
     return {
       ...data.data,
       reports: data.data.reports.slice(0, limitNum).map((report: any) => {
-        // Remove unnecessary fields to save bandwidth
+        // Remove only truly unnecessary fields
         const {
           data_points,
-          locations,
-          keywords,
-          scans,
-          frequency,
-          last_run,
-          status,
           ...cleanReport
         } = report;
         return cleanReport;
@@ -1208,16 +1185,7 @@ export async function fetchLocalFalconGuardReports(apiKey: string, limit: string
 
     return {
       ...data.data,
-      reports: data.data.reports.slice(0, limitNum).map((report: any) => {
-        // Remove unnecessary fields to save bandwidth
-        const {
-          date_last,
-          date_next,
-          status,
-          ...cleanReport
-        } = report;
-        return cleanReport;
-      })
+      reports: data.data.reports.slice(0, limitNum)
     };
   });
 }

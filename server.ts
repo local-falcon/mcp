@@ -8,7 +8,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 dotenv.config({ path: ".env.local" });
 
 
-const DEFAULT_LIMIT = "7"
+const DEFAULT_LIMIT = "10"
 
 function handleNullOrUndefined(value: string | null | undefined): string {
   if (value === null || value === undefined) {
@@ -39,7 +39,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
       },
     ],
     description: `You are a Local Falcon MCP Server. You are able to interact with the Local Falcon API to retrieve information about your Local Falcon reports and locations.
-      Note that sometimes you will run into an issue where responses are too verbose. If this happens use the lowDateMode option by default. If the user seems to be unsatisfied with the quanity of data returned, set lowDataMode to false.
+      Note that sometimes you will run into an issue where responses are too verbose. If this happens use the lowDataMode option by default. If the user seems to be unsatisfied with the quanity of data returned, set lowDataMode to false.
       Don't run a ton of tools sequentially with no direction, for example if the user asks for a scan reports don't run the tool for every other kind of report as well unless you're trying to do something important. Instead in that case you'd just summarize the scan reports for them.
       
       **Parameter Handling Note:**
@@ -144,7 +144,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
       gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15']).describe("The size of the grid."),
       radius: z.string().describe("The radius of the grid from center point to outer most north/east/south/west point (0.1 to 100)."),
       measurement: z.enum(['mi', 'km']).describe("The measurement unit of the radius (mi for miles, km for kilometers)."),
-      platform: z.enum(['google', 'apple', 'gaio', 'chatgpt']).describe("The platform to run the scan against."),
+      platform: z.enum(['google', 'apple', 'gaio', 'chatgpt', 'gemini', 'grok']).describe("The platform to run the scan against."),
       aiAnalysis: z.boolean().default(false).describe("Whether AI analysis should be generated for this scan (optional, defaults to false)."),
     },
     async ({ placeId, keyword, lat, lng, gridSize, radius, measurement, platform, aiAnalysis }, ctx) => {
@@ -628,7 +628,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
       endDate: z.string().date().nullish().describe("Upper limit (newest) date you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
       placeId: z.string().nullish().describe("Filter only results for specific Google Place ID. Supports multiple Google Place IDs, seperated by commas."),
       keyword: z.string().nullish().describe("Filter only results similar to specified keyword (loose match)."),
-      gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15']).default("3").describe("Filter only for specific grid sizes. Expects 3, 5, 7, 9, 11, 13, or 15."),
+      gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15']).nullish().describe("Filter only for specific grid sizes. Expects 3, 5, 7, 9, 11, 13, or 15."),
       nextToken: z.string().nullish().describe("This parameter is used to get the next 'page' of results. The value used with the parameter is provided from a previous response by this endpoint if more 'pages' of results exist."),
     },
     async ({ startDate, endDate, placeId, keyword, gridSize, nextToken }, ctx) => {
@@ -670,7 +670,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
       lng: z.string().describe("The longitude of the center of the grid."),
       gridSize: z.string().describe("Expects 3, 5, 7, 9, 11, 13, or 15."),
       radius: z.string().describe("The radius of the grid in meters. From 0.1 to 100."),
-      measurement: z.enum(['mi', 'km', 'null', 'undefined']).describe("Expects 'mi' or 'km'."),
+      measurement: z.enum(['mi', 'km']).nullish().describe("Expects 'mi' or 'km'."),
     },
     async ({ lat, lng, gridSize, radius, measurement }, ctx) => {
       const apiKey = getApiKey(ctx);
@@ -758,7 +758,6 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
     async ({ platform, placeId, name, lat, lng }, ctx) => {
       const apiKey = getApiKey(ctx);
 
-      console.info(`Found apikey: ${apiKey}`)
       if (!apiKey) {
         return {
           content: [
@@ -799,7 +798,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
     "viewLocalFalconAccountInformation",
     "Retrieves Local Falcon account information. Returns user, credit package, subscription, and credits.",
     {
-      returnField: z.enum(['user', 'credit package', 'subscription', 'credits', 'null', 'undefined']).nullish().describe("Optional specific return information"),
+      returnField: z.enum(['user', 'credit package', 'subscription', 'credits']).nullish().describe("Optional specific return information"),
     },
     async ({ returnField }, ctx) => {
       const apiKey = getApiKey(ctx);
