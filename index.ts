@@ -11,8 +11,6 @@ import { InMemoryEventStore } from "@modelcontextprotocol/sdk/examples/shared/in
 import { setupOAuthRoutes, revokeToken, createTokenVerifier, registerRedirectUris } from "./oauth/index.js";
 import { fetchLocalFalconAccountInfo } from "./localfalcon.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
-import { IncomingMessage, ServerResponse } from "node:http";
-import { Socket } from "node:net";
 
 // Augment Express Request to include auth info set by our bearer auth middleware
 declare module "express" {
@@ -573,10 +571,6 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
           sessionIdGenerator: () => newSessionId,
           enableJsonResponse: true,
           eventStore,
-          onsessioninitialized: (sessionId) => {
-            console.log(`[Session] Auto-recovered session initialized: ${sessionId}`);
-            sessionManager.add(sessionId, { apiKey }, transport);
-          }
         });
 
         transport.onclose = () => {
@@ -594,68 +588,26 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
         const server = getServer(sessionManager.getSessionMap());
         await server.connect(transport);
 
-        // Trigger session initialization on the transport so it assigns the session ID
-        // and the onsessioninitialized callback fires before we handle the actual request.
-        // We send a synthetic initialize through a fully independent req/res pair backed
-        // by a dummy socket so nothing leaks to the real HTTP response.
-        const initBody = {
-          jsonrpc: '2.0',
-          id: `auto-recovery-init-${newSessionId}`,
-          method: 'initialize',
-          params: {
-            protocolVersion: '2025-03-26',
-            capabilities: {},
-            clientInfo: { name: 'auto-recovery', version: '1.0.0' }
-          }
-        };
+        // Directly mark the transport as initialized and assign the session ID.
+        // Normally this happens when the transport processes an initialize JSON-RPC
+        // request, but we need to skip that because the client sent a tools/call (or
+        // similar), not an initialize. Accessing _webStandardTransport is necessary
+        // because the Node wrapper only exposes sessionId as a read-only getter.
+        const webTransport = (transport as any)._webStandardTransport;
+        webTransport.sessionId = newSessionId;
+        webTransport._initialized = true;
 
-        // Build a standalone Node.js IncomingMessage + ServerResponse on a dummy socket.
-        // getRequestListener (used internally by the transport) reads from req and writes
-        // to res at the raw stream level, so we must provide real Node HTTP objects to
-        // prevent any data from reaching the caller's response.
-        const dummySocket = new Socket();
-        const synthReq = new IncomingMessage(dummySocket);
-        synthReq.method = 'POST';
-        synthReq.url = req.url || '/mcp';
-        synthReq.headers = {
-          'content-type': 'application/json',
-          host: req.headers.host || 'localhost',
-        };
-        // The transport's handleRequest accepts a parsedBody parameter so it doesn't
-        // need to read from the stream, but we push the JSON anyway for completeness.
-        synthReq.push(JSON.stringify(initBody));
-        synthReq.push(null);
+        // Register the session in the manager — same as onsessioninitialized would do
+        sessionManager.add(newSessionId, { apiKey }, transport);
 
-        const synthRes = new ServerResponse(synthReq);
-        synthRes.assignSocket(dummySocket);
-
-        await transport.handleRequest(synthReq as any, synthRes as any, initBody);
-
-        // Clean up the dummy socket — it's not connected to anything real
-        dummySocket.destroy();
-
-        // Verify the session was created
-        if (!transport.sessionId || !sessionManager.getTransport(transport.sessionId)) {
-          console.error(`[Session] Auto-recovery failed: session was not initialized`);
-          res.status(500).json({
-            jsonrpc: '2.0',
-            error: {
-              code: -32603,
-              message: 'Session auto-recovery failed',
-            },
-            id: null,
-          });
-          return;
-        }
-
-        console.warn(`[Session] Auto-recovered session for apiKey: "${apiKeyPrefix}" → new session: ${transport.sessionId}`);
+        console.warn(`[Session] Auto-recovered session for apiKey: "${apiKeyPrefix}" → new session: ${newSessionId}`);
 
         // Set the new session ID in the response header so the client can use it going forward
-        res.setHeader('mcp-session-id', transport.sessionId);
+        res.setHeader('mcp-session-id', newSessionId);
 
         // Patch the original request headers so the transport's session validation passes.
         // The transport checks mcp-session-id and mcp-protocol-version on non-init requests.
-        req.headers['mcp-session-id'] = transport.sessionId;
+        req.headers['mcp-session-id'] = newSessionId;
         if (!req.headers['mcp-protocol-version']) {
           req.headers['mcp-protocol-version'] = '2025-03-26';
         }
