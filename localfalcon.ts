@@ -253,7 +253,7 @@ async function safeParseJson(response: any) {
  * @param {string} endDate - Optional end date to filter reports (format: YYYY-MM-DD)
  * @returns {Promise<LocalFalconReportsResponse>} API response
  */
-export async function fetchLocalFalconReports(apiKey: string, limit: string, nextToken?: string, startDate?: string, endDate?: string, placeId?: string, keyword?: string, gridSize?: string, campaignKey?: string, platform?: string) {
+export async function fetchLocalFalconReports(apiKey: string, limit: string, nextToken?: string, startDate?: string, endDate?: string, placeId?: string, keyword?: string, gridSize?: string, campaignKey?: string, platform?: string, fieldmask?: string) {
   const url = new URL(`${API_BASE}/reports`);
   url.searchParams.set("api_key", apiKey);
   url.searchParams.set("limit", limit);
@@ -261,10 +261,11 @@ export async function fetchLocalFalconReports(apiKey: string, limit: string, nex
   if (startDate) url.searchParams.set("start_date", startDate);
   if (endDate) url.searchParams.set("end_date", endDate);
   if (placeId) url.searchParams.set("place_id", placeId);
-  if (keyword) url.searchParams.set("keyword", keyword); 
+  if (keyword) url.searchParams.set("keyword", keyword);
   if (gridSize) url.searchParams.set("grid_size", gridSize);
   if (campaignKey) url.searchParams.set("campaign_key", campaignKey);
   if (platform) url.searchParams.set("platform", platform);
+  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -302,7 +303,7 @@ export async function fetchLocalFalconReports(apiKey: string, limit: string, nex
  * @param {string} keyword - Optional keyword to filter by
  * @returns {Promise<LocalFalconTrendReportsResponse>} API response
  */
-export async function fetchLocalFalconTrendReports(apiKey: string, limit: string, nextToken?: string, placeId?: string, keyword?: string, startDate?: string, endDate?: string, platform?: string ) {
+export async function fetchLocalFalconTrendReports(apiKey: string, limit: string, nextToken?: string, placeId?: string, keyword?: string, startDate?: string, endDate?: string, platform?: string, fieldmask?: string) {
   const url = new URL(`${API_BASE}/trend-reports`);
   url.searchParams.set("api_key", apiKey);
   url.searchParams.set("limit", limit);
@@ -311,7 +312,8 @@ export async function fetchLocalFalconTrendReports(apiKey: string, limit: string
   if (keyword) url.searchParams.set("keyword", keyword);
   if (startDate) url.searchParams.set("start_date", startDate);
   if (endDate) url.searchParams.set("end_date", endDate);
-  if (platform) url.searchParams.set("platform", platform);  
+  if (platform) url.searchParams.set("platform", platform);
+  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -351,7 +353,7 @@ export async function fetchLocalFalconTrendReports(apiKey: string, limit: string
  * @param {string} status - Optional status filter
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconAutoScans(apiKey: string, nextToken?: string, placeId?: string, keyword?: string, grid_size?: string, frequency?: string, status?: string, platform?: string) {
+export async function fetchLocalFalconAutoScans(apiKey: string, nextToken?: string, placeId?: string, keyword?: string, grid_size?: string, frequency?: string, status?: string, platform?: string, fieldmask?: string) {
   const url = new URL(`${API_BASE}/autoscans`);
   url.searchParams.set("api_key", apiKey);
 
@@ -362,6 +364,7 @@ export async function fetchLocalFalconAutoScans(apiKey: string, nextToken?: stri
   if (frequency) url.searchParams.set("frequency", frequency);
   if (status) url.searchParams.set("status", status);
   if (platform) url.searchParams.set("platform", platform);
+  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -389,7 +392,7 @@ export async function fetchLocalFalconAutoScans(apiKey: string, nextToken?: stri
  * @param {string} nextToken - Optional pagination token
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconLocationReports(apiKey: string, limit: string, placeId?: string, keyword?: string, startDate?:string, endDate?: string, nextToken?: string) {
+export async function fetchLocalFalconLocationReports(apiKey: string, limit: string, placeId?: string, keyword?: string, startDate?:string, endDate?: string, nextToken?: string, fieldmask?: string) {
   const url = new URL(`${API_BASE}/location-reports`);
   url.searchParams.set("api_key", apiKey);
   url.searchParams.set("limit", limit);
@@ -397,8 +400,9 @@ export async function fetchLocalFalconLocationReports(apiKey: string, limit: str
   if (placeId) url.searchParams.set("place_id", placeId);
   if (keyword) url.searchParams.set("keyword", keyword);
   if (startDate) url.searchParams.set("start_date", startDate);
-  if (endDate) url.searchParams.set("end_date", endDate); 
+  if (endDate) url.searchParams.set("end_date", endDate);
   if (nextToken) url.searchParams.set("next_token", nextToken);
+  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -448,11 +452,12 @@ export async function fetchLocalFalconLocationReports(apiKey: string, limit: str
  * @param {string} query - Optional search query
  * @returns {Promise<any>} API response
  */
-export async function fetchAllLocalFalconLocations(apiKey: string, query?: string) {
+export async function fetchAllLocalFalconLocations(apiKey: string, query?: string, fieldmask?: string) {
   const url = new URL(`${API_BASE}/locations`);
   url.searchParams.set("api_key", apiKey);
 
   if (query) url.searchParams.set("query", query);
+  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -477,9 +482,10 @@ export async function fetchAllLocalFalconLocations(apiKey: string, query?: strin
  * @param {string} reportKey - The report key
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconLocationReport(apiKey: string, reportKey: string) {
+export async function fetchLocalFalconLocationReport(apiKey: string, reportKey: string, fieldmask?: string) {
   const url = new URL(`${API_BASE}/location-reports/${reportKey}`);
   url.searchParams.set("api_key", apiKey);
+  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -504,7 +510,7 @@ export async function fetchLocalFalconLocationReport(apiKey: string, reportKey: 
  * @param {string} reportKey - The report key
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconReport(apiKey: string, reportKey: string) {
+export async function fetchLocalFalconReport(apiKey: string, reportKey: string, fieldmask?: string) {
   // Clean up the report key if it's a URL
   const cleanReportKey = reportKey.includes('/')
     ? reportKey.split('/').pop()
@@ -512,6 +518,7 @@ export async function fetchLocalFalconReport(apiKey: string, reportKey: string) 
 
   const url = new URL(`${API_BASE}/reports/${cleanReportKey}`);
   url.searchParams.set("api_key", apiKey);
+  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -534,21 +541,9 @@ export async function fetchLocalFalconReport(apiKey: string, reportKey: string) 
         throw new Error('Invalid response format from Local Falcon API');
       }
 
-      const report = data.data;
-      return {
-        report_key: report.report_key,
-        timestamp: report.timestamp,
-        date: report.date,
-        place_id: report.place_id,
-        location: report.location,
-        keyword: report.keyword,
-        lat: report.lat,
-        lng: report.lng,
-        grid_size: report.grid_size,
-        radius: report.radius,
-        measurement: report.measurement,
-        ai_analysis: report.ai_analysis,
-      };
+      // Strip data_points — too large for LLM context windows (e.g. 81 grid points × 20 results each)
+      const { data_points, ...cleanData } = data.data;
+      return cleanData;
     } catch (err) {
       throw new Error(`Failed to parse report data: ${err}`);
     }
@@ -561,7 +556,7 @@ export async function fetchLocalFalconReport(apiKey: string, reportKey: string) 
  * @param {string} reportKey - The report key
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconTrendReport(apiKey: string, reportKey: string) {
+export async function fetchLocalFalconTrendReport(apiKey: string, reportKey: string, fieldmask?: string) {
   // Clean up the report key if it's a URL
   const cleanReportKey = reportKey.includes('/')
     ? reportKey.split('/').pop()
@@ -569,6 +564,7 @@ export async function fetchLocalFalconTrendReport(apiKey: string, reportKey: str
 
   const url = new URL(`${API_BASE}/trend-reports/${cleanReportKey}`);
   url.searchParams.set("api_key", apiKey);
+  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -650,7 +646,7 @@ export async function fetchLocalFalconTrendReport(apiKey: string, reportKey: str
  * @param {string} keyword - Optional keyword filter
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconKeywordReports(apiKey: string, limit: string, nextToken?: string, keyword?: string, startDate?: string, endDate?: string) {
+export async function fetchLocalFalconKeywordReports(apiKey: string, limit: string, nextToken?: string, keyword?: string, startDate?: string, endDate?: string, fieldmask?: string) {
   const url = new URL(`${API_BASE}/keyword-reports`);
   url.searchParams.set("api_key", apiKey);
   url.searchParams.set("limit", limit);
@@ -659,6 +655,7 @@ export async function fetchLocalFalconKeywordReports(apiKey: string, limit: stri
   if (startDate) url.searchParams.set("start_date", startDate);
   if (endDate) url.searchParams.set("end_date", endDate);
   if (keyword) url.searchParams.set("keyword", keyword);
+  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -699,7 +696,7 @@ export async function fetchLocalFalconKeywordReports(apiKey: string, limit: stri
  * @param {string} reportKey - The report key
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconKeywordReport(apiKey: string, reportKey: string) {
+export async function fetchLocalFalconKeywordReport(apiKey: string, reportKey: string, fieldmask?: string) {
   // Clean up the report key if it's a URL
   const cleanReportKey = reportKey.includes('/')
     ? reportKey.split('/').pop()
@@ -707,6 +704,7 @@ export async function fetchLocalFalconKeywordReport(apiKey: string, reportKey: s
 
   const url = new URL(`${API_BASE}/keyword-reports/${cleanReportKey}`);
   url.searchParams.set("api_key", apiKey);
+  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -770,13 +768,14 @@ export async function fetchLocalFalconGrid(apiKey: string, lat?: string, lng?: s
  * @param {string} near - Optional location filter
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconGoogleBusinessLocations(apiKey: string, nextToken?: string, query?: string, near?: string) {
+export async function fetchLocalFalconGoogleBusinessLocations(apiKey: string, nextToken?: string, query?: string, near?: string, fieldmask?: string) {
   const url = new URL(`${API_BASE}/places`);
   url.searchParams.set("api_key", apiKey);
 
   if (nextToken) url.searchParams.set("next_token", nextToken);
   if (query) url.searchParams.set("query", query);
   if (near) url.searchParams.set("near", near);
+  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -955,7 +954,7 @@ export async function fetchLocalFalconFullGridSearch(
  * @param {string} nextToken - Optional pagination token
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconCompetitorReports(apiKey: string, limit: string, startDate?: string, endDate?: string, placeId?: string, keyword?: string, gridSize?: string, nextToken?: string) {
+export async function fetchLocalFalconCompetitorReports(apiKey: string, limit: string, startDate?: string, endDate?: string, placeId?: string, keyword?: string, gridSize?: string, nextToken?: string, fieldmask?: string) {
   const url = new URL(`${API_BASE}/competitor-reports`);
   url.searchParams.set("api_key", apiKey);
   url.searchParams.set("limit", limit);
@@ -966,6 +965,7 @@ export async function fetchLocalFalconCompetitorReports(apiKey: string, limit: s
   if (keyword) url.searchParams.set("keyword", keyword);
   if (gridSize) url.searchParams.set("grid_size", gridSize);
   if (nextToken) url.searchParams.set("next_token", nextToken);
+  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -1011,10 +1011,10 @@ export async function fetchLocalFalconCompetitorReports(apiKey: string, limit: s
  * Fetches a competitor report from the Local Falcon API.
  * @param {string} apiKey - Your Local Falcon API key
  * @param {string} reportKey - Report key
- * @param {boolean} lowDataMode - Whether to return less data
+ * @param {string} [fieldmask] - Optional fieldmask for server-side field filtering
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconCompetitorReport(apiKey: string, reportKey: string, lowDataMode = true) {
+export async function fetchLocalFalconCompetitorReport(apiKey: string, reportKey: string, fieldmask?: string) {
   // Clean up the report key if it's a URL
   const cleanReportKey = reportKey.includes('/')
     ? reportKey.split('/').pop()
@@ -1022,6 +1022,7 @@ export async function fetchLocalFalconCompetitorReport(apiKey: string, reportKey
 
   const url = new URL(`${API_BASE}/competitor-reports/${cleanReportKey}`);
   url.searchParams.set("api_key", apiKey);
+  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -1036,37 +1037,7 @@ export async function fetchLocalFalconCompetitorReport(apiKey: string, reportKey
       throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
     }
 
-    const data = await safeParseJson(res);
-
-    // Validate the response
-    if (!data || !data.data || !data.data.businesses) {
-      throw new Error('Invalid response format from Local Falcon API');
-    }
-
-    const limit = lowDataMode ? 10 : 20;
-
-    return {
-      date: data.data.date,
-      keyword: data.data.keyword,
-      grid_size: data.data.grid_size,
-      radius: data.data.radius,
-      measurement: data.data.measurement,
-      businesses: data.data.businesses.slice(0, limit).map((business: any) => {
-        // Remove unnecessary fields to save bandwidth
-        const {
-          data_points,
-          url,
-          lat,
-          lng,
-          claimed,
-          display_url,
-          platform,
-          phone,
-          ...cleanBusiness
-        } = business;
-        return cleanBusiness;
-      })
-    };
+    return await safeParseJson(res);
   });
 }
 
@@ -1080,7 +1051,7 @@ export async function fetchLocalFalconCompetitorReport(apiKey: string, reportKey
  * @param {string} nextToken - Optional pagination token
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconCampaignReports(apiKey: string, limit: string, startDate?: string, endDate?: string, placeId?: string, runDate?: string, nextToken?: string) {
+export async function fetchLocalFalconCampaignReports(apiKey: string, limit: string, startDate?: string, endDate?: string, placeId?: string, runDate?: string, nextToken?: string, fieldmask?: string) {
   const url = new URL(`${API_BASE}/campaigns`);
   url.searchParams.set("api_key", apiKey);
   url.searchParams.set("limit", limit);
@@ -1090,6 +1061,7 @@ export async function fetchLocalFalconCampaignReports(apiKey: string, limit: str
   if (placeId) url.searchParams.set("place_id", placeId);
   if (runDate) url.searchParams.set("run", runDate);
   if (nextToken) url.searchParams.set("next_token", nextToken);
+  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -1116,15 +1088,9 @@ export async function fetchLocalFalconCampaignReports(apiKey: string, limit: str
     return {
       ...data.data,
       reports: data.data.reports.slice(0, limitNum).map((report: any) => {
-        // Remove unnecessary fields to save bandwidth
+        // Remove only truly unnecessary fields
         const {
           data_points,
-          locations,
-          keywords,
-          scans,
-          frequency,
-          last_run,
-          status,
           ...cleanReport
         } = report;
         return cleanReport;
@@ -1139,7 +1105,7 @@ export async function fetchLocalFalconCampaignReports(apiKey: string, limit: str
  * @param {string} reportKey - Report key
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconCampaignReport(apiKey: string, reportKey: string, runDate:string) {
+export async function fetchLocalFalconCampaignReport(apiKey: string, reportKey: string, runDate:string, fieldmask?: string) {
   // Clean up the report key if it's a URL
   const cleanReportKey = reportKey.includes('/')
     ? reportKey.split('/').pop()
@@ -1149,6 +1115,7 @@ export async function fetchLocalFalconCampaignReport(apiKey: string, reportKey: 
   url.searchParams.set("api_key", apiKey);
 
   if (runDate) url.searchParams.set("run", runDate);
+  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -1175,7 +1142,7 @@ export async function fetchLocalFalconCampaignReport(apiKey: string, reportKey: 
  * @param {string} endDate - Optional end date filter
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconGuardReports(apiKey: string, limit: string, startDate?: string, endDate?: string, status?: string, nextToken?: string) {
+export async function fetchLocalFalconGuardReports(apiKey: string, limit: string, startDate?: string, endDate?: string, status?: string, nextToken?: string, fieldmask?: string) {
   const url = new URL(`${API_BASE}/guard`);
   url.searchParams.set("api_key", apiKey);
   url.searchParams.set("limit", limit);
@@ -1184,6 +1151,7 @@ export async function fetchLocalFalconGuardReports(apiKey: string, limit: string
   if (endDate) url.searchParams.set("end_date", endDate);
   if (status) url.searchParams.set("status", status);
   if (nextToken) url.searchParams.set("next_token", nextToken);
+  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
   await rateLimiter.waitForAvailableSlot();
 
   return withRetry(async () => {
@@ -1208,16 +1176,7 @@ export async function fetchLocalFalconGuardReports(apiKey: string, limit: string
 
     return {
       ...data.data,
-      reports: data.data.reports.slice(0, limitNum).map((report: any) => {
-        // Remove unnecessary fields to save bandwidth
-        const {
-          date_last,
-          date_next,
-          status,
-          ...cleanReport
-        } = report;
-        return cleanReport;
-      })
+      reports: data.data.reports.slice(0, limitNum)
     };
   });
 }
@@ -1228,9 +1187,12 @@ export async function fetchLocalFalconGuardReports(apiKey: string, limit: string
  * @param {string} placeId - Place ID
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconGuardReport(apiKey: string, placeId: string) {
+export async function fetchLocalFalconGuardReport(apiKey: string, placeId: string, startDate?: string, endDate?: string, fieldmask?: string) {
   const url = new URL(`${API_BASE}/guard/${placeId}`);
   url.searchParams.set("api_key", apiKey);
+  if (startDate) url.searchParams.set("start_date", startDate);
+  if (endDate) url.searchParams.set("end_date", endDate);
+  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -1245,15 +1207,7 @@ export async function fetchLocalFalconGuardReport(apiKey: string, placeId: strin
       throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
     }
 
-    const data = await safeParseJson(res);
-
-    // Validate the response and remove metrics to save space
-    if (!data || !data.data) {
-      throw new Error('Invalid response format from Local Falcon API');
-    }
-
-    const { metrics, ...cleanData } = data.data;
-    return { data: cleanData };
+    return await safeParseJson(res);
   });
 }
 
@@ -1430,13 +1384,15 @@ export async function saveLocalFalconBusinessLocationToAccount(
  */
 export async function fetchLocalFalconAccountInfo(
   apiKey: string,
-  returnField?: 'user' | 'credit package' | 'subscription' | 'credits'
+  returnField?: 'user' | 'credit package' | 'subscription' | 'credits',
+  fieldmask?: string
 ): Promise<any> {
   try {
     await rateLimiter.waitForAvailableSlot();
     const form = new FormData();
     form.append('api_key', apiKey);
     if (returnField) form.append('return', returnField);
+    if (fieldmask) form.append('fieldmask', fieldmask);
     const response = await withRetry(async () => {
       return await fetchWithTimeout(
         `${API_BASE_V2}/account`,
@@ -1874,7 +1830,8 @@ export async function fetchLocalFalconReviewsAnalysisReports(
   placeId?: string,
   frequency?: string,
   limit?: number,
-  nextToken?: string
+  nextToken?: string,
+  fieldmask?: string
 ): Promise<any> {
   try {
     await rateLimiter.waitForAvailableSlot();
@@ -1885,6 +1842,7 @@ export async function fetchLocalFalconReviewsAnalysisReports(
     if (frequency) form.append('frequency', frequency);
     if (limit !== undefined) form.append('limit', limit.toString());
     if (nextToken) form.append('next_token', nextToken);
+    if (fieldmask) form.append('fieldmask', fieldmask);
 
     const response = await withRetry(async () => {
       return await fetchWithTimeout(
@@ -1918,13 +1876,15 @@ export async function fetchLocalFalconReviewsAnalysisReports(
  */
 export async function fetchLocalFalconReviewsAnalysisReport(
   apiKey: string,
-  reportKey: string
+  reportKey: string,
+  fieldmask?: string
 ): Promise<any> {
   try {
     await rateLimiter.waitForAvailableSlot();
     const form = new FormData();
     form.append('api_key', apiKey);
     form.append('report_key', reportKey);
+    if (fieldmask) form.append('fieldmask', fieldmask);
 
     const response = await withRetry(async () => {
       return await fetchWithTimeout(
