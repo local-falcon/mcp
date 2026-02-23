@@ -658,19 +658,18 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
       const transport = sessionManager.getTransport(sessionId);
       
       res.on('close', () => {
-        console.log(`[Transport] HTTP SSE connection closed for session ${sessionId}`);
-        // When the SSE stream closes, the client has disconnected
-        // Remove the session which will trigger token revocation
-        if (sessionManager.getSession(sessionId)) {
-          console.log(`[Transport] Client disconnected via SSE close, removing session ${sessionId}`);
-          sessionManager.remove(sessionId);
-          // Also close the transport to free resources and trigger transport.onclose
-          if (transport) {
-            (transport as StreamableHTTPServerTransport).close().catch((err) => {
-              console.error(`[Transport] Failed to close transport after SSE disconnect for session ${sessionId}:`, err);
-            });
-          }
-        }
+        console.log(`[Transport] HTTP SSE stream closed for session ${sessionId}`);
+        // NOTE: We intentionally do NOT remove the session or close the transport here.
+        // Anthropic's connector proxy routinely drops and re-establishes SSE streams
+        // (typically every ~5 seconds) while reusing the same session ID and Bearer token.
+        // Destroying the session on SSE close would:
+        //   1. Kill any in-flight POST requests (tools/call) that haven't responded yet
+        //   2. Prevent the proxy from reconnecting the SSE stream with the same session ID
+        //   3. Force auto-recovery for every subsequent request, adding latency
+        // The session will be cleaned up by:
+        //   - Explicit DELETE /mcp request (client-initiated termination)
+        //   - The inactivity checker (10-day timeout)
+        //   - Server shutdown (SIGTERM/SIGINT)
       });
       
       console.log(`Starting HTTP SSE transport.handleRequest for session ${sessionId}...`);
