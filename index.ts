@@ -8,7 +8,7 @@ import { getServer } from "./server.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { InMemoryEventStore } from "@modelcontextprotocol/sdk/examples/shared/inMemoryEventStore.js";
-import { setupOAuthRoutes, revokeToken, createTokenVerifier, registerRedirectUris, revokeRefreshTokensForApiKey } from "./oauth/index.js";
+import { setupOAuthRoutes, createTokenVerifier, registerRedirectUris } from "./oauth/index.js";
 import { fetchLocalFalconAccountInfo } from "./localfalcon.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 
@@ -30,7 +30,9 @@ interface SessionData {
 }
 
 // Minimum session age before revocation (prevents revoking during OAuth setup)
-const MIN_SESSION_AGE_FOR_REVOCATION_MS = 60000; // 60 seconds
+// Note: Token revocation on session disconnect was removed because Anthropic's
+// connector proxy routinely drops and reconnects SSE/HTTP transports while
+// reusing the same Bearer token. Revocation now only happens via POST /oauth/revoke.
 
 // Session inactivity timeout - revoke tokens for sessions inactive longer than this
 const SESSION_INACTIVITY_TIMEOUT_MS = 10 * 24 * 60 * 60 * 1000; // 10 days
@@ -117,24 +119,16 @@ class SessionManager {
       ageMs: Date.now() - session.createdAt,
     });
 
+    // NOTE: We intentionally do NOT revoke the OAuth token on session disconnect.
+    // Anthropic's connector proxy routinely drops and re-establishes SSE/HTTP
+    // connections while reusing the same Bearer token. Revoking the token here
+    // would kill the API key on Local Falcon's side, causing the next reconnect
+    // to fail and forcing unnecessary re-authentication.
+    // Tokens are revoked only via:
+    //   1. Explicit POST /oauth/revoke (user-initiated disconnect)
+    //   2. Natural 24-hour expiration
     if (session.apiKey) {
-      const sessionAge = Date.now() - session.createdAt;
-      // Only revoke if session was active long enough (not during OAuth setup)
-      if (sessionAge >= MIN_SESSION_AGE_FOR_REVOCATION_MS) {
-        console.log(`[Session] Revoking token for disconnected session ${sessionId} (age: ${Math.round(sessionAge / 1000)}s)`);
-        revokeRefreshTokensForApiKey(session.apiKey);
-        revokeToken(session.apiKey)
-          .then(() => {
-            console.log(`[Session] Token revocation call completed for session ${sessionId}`);
-          })
-          .catch((err) => {
-            console.error(`[Session] Failed to revoke token for session ${sessionId}:`, err);
-          });
-      } else {
-        console.log(`[Session] Skipping revocation for new session ${sessionId} (age: ${Math.round(sessionAge / 1000)}s, threshold: ${MIN_SESSION_AGE_FOR_REVOCATION_MS}ms)`);
-      }
-    } else {
-      console.log(`[Session] No apiKey for session ${sessionId} - skipping revocation`);
+      console.log(`[Session] Session ${sessionId} disconnected (age: ${Math.round((Date.now() - session.createdAt) / 1000)}s) — token preserved for reconnect`);
     }
 
     this.sessions.delete(sessionId);
@@ -203,25 +197,11 @@ class SessionManager {
     this.stopInactivityChecker();
     console.log("Cleaning up sessions...");
 
-    // Revoke all OAuth tokens and associated refresh tokens
-    const revocationPromises: Promise<void>[] = [];
-    for (const [sessionId, session] of this.sessions) {
-      if (session.apiKey) {
-        console.log(`[Session] Revoking token for session ${sessionId}`);
-        revokeRefreshTokensForApiKey(session.apiKey);
-        revocationPromises.push(
-          revokeToken(session.apiKey).catch((err) => {
-            console.error(`[Session] Failed to revoke token for session ${sessionId}:`, err);
-          })
-        );
-      }
-    }
-
-    // Wait for all revocations to complete (with timeout)
-    await Promise.race([
-      Promise.all(revocationPromises),
-      new Promise(resolve => setTimeout(resolve, 5000)) // 5 second timeout
-    ]);
+    // NOTE: We intentionally do NOT revoke OAuth tokens during server shutdown.
+    // Render redeploys cause the server to restart, but Anthropic's proxy will
+    // reconnect with the same Bearer token. Revoking tokens here would break
+    // all active sessions after every deploy. Tokens expire naturally (24h)
+    // and can be explicitly revoked via POST /oauth/revoke.
 
     // Close all transports
     for (const [sessionId, transport] of this.transports) {

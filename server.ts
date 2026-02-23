@@ -1007,6 +1007,23 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
+
+      // The API's "credits" returnField looks for an active credit *package*, which
+      // may return empty even when the account has usable credits. When the user asks
+      // for "credits", fetch the full account response and extract the credits summary
+      // so they always see their actual balance.
+      if (returnField === 'credits') {
+        const fullResp = await fetchLocalFalconAccountInfo(apiKey, undefined, handleNullOrUndefined(fieldmask));
+        const data = fullResp?.data ?? fullResp;
+        // Extract credits info from wherever it lives in the full response
+        const credits = data?.credits ?? data?.user?.credits ?? null;
+        if (credits) {
+          return { content: [{ type: "text", text: JSON.stringify({ success: true, data: { credits } }, null, 2) }] };
+        }
+        // Fallback: return the full response if we can't find a credits block
+        return { content: [{ type: "text", text: JSON.stringify(fullResp, null, 2) }] };
+      }
+
       const resp = await fetchLocalFalconAccountInfo(apiKey, handleNullOrUndefined(returnField) as any, handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     },
