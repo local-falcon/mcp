@@ -1434,30 +1434,35 @@ export async function runLocalFalconScan(
     form.append('measurement', measurement);
     form.append('platform', platform);
     form.append('ai_analysis', aiAnalysis.toString());
-    const response = await withRetry(async () => {
-      return await fetchWithTimeout(
+
+    // IMPORTANT: No withRetry for scans — retrying would queue duplicate scans and consume extra credits
+    let response: any;
+    try {
+      response = await fetchWithTimeout(
         `${API_BASE_V2}/run-scan/`,
         {
           method: 'POST',
           body: form,
         },
-        SCAN_TIMEOUT_MS // Scans can take a long time — 3 minute timeout
+        SCAN_TIMEOUT_MS // 3 minute timeout — scans can take a long time
       );
-    });
+    } catch (error) {
+      // Timeout or network error — scan was likely queued but we lost the connection
+      if ((error as Error).name === 'AbortError' || (error as Error).message?.includes('timeout')) {
+        return {
+          success: true,
+          message: "Scan request was sent but the response timed out. The scan is likely still processing in the background.",
+          _mcp_note: "The scan was probably queued successfully. Use listLocalFalconScanReports with the same placeId and keyword to find the report once it completes. Do NOT retry runLocalFalconScan — it may queue duplicate scans and consume extra credits."
+        };
+      }
+      throw error;
+    }
 
     // Parse and return the response
     const data = await safeParseJson(response);
 
     if (!response.ok) {
       throw new Error(data.message || `HTTP error! status: ${response.status}`);
-    }
-
-    // Handle 202 Accepted — scan kicked off but still processing
-    if (response.status === 202) {
-      return {
-        ...data,
-        _mcp_note: "Scan is processing. Use getLocalFalconReport with the returned report_key to check status and retrieve results once complete."
-      };
     }
 
     return data;
@@ -1855,29 +1860,33 @@ export async function runLocalFalconCampaign(
     form.append('api_key', apiKey);
     form.append('campaign_key', campaignKey);
 
-    const response = await withRetry(async () => {
-      return await fetchWithTimeout(
+    // IMPORTANT: No withRetry for campaign runs — retrying would trigger duplicate scans and consume extra credits
+    let response: any;
+    try {
+      response = await fetchWithTimeout(
         `${API_BASE_V2}/campaigns/run`,
         {
           method: 'POST',
           body: form,
         },
-        SCAN_TIMEOUT_MS // Campaign runs trigger scans — need extended timeout
+        SCAN_TIMEOUT_MS // 3 minute timeout — campaign runs trigger scans
       );
-    });
+    } catch (error) {
+      // Timeout or network error — campaign run was likely queued
+      if ((error as Error).name === 'AbortError' || (error as Error).message?.includes('timeout')) {
+        return {
+          success: true,
+          message: "Campaign run request was sent but the response timed out. The campaign scans are likely still processing in the background.",
+          _mcp_note: "The campaign was probably triggered successfully. Use listLocalFalconCampaignReports or listLocalFalconScanReports to check status once complete. Do NOT retry runLocalFalconCampaign — it may trigger duplicate scans and consume extra credits."
+        };
+      }
+      throw error;
+    }
 
     const data = await safeParseJson(response);
 
     if (!response.ok) {
       throw new Error(data.message || `HTTP error! status: ${response.status}`);
-    }
-
-    // Handle 202 Accepted — campaign scan(s) still processing
-    if (response.status === 202) {
-      return {
-        ...data,
-        _mcp_note: "Campaign scan is processing. Use getLocalFalconCampaignReport or listLocalFalconScanReports to check status once complete."
-      };
     }
 
     return data;
