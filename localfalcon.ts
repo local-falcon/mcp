@@ -134,6 +134,64 @@ const RATE_LIMIT_MAX_REQUESTS = 5;
 const RATE_LIMIT_WINDOW_MS = 1000;
 
 /**
+ * Client-side fieldmask filtering for list endpoints.
+ * The Local Falcon API only supports fieldmask on single-resource GET endpoints,
+ * not on list endpoints. This function applies fieldmask filtering client-side
+ * by picking only the requested fields from each item in the response.
+ * Supports dot notation (e.g., "location.name") for nested fields.
+ */
+function applyClientFieldmask(data: any, fieldmask: string): any {
+  const fields = fieldmask.split(',').map(f => f.trim());
+
+  function pickFields(obj: any): any {
+    if (!obj || typeof obj !== 'object') return obj;
+
+    const result: any = {};
+    for (const field of fields) {
+      const parts = field.split('.');
+      if (parts.length === 1) {
+        // Top-level field
+        if (field in obj) {
+          result[field] = obj[field];
+        }
+      } else {
+        // Nested field (e.g., "location.name")
+        const [parent, ...rest] = parts;
+        if (parent in obj && obj[parent] && typeof obj[parent] === 'object') {
+          if (!result[parent]) result[parent] = {};
+          const nestedKey = rest.join('.');
+          const value = rest.reduce((o: any, k: string) => o?.[k], obj[parent]);
+          if (value !== undefined) {
+            // Build nested structure
+            let target = result[parent];
+            for (let i = 0; i < rest.length - 1; i++) {
+              if (!target[rest[i]]) target[rest[i]] = {};
+              target = target[rest[i]];
+            }
+            target[rest[rest.length - 1]] = value;
+          }
+        }
+      }
+    }
+    return result;
+  }
+
+  // If data has a reports/scans array, filter each item
+  if (data && typeof data === 'object') {
+    const result = { ...data };
+    if (Array.isArray(data.reports)) {
+      result.reports = data.reports.map(pickFields);
+    }
+    if (Array.isArray(data.scans)) {
+      result.scans = data.scans.map(pickFields);
+    }
+    return result;
+  }
+
+  return data;
+}
+
+/**
  * Enhanced fetch with timeout and cancellation support
  * @param {string} url - The URL to fetch
  * @param {Object} options - Fetch options
@@ -269,6 +327,47 @@ export async function fetchLocalFalconReports(apiKey: string, limit: string, nex
 
   await rateLimiter.waitForAvailableSlot();
 
+  // If fieldmask is provided, probe multiple syntaxes to find what works
+  if (fieldmask) {
+    const baseUrl = new URL(`${API_BASE}/reports`);
+    baseUrl.searchParams.set("api_key", apiKey);
+    baseUrl.searchParams.set("limit", "1");
+
+    // Build test syntaxes from the user's fieldmask fields
+    const userFields = fieldmask.split(',').map(f => f.trim());
+    const testPatterns: Record<string, string> = {
+      'as-is': fieldmask,
+      'wildcard': userFields.map(f => `reports.*.${f}`).join(','),
+      'dot-notation': userFields.map(f => `reports.${f}`).join(','),
+      'with-wrapper': `reports,${fieldmask}`,
+      'data-prefix': userFields.map(f => `data.${f}`).join(','),
+    };
+
+    const probeResults: Record<string, any> = {};
+    for (const [label, pattern] of Object.entries(testPatterns)) {
+      try {
+        const probeUrl = new URL(baseUrl.toString());
+        probeUrl.searchParams.set("fieldmask", pattern);
+        await rateLimiter.waitForAvailableSlot();
+        const probeRes = await fetchWithTimeout(probeUrl.toString(), { method: "POST", headers: HEADERS });
+        const probeData = await safeParseJson(probeRes);
+        const d = probeData?.data;
+        probeResults[label] = {
+          pattern,
+          dataType: Array.isArray(d) ? 'array' : typeof d,
+          length: Array.isArray(d) ? d.length : (d?.reports ? d.reports.length : 'N/A'),
+          hasReports: !!d?.reports,
+          preview: JSON.stringify(d).slice(0, 300),
+        };
+      } catch (e: any) {
+        probeResults[label] = { pattern, error: e.message };
+      }
+    }
+    console.log(`[Fieldmask Probe] Results:\n${JSON.stringify(probeResults, null, 2)}`);
+
+    // Now do the real request with the original fieldmask (already set on url)
+  }
+
   return withRetry(async () => {
     const res = await fetchWithTimeout(url.toString(), {
       method: "POST",
@@ -282,17 +381,16 @@ export async function fetchLocalFalconReports(apiKey: string, limit: string, nex
 
     const data = await safeParseJson(res);
 
-    // When fieldmask is used, the API may omit structural keys like "reports"
+    // When fieldmask is used and the API returns data, pass it through
     if (fieldmask) {
-      console.log(`[Fieldmask Debug] fetchLocalFalconReports fieldmask="${fieldmask}"`, JSON.stringify({
-        hasData: !!data,
-        hasDataData: !!data?.data,
-        dataType: typeof data?.data,
-        isArray: Array.isArray(data?.data),
-        dataKeys: data?.data ? Object.keys(data.data) : 'N/A',
-        topKeys: data ? Object.keys(data) : 'N/A',
-        rawPreview: JSON.stringify(data).slice(0, 500),
-      }));
+      // If API returned standard structure, apply client-side filtering as fallback
+      if (data?.data?.reports) {
+        return applyClientFieldmask({
+          ...data.data,
+          reports: data.data.reports.slice(0, parseInt(limit) || data.data.reports.length)
+        }, fieldmask);
+      }
+      // Otherwise return whatever the API gave us
       return data?.data ?? data;
     }
 
