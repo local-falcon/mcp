@@ -666,7 +666,12 @@ export async function fetchLocalFalconReport(apiKey: string, reportKey: string, 
         throw new Error('Invalid response format from Local Falcon API');
       }
 
-      // Strip data_points — too large for LLM context windows (e.g. 81 grid points × 20 results each)
+      // Strip data_points by default — too large for LLM context windows
+      // (e.g. 81 grid points × 20 results each). Preserve when fieldmask explicitly requests them.
+      const wantsDataPoints = fieldmask && fieldmask.includes('data_points');
+      if (wantsDataPoints) {
+        return data.data;
+      }
       const { data_points, ...cleanData } = data.data;
       return cleanData;
     } catch (err) {
