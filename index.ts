@@ -8,7 +8,7 @@ import { getServer } from "./server.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { InMemoryEventStore } from "@modelcontextprotocol/sdk/examples/shared/inMemoryEventStore.js";
-import { setupOAuthRoutes, revokeToken, createTokenVerifier, registerRedirectUris } from "./oauth/index.js";
+import { setupOAuthRoutes, revokeToken, createTokenVerifier, registerRedirectUris, revokeRefreshTokensForApiKey } from "./oauth/index.js";
 import { fetchLocalFalconAccountInfo } from "./localfalcon.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 
@@ -122,6 +122,7 @@ class SessionManager {
       // Only revoke if session was active long enough (not during OAuth setup)
       if (sessionAge >= MIN_SESSION_AGE_FOR_REVOCATION_MS) {
         console.log(`[Session] Revoking token for disconnected session ${sessionId} (age: ${Math.round(sessionAge / 1000)}s)`);
+        revokeRefreshTokensForApiKey(session.apiKey);
         revokeToken(session.apiKey)
           .then(() => {
             console.log(`[Session] Token revocation call completed for session ${sessionId}`);
@@ -202,11 +203,12 @@ class SessionManager {
     this.stopInactivityChecker();
     console.log("Cleaning up sessions...");
 
-    // Revoke all OAuth tokens
+    // Revoke all OAuth tokens and associated refresh tokens
     const revocationPromises: Promise<void>[] = [];
     for (const [sessionId, session] of this.sessions) {
       if (session.apiKey) {
         console.log(`[Session] Revoking token for session ${sessionId}`);
+        revokeRefreshTokensForApiKey(session.apiKey);
         revocationPromises.push(
           revokeToken(session.apiKey).catch((err) => {
             console.error(`[Session] Failed to revoke token for session ${sessionId}:`, err);
@@ -329,7 +331,7 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
       client_secret: "71fdc6383c274334095fec457fb2085d73451a79fd030e460c69a6f3db00af0b",
       client_name: clientMetadata.client_name || "LocalFalcon MCP",
       logo_uri: "https://www.localfalcon.com/uploads/identity/logos/471387_local-falcon-logo.png",
-      grant_types: ["authorization_code"],
+      grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       token_endpoint_auth_method: "none",
     });
@@ -377,6 +379,15 @@ const bearerAuthMiddleware: RequestHandler = (async (req: Request, res: Response
     const errCode = error?.code || "invalid_token";
     const errMsg = error?.message || "Unauthorized";
     const status = error?.status || 401;
+
+    // Transient errors (503) should NOT trigger re-authentication.
+    // Return Retry-After so the client knows to retry the same request,
+    // not start a new OAuth flow.
+    if (status === 503) {
+      res.set("Retry-After", "5");
+      res.status(503).json({ error: errCode, error_description: errMsg });
+      return;
+    }
 
     // Build WWW-Authenticate header with dynamic resource_metadata from request host
     const protocol = req.headers["x-forwarded-proto"] || req.protocol;

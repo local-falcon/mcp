@@ -5,8 +5,10 @@
  * - PKCE mandatory with S256 (reject requests without code_challenge/code_verifier)
  * - Resource indicators (RFC 8707)
  * - Exact redirect URI matching
+ * - Refresh token support for seamless token renewal
  */
 
+import crypto from "crypto";
 import type { Application, Request, Response } from "express";
 import { OAUTH_CONFIG } from "./config.js";
 import { stateStore } from "./stateStore.js";
@@ -19,6 +21,61 @@ import {
 } from "./oauthClient.js";
 import { clearAuthCache } from "./provider.js";
 import { isRedirectUriAllowed } from "./clientStore.js";
+import { fetchLocalFalconAccountInfo } from "../localfalcon.js";
+
+// ── Refresh Token Store ──────────────────────────────────────────────
+// Maps refresh_token -> { apiKey, createdAt }
+// Refresh tokens are long-lived (30 days) so a client can renew its
+// access token without requiring user re-authentication.
+
+const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+interface StoredRefreshToken {
+  apiKey: string;
+  createdAt: number;
+}
+
+const refreshTokenStore = new Map<string, StoredRefreshToken>();
+
+// Periodically clean expired refresh tokens
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, data] of refreshTokenStore) {
+    if (now - data.createdAt > REFRESH_TOKEN_TTL_MS) {
+      refreshTokenStore.delete(token);
+    }
+  }
+}, 60 * 60 * 1000); // every hour
+
+function generateRefreshToken(): string {
+  return crypto.randomBytes(48).toString("hex");
+}
+
+/**
+ * Issue a refresh token for an API key. If one already exists, revoke the old one.
+ */
+function issueRefreshToken(apiKey: string): string {
+  // Revoke any existing refresh token for this API key to prevent accumulation
+  for (const [token, data] of refreshTokenStore) {
+    if (data.apiKey === apiKey) {
+      refreshTokenStore.delete(token);
+    }
+  }
+  const token = generateRefreshToken();
+  refreshTokenStore.set(token, { apiKey, createdAt: Date.now() });
+  return token;
+}
+
+/**
+ * Revoke all refresh tokens for a given API key (used during token revocation)
+ */
+export function revokeRefreshTokensForApiKey(apiKey: string): void {
+  for (const [token, data] of refreshTokenStore) {
+    if (data.apiKey === apiKey) {
+      refreshTokenStore.delete(token);
+    }
+  }
+}
 
 /**
  * Build the full redirect URI based on the incoming request
@@ -303,13 +360,24 @@ async function handleTokenExchange(req: Request, res: Response): Promise<void> {
     resource: resource ? "[PRESENT]" : "[MISSING]",
   });
 
-  if (grant_type !== "authorization_code") {
+  // Route to the appropriate handler based on grant_type
+  if (grant_type === "authorization_code") {
+    await handleAuthorizationCodeGrant(req, res);
+  } else if (grant_type === "refresh_token") {
+    await handleRefreshTokenGrant(req, res);
+  } else {
     res.status(400).json({
       error: "unsupported_grant_type",
-      error_description: "Only authorization_code grant type is supported",
+      error_description: "Supported grant types: authorization_code, refresh_token",
     });
-    return;
   }
+}
+
+/**
+ * Handle authorization_code grant type
+ */
+async function handleAuthorizationCodeGrant(req: Request, res: Response): Promise<void> {
+  const { code, redirect_uri, code_verifier, resource } = req.body;
 
   if (!code) {
     res.status(400).json({
@@ -365,11 +433,15 @@ async function handleTokenExchange(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // Return standard OAuth 2.1 token response
+    // Issue a refresh token so the client can renew without re-auth
+    const refreshToken = issueRefreshToken(apiKey);
+
+    // Return standard OAuth 2.1 token response with refresh token
     res.status(200).json({
       access_token: apiKey,
       token_type: "Bearer",
       expires_in: 86400, // 24 hours
+      refresh_token: refreshToken,
       scope: "api",
     });
   } catch (error) {
@@ -385,6 +457,75 @@ async function handleTokenExchange(req: Request, res: Response): Promise<void> {
         error_description: "Token exchange failed",
       });
     }
+  }
+}
+
+/**
+ * Handle refresh_token grant type.
+ * Validates the refresh token, verifies the API key is still active,
+ * and issues a new access token + rotated refresh token.
+ */
+async function handleRefreshTokenGrant(req: Request, res: Response): Promise<void> {
+  const { refresh_token } = req.body;
+
+  if (!refresh_token) {
+    res.status(400).json({
+      error: "invalid_request",
+      error_description: "Missing refresh_token parameter",
+    });
+    return;
+  }
+
+  // Look up the refresh token
+  const stored = refreshTokenStore.get(refresh_token);
+  if (!stored) {
+    console.error("[OAuth] Invalid or expired refresh token");
+    res.status(400).json({
+      error: "invalid_grant",
+      error_description: "Invalid or expired refresh token",
+    });
+    return;
+  }
+
+  // Check refresh token expiry
+  if (Date.now() - stored.createdAt > REFRESH_TOKEN_TTL_MS) {
+    refreshTokenStore.delete(refresh_token);
+    console.error("[OAuth] Refresh token expired");
+    res.status(400).json({
+      error: "invalid_grant",
+      error_description: "Refresh token has expired, please re-authenticate",
+    });
+    return;
+  }
+
+  try {
+    // Verify the API key is still valid by calling the account endpoint
+    await fetchLocalFalconAccountInfo(stored.apiKey, "subscription");
+
+    // Rotate: revoke old refresh token and issue a new one
+    refreshTokenStore.delete(refresh_token);
+    const newRefreshToken = issueRefreshToken(stored.apiKey);
+
+    // Clear the verification cache so it gets a fresh TTL
+    clearAuthCache(stored.apiKey);
+
+    console.log("[OAuth] Token refreshed successfully");
+
+    res.status(200).json({
+      access_token: stored.apiKey,
+      token_type: "Bearer",
+      expires_in: 86400, // 24 hours
+      refresh_token: newRefreshToken,
+      scope: "api",
+    });
+  } catch (error) {
+    // API key is no longer valid — revoke the refresh token too
+    refreshTokenStore.delete(refresh_token);
+    console.error("[OAuth] Refresh failed — API key no longer valid:", error);
+    res.status(400).json({
+      error: "invalid_grant",
+      error_description: "The associated access token is no longer valid. Please re-authenticate.",
+    });
   }
 }
 
@@ -420,12 +561,16 @@ async function handleRevoke(req: Request, res: Response): Promise<void> {
 
   try {
     await revokeToken(token);
-    // Also clear the auth cache for this token
+    // Also clear the auth cache and any associated refresh tokens
     clearAuthCache(token);
+    revokeRefreshTokensForApiKey(token);
     // RFC 7009: Return 200 OK regardless of whether token was valid
     res.status(200).json({ revoked: true });
   } catch (error) {
     console.error("[OAuth] Revocation failed:", error);
+    // Still clean up local state even if remote revocation failed
+    clearAuthCache(token);
+    revokeRefreshTokensForApiKey(token);
     // Still return 200 per RFC 7009 - revocation is best-effort
     res.status(200).json({ revoked: true });
   }
