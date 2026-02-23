@@ -694,8 +694,10 @@ export async function fetchLocalFalconTrendReport(apiKey: string, reportKey: str
 
   const url = new URL(`${API_BASE}/trend-reports/${cleanReportKey}`);
   url.searchParams.set("api_key", apiKey);
-  // Auto-prefix fieldmask with scans.* wildcard syntax for the trend report detail endpoint
-  if (fieldmask) url.searchParams.set("fieldmask", prefixFieldmaskForList(fieldmask, 'scans'));
+  // Pass fieldmask directly — this is a single-report endpoint, not a list.
+  // Do NOT use prefixFieldmaskForList here as it wraps all fields with scans.*
+  // which drops top-level fields like report_key, last_date, keyword, location.
+  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -712,40 +714,55 @@ export async function fetchLocalFalconTrendReport(apiKey: string, reportKey: str
 
     const data = await safeParseJson(res);
 
-    // When fieldmask is used, the API returns the standard structure with filtered fields
-    if (fieldmask) {
-      if (data?.data?.scans) {
-        return { ...data.data };
-      }
-      return data?.data ?? data;
-    }
-
-    // Validate the response
-    if (!data || !data.data || !data.data.scans) {
+    if (!data || !data.data) {
       throw new Error('Invalid response format from Local Falcon API');
     }
 
     const report = data.data;
 
-    // Get the most number of locations from one of the scans to save context space
-    let locations = report.scans.reduce((most: any[], current: any) => {
-      return current.locations && current.locations.length > most.length ? current.locations : most;
-    }, []);
+    // Always clean up the response — strip heavy nested data regardless of fieldmask.
+    // The scans array and locations array contain data_points that are too large for LLM context.
 
-    locations = locations.map((location: any) => {
-      return {
-        place_id: location.place_id,
-        name: location.name,
-        address: location.address,
-        phone: location.phone,
-        display_url: location.display_url,
-        rating: location.rating,
-        reviews: location.reviews,
-        arp: location.arp,
-        atrp: location.atrp,
-        solv: location.solv,
-      };
-    });
+    // Clean locations: extract from scans array (get the most populated set) and strip to key metrics
+    let locations = report.locations;
+    if (!locations && report.scans) {
+      locations = report.scans.reduce((most: any[], current: any) => {
+        return current.locations && current.locations.length > most.length ? current.locations : most;
+      }, []);
+    }
+
+    if (locations && Array.isArray(locations)) {
+      locations = locations.map((location: any) => {
+        return {
+          place_id: location.place_id,
+          name: location.name,
+          address: location.address,
+          phone: location.phone,
+          display_url: location.display_url,
+          rating: location.rating,
+          reviews: location.reviews,
+          arp: location.arp,
+          atrp: location.atrp,
+          solv: location.solv,
+        };
+      });
+    }
+
+    // Clean scans: strip to key metrics per scan (no data_points, no nested locations)
+    let scans = report.scans;
+    if (scans && Array.isArray(scans)) {
+      scans = scans.map((scan: any) => {
+        return {
+          report_key: scan.report_key,
+          date: scan.date,
+          arp: scan.arp,
+          atrp: scan.atrp,
+          solv: scan.solv,
+          image: scan.image,
+          heatmap: scan.heatmap
+        };
+      });
+    }
 
     return {
       id: report.id,
@@ -762,17 +779,7 @@ export async function fetchLocalFalconTrendReport(apiKey: string, reportKey: str
       points: report.points,
       pdf: report.pdf,
       locations,
-      scans: report.scans.map((scan: any) => {
-        return {
-          report_key: scan.report_key,
-          date: scan.date,
-          arp: scan.arp,
-          atrp: scan.atrp,
-          solv: scan.solv,
-          image: scan.image,
-          heatmap: scan.heatmap
-        };
-      }),
+      scans,
     };
   });
 }

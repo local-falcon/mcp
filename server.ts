@@ -702,7 +702,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
   // Get a Specific Trend Report
   server.tool(
     "getLocalFalconTrendReport",
-    `Retrieves a specific trend report showing historical ARP, ATRP, and SoLV changes across multiple scan dates for one location + one keyword. Includes individual scan data points with dates, metrics, and grid images. Also includes competitor location data from the scans. Use fieldmask to control response size — trend reports with many scans can be large. Recommended fieldmask: "report_key,last_date,keyword,location.name,scan_count,scans.*.report_key,scans.*.date,scans.*.arp,scans.*.atrp,scans.*.solv". Add "scans.*.image,scans.*.heatmap" if grid visualizations are needed. Get the report_key from listLocalFalconTrendReports.`,
+    `Retrieves a specific trend report showing historical ARP, ATRP, and SoLV changes across multiple scan dates for one location + one keyword. Returns: scans array (historical snapshots with date, ARP, ATRP, SoLV, grid images per scan), locations array (competitor leaderboard with aggregated metrics across all scans), location object (full GBP profile of the target business), and top-level metadata (keyword, grid config, PDF link). Heavy nested data (data_points, per-scan locations) is automatically stripped to save context. Get the report_key from listLocalFalconTrendReports.`,
     {
       reportKey: z.string().describe("The report key of the trend report."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
