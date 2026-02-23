@@ -284,6 +284,15 @@ export async function fetchLocalFalconReports(apiKey: string, limit: string, nex
 
     // When fieldmask is used, the API may omit structural keys like "reports"
     if (fieldmask) {
+      console.log(`[Fieldmask Debug] fetchLocalFalconReports fieldmask="${fieldmask}"`, JSON.stringify({
+        hasData: !!data,
+        hasDataData: !!data?.data,
+        dataType: typeof data?.data,
+        isArray: Array.isArray(data?.data),
+        dataKeys: data?.data ? Object.keys(data.data) : 'N/A',
+        topKeys: data ? Object.keys(data) : 'N/A',
+        rawPreview: JSON.stringify(data).slice(0, 500),
+      }));
       return data?.data ?? data;
     }
 
