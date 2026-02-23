@@ -128,7 +128,6 @@ const HEADERS = {
 // Configuration
 const DEFAULT_TIMEOUT_MS = 30000;
 const LONG_OPERATION_TIMEOUT_MS = 60000;
-const SCAN_TIMEOUT_MS = 180000; // 3 minutes — scans can take a long time, especially larger grids
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY_MS = 1000;
 const RATE_LIMIT_MAX_REQUESTS = 5;
@@ -1435,7 +1434,12 @@ export async function runLocalFalconScan(
     form.append('platform', platform);
     form.append('ai_analysis', aiAnalysis.toString());
 
-    // IMPORTANT: No withRetry for scans — retrying would queue duplicate scans and consume extra credits
+    // Scan submission strategy:
+    // The Local Falcon API blocks until the scan completes, which can take seconds to 10+ minutes.
+    // We use a short timeout to catch auth/validation errors, then treat a timeout as a SUCCESSFUL
+    // submission — the scan was queued and is processing. No retries (would consume extra credits).
+    const SCAN_SUBMIT_TIMEOUT_MS = 15000; // 15s — enough to catch errors, not meant to wait for completion
+
     let response: any;
     try {
       response = await fetchWithTimeout(
@@ -1444,21 +1448,25 @@ export async function runLocalFalconScan(
           method: 'POST',
           body: form,
         },
-        SCAN_TIMEOUT_MS // 3 minute timeout — scans can take a long time
+        SCAN_SUBMIT_TIMEOUT_MS
       );
     } catch (error) {
-      // Timeout or network error — scan was likely queued but we lost the connection
+      // Timeout = scan was submitted and is processing (this is expected, not an error)
       if ((error as Error).name === 'AbortError' || (error as Error).message?.includes('timeout')) {
         return {
           success: true,
-          message: "Scan request was sent but the response timed out. The scan is likely still processing in the background.",
-          _mcp_note: "The scan was probably queued successfully. Use listLocalFalconScanReports with the same placeId and keyword to find the report once it completes. Do NOT retry runLocalFalconScan — it may queue duplicate scans and consume extra credits."
+          message: "Scan submitted successfully and is now processing. Scans typically take 30 seconds to several minutes to complete depending on grid size and queue load.",
+          place_id: placeId,
+          keyword: keyword,
+          grid_size: gridSize,
+          platform: platform,
+          _mcp_note: "The scan is running. Use listLocalFalconScanReports with the same placeId to find the completed report. Do NOT retry runLocalFalconScan — the scan is already queued and retrying would consume additional credits."
         };
       }
       throw error;
     }
 
-    // Parse and return the response
+    // If the API responded within 15s, the scan completed quickly — return the full result
     const data = await safeParseJson(response);
 
     if (!response.ok) {
@@ -1860,7 +1868,11 @@ export async function runLocalFalconCampaign(
     form.append('api_key', apiKey);
     form.append('campaign_key', campaignKey);
 
-    // IMPORTANT: No withRetry for campaign runs — retrying would trigger duplicate scans and consume extra credits
+    // Campaign run submission strategy:
+    // Same as runLocalFalconScan — the API blocks until scans complete.
+    // Short timeout to catch errors, then treat timeout as successful submission.
+    const SCAN_SUBMIT_TIMEOUT_MS = 15000; // 15s — enough to catch errors
+
     let response: any;
     try {
       response = await fetchWithTimeout(
@@ -1869,15 +1881,16 @@ export async function runLocalFalconCampaign(
           method: 'POST',
           body: form,
         },
-        SCAN_TIMEOUT_MS // 3 minute timeout — campaign runs trigger scans
+        SCAN_SUBMIT_TIMEOUT_MS
       );
     } catch (error) {
-      // Timeout or network error — campaign run was likely queued
+      // Timeout = campaign was submitted and scans are processing (expected, not an error)
       if ((error as Error).name === 'AbortError' || (error as Error).message?.includes('timeout')) {
         return {
           success: true,
-          message: "Campaign run request was sent but the response timed out. The campaign scans are likely still processing in the background.",
-          _mcp_note: "The campaign was probably triggered successfully. Use listLocalFalconCampaignReports or listLocalFalconScanReports to check status once complete. Do NOT retry runLocalFalconCampaign — it may trigger duplicate scans and consume extra credits."
+          message: "Campaign run submitted successfully and scans are now processing. Campaign runs can take several minutes depending on the number of scans and queue load.",
+          campaign_key: campaignKey,
+          _mcp_note: "The campaign is running. Use listLocalFalconCampaignReports or listLocalFalconScanReports to check for completed results. Do NOT retry runLocalFalconCampaign — the scans are already queued and retrying would consume additional credits."
         };
       }
       throw error;
