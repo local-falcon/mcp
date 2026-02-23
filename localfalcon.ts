@@ -282,6 +282,11 @@ export async function fetchLocalFalconReports(apiKey: string, limit: string, nex
 
     const data = await safeParseJson(res);
 
+    // When fieldmask is used, the API may omit structural keys like "reports"
+    if (fieldmask) {
+      return data?.data ?? data;
+    }
+
     // Validate response structure before processing
     if (!data || !data.data || !data.data.reports) {
       throw new Error('Invalid response format from Local Falcon API');
@@ -329,6 +334,11 @@ export async function fetchLocalFalconTrendReports(apiKey: string, limit: string
     }
 
     const data = await safeParseJson(res);
+
+    // When fieldmask is used, the API may omit structural keys like "reports"
+    if (fieldmask) {
+      return data?.data ?? data;
+    }
 
     // Validate response structure
     if (!data || !data.data || !data.data.reports) {
@@ -418,6 +428,11 @@ export async function fetchLocalFalconLocationReports(apiKey: string, limit: str
     }
 
     const data = await safeParseJson(res);
+
+    // When fieldmask is used, the API may omit structural keys like "reports"
+    if (fieldmask) {
+      return data?.data ?? data;
+    }
 
     // Validate response
     if (!data || !data.data || !data.data.reports) {
@@ -581,6 +596,11 @@ export async function fetchLocalFalconTrendReport(apiKey: string, reportKey: str
 
     const data = await safeParseJson(res);
 
+    // When fieldmask is used, the API may omit structural keys like "scans"
+    if (fieldmask) {
+      return data?.data ?? data;
+    }
+
     // Validate the response
     if (!data || !data.data || !data.data.scans) {
       throw new Error('Invalid response format from Local Falcon API');
@@ -671,6 +691,11 @@ export async function fetchLocalFalconKeywordReports(apiKey: string, limit: stri
     }
 
     const data = await safeParseJson(res);
+
+    // When fieldmask is used, the API may omit structural keys like "reports"
+    if (fieldmask) {
+      return data?.data ?? data;
+    }
 
     // Validate the response
     if (!data || !data.data || !data.data.reports) {
@@ -982,6 +1007,11 @@ export async function fetchLocalFalconCompetitorReports(apiKey: string, limit: s
 
     const data = await safeParseJson(res);
 
+    // When fieldmask is used, the API may omit structural keys like "reports"
+    if (fieldmask) {
+      return data?.data ?? data;
+    }
+
     // Validate the response
     if (!data || !data.data || !data.data.reports) {
       throw new Error('Invalid response format from Local Falcon API');
@@ -1078,6 +1108,11 @@ export async function fetchLocalFalconCampaignReports(apiKey: string, limit: str
 
     const data = await safeParseJson(res);
 
+    // When fieldmask is used, the API may omit structural keys like "reports"
+    if (fieldmask) {
+      return data?.data ?? data;
+    }
+
     // Validate the response
     if (!data || !data.data || !data.data.reports) {
       throw new Error('Invalid response format from Local Falcon API');
@@ -1166,6 +1201,11 @@ export async function fetchLocalFalconGuardReports(apiKey: string, limit: string
     }
 
     const data = await safeParseJson(res);
+
+    // When fieldmask is used, the API may omit structural keys like "reports"
+    if (fieldmask) {
+      return data?.data ?? data;
+    }
 
     // Validate the response
     if (!data || !data.data || !data.data.reports) {
