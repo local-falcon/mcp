@@ -196,15 +196,21 @@ function applyClientFieldmask(data: any, fieldmask: string): any {
  * The Local Falcon API requires wildcard syntax for fieldmask on list endpoints, e.g.,
  * `reports.*.report_key` instead of just `report_key`.
  * Fields already prefixed with the wrapper key are left unchanged.
- * Example: `report_key,arp,location.name` → `reports.*.report_key,reports.*.arp,reports.*.location.name`
+ * Also auto-includes pagination metadata fields (count, total, next_token) so that
+ * pagination info is preserved even when the user only requests data fields.
+ * Example: `report_key,arp` → `reports.*.report_key,reports.*.arp,count,total,next_token`
  */
 function prefixFieldmaskForList(fieldmask: string, wrapperKey: string): string {
-  return fieldmask
+  const PAGINATION_FIELDS = ['count', 'total', 'next_token'];
+
+  const prefixedUserFields = fieldmask
     .split(',')
     .map(f => f.trim())
     .filter(f => f.length > 0)
-    .map(f => f.startsWith(`${wrapperKey}.`) ? f : `${wrapperKey}.*.${f}`)
-    .join(',');
+    .map(f => f.startsWith(`${wrapperKey}.`) ? f : `${wrapperKey}.*.${f}`);
+
+  // Always include pagination metadata at the root level
+  return [...prefixedUserFields, ...PAGINATION_FIELDS].join(',');
 }
 
 /**
