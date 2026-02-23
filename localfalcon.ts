@@ -1195,7 +1195,28 @@ export async function fetchLocalFalconCompetitorReport(apiKey: string, reportKey
       throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
     }
 
-    return await safeParseJson(res);
+    const data = await safeParseJson(res);
+
+    try {
+      if (!data || !data.data) {
+        throw new Error('Invalid response format from Local Falcon API');
+      }
+
+      const reportData = data.data;
+
+      // Strip data_points from each business — too large for LLM context
+      // (e.g. 31 competitors × 9 grid points × 20 results each)
+      if (reportData.businesses && Array.isArray(reportData.businesses)) {
+        reportData.businesses = reportData.businesses.map((biz: any) => {
+          const { data_points, ...cleanBiz } = biz;
+          return cleanBiz;
+        });
+      }
+
+      return reportData;
+    } catch (err) {
+      throw new Error(`Failed to parse competitor report data: ${err}`);
+    }
   });
 }
 
