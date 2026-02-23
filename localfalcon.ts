@@ -134,10 +134,10 @@ const RATE_LIMIT_MAX_REQUESTS = 5;
 const RATE_LIMIT_WINDOW_MS = 1000;
 
 /**
- * Client-side fieldmask filtering for list endpoints.
- * The Local Falcon API only supports fieldmask on single-resource GET endpoints,
- * not on list endpoints. This function applies fieldmask filtering client-side
- * by picking only the requested fields from each item in the response.
+ * Client-side fieldmask filtering helper for list endpoints.
+ * Applies fieldmask filtering client-side by picking only the requested fields
+ * from each item in the response. Used as a fallback when the API doesn't support
+ * server-side fieldmask filtering for a particular endpoint.
  * Supports dot notation (e.g., "location.name") for nested fields.
  */
 function applyClientFieldmask(data: any, fieldmask: string): any {
@@ -189,6 +189,22 @@ function applyClientFieldmask(data: any, fieldmask: string): any {
   }
 
   return data;
+}
+
+/**
+ * Auto-prefixes user fieldmask fields with the array wrapper key for list endpoints.
+ * The Local Falcon API requires wildcard syntax for fieldmask on list endpoints, e.g.,
+ * `reports.*.report_key` instead of just `report_key`.
+ * Fields already prefixed with the wrapper key are left unchanged.
+ * Example: `report_key,arp,location.name` → `reports.*.report_key,reports.*.arp,reports.*.location.name`
+ */
+function prefixFieldmaskForList(fieldmask: string, wrapperKey: string): string {
+  return fieldmask
+    .split(',')
+    .map(f => f.trim())
+    .filter(f => f.length > 0)
+    .map(f => f.startsWith(`${wrapperKey}.`) ? f : `${wrapperKey}.*.${f}`)
+    .join(',');
 }
 
 /**
@@ -323,50 +339,10 @@ export async function fetchLocalFalconReports(apiKey: string, limit: string, nex
   if (gridSize) url.searchParams.set("grid_size", gridSize);
   if (campaignKey) url.searchParams.set("campaign_key", campaignKey);
   if (platform) url.searchParams.set("platform", platform);
-  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
+  // Auto-prefix fieldmask with reports.* wildcard syntax for the list endpoint
+  if (fieldmask) url.searchParams.set("fieldmask", prefixFieldmaskForList(fieldmask, 'reports'));
 
   await rateLimiter.waitForAvailableSlot();
-
-  // If fieldmask is provided, probe multiple syntaxes to find what works
-  if (fieldmask) {
-    const baseUrl = new URL(`${API_BASE}/reports`);
-    baseUrl.searchParams.set("api_key", apiKey);
-    baseUrl.searchParams.set("limit", "1");
-
-    // Build test syntaxes from the user's fieldmask fields
-    const userFields = fieldmask.split(',').map(f => f.trim());
-    const testPatterns: Record<string, string> = {
-      'as-is': fieldmask,
-      'wildcard': userFields.map(f => `reports.*.${f}`).join(','),
-      'dot-notation': userFields.map(f => `reports.${f}`).join(','),
-      'with-wrapper': `reports,${fieldmask}`,
-      'data-prefix': userFields.map(f => `data.${f}`).join(','),
-    };
-
-    const probeResults: Record<string, any> = {};
-    for (const [label, pattern] of Object.entries(testPatterns)) {
-      try {
-        const probeUrl = new URL(baseUrl.toString());
-        probeUrl.searchParams.set("fieldmask", pattern);
-        await rateLimiter.waitForAvailableSlot();
-        const probeRes = await fetchWithTimeout(probeUrl.toString(), { method: "POST", headers: HEADERS });
-        const probeData = await safeParseJson(probeRes);
-        const d = probeData?.data;
-        probeResults[label] = {
-          pattern,
-          dataType: Array.isArray(d) ? 'array' : typeof d,
-          length: Array.isArray(d) ? d.length : (d?.reports ? d.reports.length : 'N/A'),
-          hasReports: !!d?.reports,
-          preview: JSON.stringify(d).slice(0, 300),
-        };
-      } catch (e: any) {
-        probeResults[label] = { pattern, error: e.message };
-      }
-    }
-    console.log(`[Fieldmask Probe] Results:\n${JSON.stringify(probeResults, null, 2)}`);
-
-    // Now do the real request with the original fieldmask (already set on url)
-  }
 
   return withRetry(async () => {
     const res = await fetchWithTimeout(url.toString(), {
@@ -381,16 +357,15 @@ export async function fetchLocalFalconReports(apiKey: string, limit: string, nex
 
     const data = await safeParseJson(res);
 
-    // When fieldmask is used and the API returns data, pass it through
+    // When fieldmask is used, the API returns the standard structure with filtered fields
     if (fieldmask) {
-      // If API returned standard structure, apply client-side filtering as fallback
       if (data?.data?.reports) {
-        return applyClientFieldmask({
+        return {
           ...data.data,
           reports: data.data.reports.slice(0, parseInt(limit) || data.data.reports.length)
-        }, fieldmask);
+        };
       }
-      // Otherwise return whatever the API gave us
+      // Fallback: return whatever the API gave us
       return data?.data ?? data;
     }
 
@@ -425,7 +400,8 @@ export async function fetchLocalFalconTrendReports(apiKey: string, limit: string
   if (startDate) url.searchParams.set("start_date", startDate);
   if (endDate) url.searchParams.set("end_date", endDate);
   if (platform) url.searchParams.set("platform", platform);
-  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
+  // Auto-prefix fieldmask with reports.* wildcard syntax for the list endpoint
+  if (fieldmask) url.searchParams.set("fieldmask", prefixFieldmaskForList(fieldmask, 'reports'));
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -442,8 +418,14 @@ export async function fetchLocalFalconTrendReports(apiKey: string, limit: string
 
     const data = await safeParseJson(res);
 
-    // When fieldmask is used, the API may omit structural keys like "reports"
+    // When fieldmask is used, the API returns the standard structure with filtered fields
     if (fieldmask) {
+      if (data?.data?.reports) {
+        return {
+          ...data.data,
+          reports: data.data.reports.slice(0, parseInt(limit) || data.data.reports.length)
+        };
+      }
       return data?.data ?? data;
     }
 
@@ -519,7 +501,8 @@ export async function fetchLocalFalconLocationReports(apiKey: string, limit: str
   if (startDate) url.searchParams.set("start_date", startDate);
   if (endDate) url.searchParams.set("end_date", endDate);
   if (nextToken) url.searchParams.set("next_token", nextToken);
-  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
+  // Auto-prefix fieldmask with reports.* wildcard syntax for the list endpoint
+  if (fieldmask) url.searchParams.set("fieldmask", prefixFieldmaskForList(fieldmask, 'reports'));
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -536,8 +519,14 @@ export async function fetchLocalFalconLocationReports(apiKey: string, limit: str
 
     const data = await safeParseJson(res);
 
-    // When fieldmask is used, the API may omit structural keys like "reports"
+    // When fieldmask is used, the API returns the standard structure with filtered fields
     if (fieldmask) {
+      if (data?.data?.reports) {
+        return {
+          ...data.data,
+          reports: data.data.reports.slice(0, parseInt(limit) || data.data.reports.length)
+        };
+      }
       return data?.data ?? data;
     }
 
@@ -686,7 +675,8 @@ export async function fetchLocalFalconTrendReport(apiKey: string, reportKey: str
 
   const url = new URL(`${API_BASE}/trend-reports/${cleanReportKey}`);
   url.searchParams.set("api_key", apiKey);
-  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
+  // Auto-prefix fieldmask with scans.* wildcard syntax for the trend report detail endpoint
+  if (fieldmask) url.searchParams.set("fieldmask", prefixFieldmaskForList(fieldmask, 'scans'));
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -703,8 +693,11 @@ export async function fetchLocalFalconTrendReport(apiKey: string, reportKey: str
 
     const data = await safeParseJson(res);
 
-    // When fieldmask is used, the API may omit structural keys like "scans"
+    // When fieldmask is used, the API returns the standard structure with filtered fields
     if (fieldmask) {
+      if (data?.data?.scans) {
+        return { ...data.data };
+      }
       return data?.data ?? data;
     }
 
@@ -782,7 +775,8 @@ export async function fetchLocalFalconKeywordReports(apiKey: string, limit: stri
   if (startDate) url.searchParams.set("start_date", startDate);
   if (endDate) url.searchParams.set("end_date", endDate);
   if (keyword) url.searchParams.set("keyword", keyword);
-  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
+  // Auto-prefix fieldmask with reports.* wildcard syntax for the list endpoint
+  if (fieldmask) url.searchParams.set("fieldmask", prefixFieldmaskForList(fieldmask, 'reports'));
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -799,8 +793,14 @@ export async function fetchLocalFalconKeywordReports(apiKey: string, limit: stri
 
     const data = await safeParseJson(res);
 
-    // When fieldmask is used, the API may omit structural keys like "reports"
+    // When fieldmask is used, the API returns the standard structure with filtered fields
     if (fieldmask) {
+      if (data?.data?.reports) {
+        return {
+          ...data.data,
+          reports: data.data.reports.slice(0, parseInt(limit) || data.data.reports.length)
+        };
+      }
       return data?.data ?? data;
     }
 
@@ -1097,7 +1097,8 @@ export async function fetchLocalFalconCompetitorReports(apiKey: string, limit: s
   if (keyword) url.searchParams.set("keyword", keyword);
   if (gridSize) url.searchParams.set("grid_size", gridSize);
   if (nextToken) url.searchParams.set("next_token", nextToken);
-  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
+  // Auto-prefix fieldmask with reports.* wildcard syntax for the list endpoint
+  if (fieldmask) url.searchParams.set("fieldmask", prefixFieldmaskForList(fieldmask, 'reports'));
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -1114,8 +1115,14 @@ export async function fetchLocalFalconCompetitorReports(apiKey: string, limit: s
 
     const data = await safeParseJson(res);
 
-    // When fieldmask is used, the API may omit structural keys like "reports"
+    // When fieldmask is used, the API returns the standard structure with filtered fields
     if (fieldmask) {
+      if (data?.data?.reports) {
+        return {
+          ...data.data,
+          reports: data.data.reports.slice(0, parseInt(limit) || data.data.reports.length)
+        };
+      }
       return data?.data ?? data;
     }
 
@@ -1198,7 +1205,8 @@ export async function fetchLocalFalconCampaignReports(apiKey: string, limit: str
   if (placeId) url.searchParams.set("place_id", placeId);
   if (runDate) url.searchParams.set("run", runDate);
   if (nextToken) url.searchParams.set("next_token", nextToken);
-  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
+  // Auto-prefix fieldmask with reports.* wildcard syntax for the list endpoint
+  if (fieldmask) url.searchParams.set("fieldmask", prefixFieldmaskForList(fieldmask, 'reports'));
 
   await rateLimiter.waitForAvailableSlot();
 
@@ -1215,8 +1223,14 @@ export async function fetchLocalFalconCampaignReports(apiKey: string, limit: str
 
     const data = await safeParseJson(res);
 
-    // When fieldmask is used, the API may omit structural keys like "reports"
+    // When fieldmask is used, the API returns the standard structure with filtered fields
     if (fieldmask) {
+      if (data?.data?.reports) {
+        return {
+          ...data.data,
+          reports: data.data.reports.slice(0, parseInt(limit) || data.data.reports.length)
+        };
+      }
       return data?.data ?? data;
     }
 
@@ -1293,7 +1307,8 @@ export async function fetchLocalFalconGuardReports(apiKey: string, limit: string
   if (endDate) url.searchParams.set("end_date", endDate);
   if (status) url.searchParams.set("status", status);
   if (nextToken) url.searchParams.set("next_token", nextToken);
-  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
+  // Auto-prefix fieldmask with reports.* wildcard syntax for the list endpoint
+  if (fieldmask) url.searchParams.set("fieldmask", prefixFieldmaskForList(fieldmask, 'reports'));
   await rateLimiter.waitForAvailableSlot();
 
   return withRetry(async () => {
@@ -1309,8 +1324,14 @@ export async function fetchLocalFalconGuardReports(apiKey: string, limit: string
 
     const data = await safeParseJson(res);
 
-    // When fieldmask is used, the API may omit structural keys like "reports"
+    // When fieldmask is used, the API returns the standard structure with filtered fields
     if (fieldmask) {
+      if (data?.data?.reports) {
+        return {
+          ...data.data,
+          reports: data.data.reports.slice(0, parseInt(limit) || data.data.reports.length)
+        };
+      }
       return data?.data ?? data;
     }
 
