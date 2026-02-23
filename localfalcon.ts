@@ -128,6 +128,7 @@ const HEADERS = {
 // Configuration
 const DEFAULT_TIMEOUT_MS = 30000;
 const LONG_OPERATION_TIMEOUT_MS = 60000;
+const SCAN_TIMEOUT_MS = 180000; // 3 minutes — scans can take a long time, especially larger grids
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY_MS = 1000;
 const RATE_LIMIT_MAX_REQUESTS = 5;
@@ -651,6 +652,14 @@ export async function fetchLocalFalconReport(apiKey: string, reportKey: string, 
     }
 
     const data = await safeParseJson(res);
+
+    // Handle 202 Accepted — scan report is still processing
+    if (res.status === 202) {
+      return {
+        ...(data?.data ?? data),
+        _mcp_note: "This scan report is still processing. Wait 30-60 seconds and call getLocalFalconReport again with the same report_key."
+      };
+    }
 
     try {
       // Validate the response
@@ -1432,15 +1441,23 @@ export async function runLocalFalconScan(
           method: 'POST',
           body: form,
         },
-        DEFAULT_TIMEOUT_MS
+        SCAN_TIMEOUT_MS // Scans can take a long time — 3 minute timeout
       );
     });
 
     // Parse and return the response
     const data = await safeParseJson(response);
-    
+
     if (!response.ok) {
       throw new Error(data.message || `HTTP error! status: ${response.status}`);
+    }
+
+    // Handle 202 Accepted — scan kicked off but still processing
+    if (response.status === 202) {
+      return {
+        ...data,
+        _mcp_note: "Scan is processing. Use getLocalFalconReport with the returned report_key to check status and retrieve results once complete."
+      };
     }
 
     return data;
@@ -1845,7 +1862,7 @@ export async function runLocalFalconCampaign(
           method: 'POST',
           body: form,
         },
-        LONG_OPERATION_TIMEOUT_MS
+        SCAN_TIMEOUT_MS // Campaign runs trigger scans — need extended timeout
       );
     });
 
@@ -1853,6 +1870,14 @@ export async function runLocalFalconCampaign(
 
     if (!response.ok) {
       throw new Error(data.message || `HTTP error! status: ${response.status}`);
+    }
+
+    // Handle 202 Accepted — campaign scan(s) still processing
+    if (response.status === 202) {
+      return {
+        ...data,
+        _mcp_note: "Campaign scan is processing. Use getLocalFalconCampaignReport or listLocalFalconScanReports to check status once complete."
+      };
     }
 
     return data;
