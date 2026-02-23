@@ -1869,9 +1869,10 @@ export async function runLocalFalconCampaign(
     form.append('campaign_key', campaignKey);
 
     // Campaign run submission strategy:
-    // Same as runLocalFalconScan — the API blocks until scans complete.
-    // Short timeout to catch errors, then treat timeout as successful submission.
-    const SCAN_SUBMIT_TIMEOUT_MS = 15000; // 15s — enough to catch errors
+    // Same pattern as runLocalFalconScan — treat timeout as successful submission.
+    // Campaigns need more time than individual scans because they can contain thousands
+    // of locations and the API may take up to 60s just to validate and queue everything.
+    const CAMPAIGN_SUBMIT_TIMEOUT_MS = 60000; // 60s — campaigns are data-heavy
 
     let response: any;
     try {
@@ -1881,7 +1882,7 @@ export async function runLocalFalconCampaign(
           method: 'POST',
           body: form,
         },
-        SCAN_SUBMIT_TIMEOUT_MS
+        CAMPAIGN_SUBMIT_TIMEOUT_MS
       );
     } catch (error) {
       // Timeout = campaign was submitted and scans are processing (expected, not an error)
