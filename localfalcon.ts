@@ -1204,9 +1204,11 @@ export async function fetchLocalFalconCompetitorReport(apiKey: string, reportKey
 
       const reportData = data.data;
 
-      // Strip data_points from each business — too large for LLM context
-      // (e.g. 31 competitors × 9 grid points × 20 results each)
-      if (reportData.businesses && Array.isArray(reportData.businesses)) {
+      // Strip data_points from each business by default — too large for LLM context
+      // (e.g. 31 competitors × 9 grid points × 20 results each).
+      // If the fieldmask explicitly requests data_points, preserve them.
+      const wantsDataPoints = fieldmask && fieldmask.includes('data_points');
+      if (!wantsDataPoints && reportData.businesses && Array.isArray(reportData.businesses)) {
         reportData.businesses = reportData.businesses.map((biz: any) => {
           const { data_points, ...cleanBiz } = biz;
           return cleanBiz;
