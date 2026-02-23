@@ -1460,7 +1460,7 @@ export async function runLocalFalconScan(
           keyword: keyword,
           grid_size: gridSize,
           platform: platform,
-          _mcp_note: "The scan is running. Use listLocalFalconScanReports with the same placeId to find the completed report. Do NOT retry runLocalFalconScan — the scan is already queued and retrying would consume additional credits."
+          _mcp_note: "The scan is running. Use listLocalFalconScanReports with the same placeId to find the completed report. Do NOT retry runLocalFalconScan — the scan is already queued and retrying would consume additional credits. If the report does not appear after 2-3 polling attempts, inform the user that their scan is still processing and suggest they check their Local Falcon dashboard at app.localfalcon.com or ask again in a few minutes."
         };
       }
       throw error;
@@ -1891,7 +1891,7 @@ export async function runLocalFalconCampaign(
           success: true,
           message: "Campaign run submitted successfully and scans are now processing. Campaign runs can take several minutes depending on the number of scans and queue load.",
           campaign_key: campaignKey,
-          _mcp_note: "The campaign is running. Use listLocalFalconCampaignReports or listLocalFalconScanReports to check for completed results. Do NOT retry runLocalFalconCampaign — the scans are already queued and retrying would consume additional credits."
+          _mcp_note: "The campaign is running. Use listLocalFalconCampaignReports or listLocalFalconScanReports to check for completed results. Do NOT retry runLocalFalconCampaign — the scans are already queued and retrying would consume additional credits. If results do not appear after 2-3 polling attempts, inform the user that the campaign is still processing (large campaigns with many locations can take up to several hours) and suggest they check their Local Falcon dashboard at app.localfalcon.com or come back and ask again later."
         };
       }
       throw error;
