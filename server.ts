@@ -320,7 +320,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
   // Run a Dashboard Scan v2
   server.tool(
     "runLocalFalconScan",
-    "Runs a new ranking scan for a business. COSTS CREDITS — always confirm with the user before running. Requires: Place ID (business must be saved first), keyword, center coordinates (lat/lng), grid size, radius, measurement unit, and platform. Returns ranking data across the grid. Available platforms: google (Maps), apple (Apple Maps), gaio (Google AI Overviews), chatgpt (ChatGPT), gemini (Gemini), grok (Grok), aimode (Google AI Mode), giao (Google Immersive AI Overviews). Enable aiAnalysis for AI-generated insights on the results (Google Maps only). Grid size and radius should match the business type and service area.",
+    "Runs a new ranking scan for a business. COSTS CREDITS — always confirm with the user before running. Requires: Place ID (business must be saved first), keyword, center coordinates (lat/lng), grid size, radius, measurement unit, and platform. Available platforms: google (Maps), apple (Apple Maps), gaio (Google AI Overviews), chatgpt (ChatGPT), gemini (Gemini), grok (Grok), aimode (Google AI Mode), giao (Google Immersive AI Overviews). Enable aiAnalysis for AI-generated insights on the results (Google Maps only). Grid size and radius should match the business type and service area. IMPORTANT: Scans take 30 seconds to several minutes to complete depending on grid size and queue load. If the response says 'success: true' with a 'Scan submitted successfully' message, this is EXPECTED — the scan is processing normally. Do NOT treat this as an error or timeout. Immediately follow up with listLocalFalconScanReports (filter by the same placeId) to find the completed report. NEVER retry runLocalFalconScan — the scan is already queued and retrying would consume additional credits.",
     {
       placeId: z.string().describe("The Google Place ID of the business to match against in results."),
       keyword: z.string().describe("The desired search term or keyword."),
@@ -438,7 +438,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
   // Manually run a Campaign
   server.tool(
     "runLocalFalconCampaign",
-    "Manually triggers a campaign to run immediately. The total credits required will be checked against your available credits. Use listLocalFalconCampaignReports to find the campaign_key for the campaign you want to run.",
+    "Manually triggers a campaign to run immediately. COSTS CREDITS — the total credits required will be checked against your available credits. Use listLocalFalconCampaignReports to find the campaign_key for the campaign you want to run. IMPORTANT: Campaign runs trigger multiple scans and can take minutes to complete. If the response says 'success: true' with a 'Campaign run submitted successfully' message, this is EXPECTED — the campaign is processing normally. Do NOT treat this as an error. Follow up with listLocalFalconCampaignReports or listLocalFalconScanReports to check for completed results. NEVER retry runLocalFalconCampaign — retrying would consume additional credits.",
     {
       campaignKey: z.string().describe("The key of the campaign you wish to run."),
     },
