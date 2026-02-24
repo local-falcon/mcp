@@ -11,6 +11,7 @@
 <p align="center">
     <a href="https://github.com/local-falcon/mcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
   <a href="https://www.localfalcon.com"><img src="https://img.shields.io/badge/Local%20Falcon-Website-red" alt="Local Falcon"></a>
+  <a href="https://docs.localfalcon.com"><img src="https://img.shields.io/badge/API%20Docs-docs.localfalcon.com-green" alt="API Docs"></a>
 </p>
 
 ---
@@ -188,8 +189,13 @@ For Windows:
 * **getLocalFalconRankingAtCoordinate**: Single-point ranking check at one coordinate.
 * **getLocalFalconKeywordAtCoordinate**: Single-point keyword search at one coordinate.
 
+### Knowledge Base
+* **searchLocalFalconKnowledgeBase**: Searches the Local Falcon Knowledge Base for help articles, how-to guides, and platform documentation.
+* **getLocalFalconKnowledgeBaseArticle**: Retrieves the full content of a specific Knowledge Base article by ID.
+
 ### Account
 * **viewLocalFalconAccountInformation**: Retrieves account info including user, credits, and subscription details.
+
 ---
 
 ## For developers
@@ -228,6 +234,6 @@ MIT
 ---
 
 ## Acknowledgments
-- [Local Falcon API](https://www.localfalcon.com/api/)
+- [Local Falcon API Documentation](https://docs.localfalcon.com)
 - [Model Context Protocol (MCP)](https://github.com/modelcontextprotocol)
 - [Bun](https://bun.sh/)

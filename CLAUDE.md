@@ -20,7 +20,7 @@ oauth/            → OAuth 2.1 authorization server (routes, provider, config, 
 
 ### Key Design Patterns
 
-- **`server.ts`** exports a single `getServer(sessionMapping)` function that creates and returns an `McpServer` instance with all 37 tools registered via `server.tool(name, description, zodSchema, handler)`.
+- **`server.ts`** exports a single `getServer(sessionMapping)` function that creates and returns an `McpServer` instance with all 37 tools registered via `server.tool(name, description, zodSchema, annotations, handler)`. Every tool includes MCP tool annotations (`readOnlyHint`, `destructiveHint`) that signal to AI clients whether a tool reads data or modifies state.
 - **`localfalcon.ts`** contains one exported function per API endpoint. Two call patterns:
   - **URL params (v1):** `new URL(endpoint)` → `url.searchParams.set()` → POST with JSON headers
   - **FormData (v2):** `new FormData()` → `form.append()` → POST with form body
@@ -97,6 +97,32 @@ Remote modes (SSE, HTTP) use OAuth 2.1 with PKCE for authentication. The server 
 | `getLocalFalconKeywordAtCoordinate` | Get raw SERP data at a single coordinate |
 | `searchLocalFalconKnowledgeBase` | Search the help/docs knowledge base |
 | `getLocalFalconKnowledgeBaseArticle` | Get full content of a knowledge base article |
+
+## Tool Annotations
+
+Every `server.tool()` call includes an MCP tool annotations object that tells AI clients whether the tool is safe to auto-execute or should require user confirmation. These are placed after the Zod input schema and before the handler callback.
+
+### Read-Only (26 tools) — `{ readOnlyHint: true }`
+
+These tools only retrieve data. They never modify state, create resources, or cost credits.
+
+All 20 report list/get tools, plus: `listAllLocalFalconLocations`, `getLocalFalconGoogleBusinessLocations`, `getLocalFalconGrid`, `getLocalFalconRankingAtCoordinate`, `getLocalFalconKeywordAtCoordinate`, `viewLocalFalconAccountInformation`, `searchForLocalFalconBusinessLocation`, `searchLocalFalconKnowledgeBase`, `getLocalFalconKnowledgeBaseArticle`.
+
+### Destructive / Credit-Consuming (3 tools) — `{ destructiveHint: true }`
+
+These tools consume credits (irreversible) or permanently remove resources. AI clients should always confirm with the user before executing.
+
+| Tool | Reason |
+|---|---|
+| `runLocalFalconScan` | Costs credits |
+| `runLocalFalconCampaign` | Costs credits |
+| `removeFalconGuardProtection` | Permanently removes Guard monitoring |
+
+### State-Changing / Non-Destructive (8 tools) — `{ readOnlyHint: false, destructiveHint: false }`
+
+These tools modify state but are reversible and do not consume credits.
+
+`createLocalFalconCampaign`, `pauseLocalFalconCampaign`, `resumeLocalFalconCampaign`, `reactivateLocalFalconCampaign`, `saveLocalFalconBusinessLocationToAccount`, `addLocationsToFalconGuard`, `pauseFalconGuardProtection`, `resumeFalconGuardProtection`.
 
 ## Valid Enum Values
 
@@ -247,4 +273,5 @@ npm run docker:run
 | `tsconfig.json` | TypeScript compiler configuration |
 | `.env.example` | Environment variable template |
 | `Dockerfile` | Container build configuration |
+| `skill/` | MCP skill definition (SKILL.md) and reference docs for AI client integration |
 | `_spec/` | Internal development specs (gitignored, not published) |
