@@ -38,7 +38,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         sizes: ["any"],
       },
     ],
-    description: `Local Falcon is a geo-grid rank tracking and local SEO analytics platform. This MCP server provides tools to run scans, retrieve reports, manage campaigns, monitor Google Business Profiles, and analyze competitive positioning across Google Maps, Apple Maps, and AI search platforms (ChatGPT, Gemini, Grok, Google AI Overviews, AI Mode).
+    description: `Local Falcon is an AI-powered local search intelligence platform that monitors business visibility across AI search engines (ChatGPT, Gemini, Grok, Google AI Overviews, AI Mode) and traditional map platforms (Google Maps, Apple Maps). This MCP server provides tools to run scans, retrieve reports, manage campaigns, monitor Google Business Profiles, and analyze competitive positioning.
 
 ## CORE CONCEPTS
 
