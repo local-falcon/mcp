@@ -287,15 +287,14 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
     "Lists all business locations already configured in the Local Falcon account. Check here BEFORE using getLocalFalconGoogleBusinessLocations - if the business is already in the account, you'll get the Place ID instantly without needing to search Google. Saves time and ensures consistency with previous scans.",
     {
       query: z.string().nullish().describe("Search query. Matches against location name, address, Place ID, or store code."),
-      fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
     { readOnlyHint: true },
-    async ({ query, fieldmask }, ctx) => {
+    async ({ query }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchAllLocalFalconLocations(apiKey, handleNullOrUndefined(query), handleNullOrUndefined(fieldmask));
+      const resp = await fetchAllLocalFalconLocations(apiKey, handleNullOrUndefined(query));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
