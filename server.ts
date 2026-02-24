@@ -250,6 +250,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       platform: z.enum(['google', 'apple', 'gaio', 'chatgpt','gemini','grok']).nullish().describe("Filter only results for a specific platform."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
+    { readOnlyHint: true },
     async ({ nextToken, startDate, endDate, placeId, keyword, gridSize, campaignKey, platform, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       const limit = DEFAULT_LIMIT;
@@ -269,6 +270,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       reportKey: z.string().describe("The report key of the scan report."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
+    { readOnlyHint: true },
     async ({ reportKey, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -287,6 +289,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       query: z.string().nullish().describe("Search query. Matches against location name, address, Place ID, or store code."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
+    { readOnlyHint: true },
     async ({ query, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -307,6 +310,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       near: z.string().nullish().describe("Narrow results by location. City, state, country, etc."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
+    { readOnlyHint: true },
     async ({ nextToken, query, near, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -332,6 +336,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       platform: z.enum(['google', 'apple', 'gaio', 'chatgpt', 'gemini', 'grok', 'aimode', 'giao']).describe("The platform to run the scan against."),
       aiAnalysis: z.boolean().default(false).describe("Whether AI analysis should be generated for this scan (optional, defaults to false)."),
     },
+    { destructiveHint: true },
     async ({ placeId, keyword, lat, lng, gridSize, radius, measurement, platform, aiAnalysis }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -354,6 +359,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       nextToken: z.string().nullish().describe("This parameter is used to get the next 'page' of results. The value used with the parameter is provided from a previous response by this endpoint if more 'pages' of results exist."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
+    { readOnlyHint: true },
     async ({ startDate, endDate, placeId, runDate, nextToken, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -374,6 +380,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       run: z.string().nullish().describe("Optional specific campaign run date to retrieve (MM/DD/YYYY). Defaults to latest run."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
+    { readOnlyHint: true },
     async ({ reportKey, run, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -404,6 +411,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       emailSubject: z.string().nullish().describe("Email subject of the email notification. Required if notify is true."),
       emailBody: z.string().nullish().describe("Email body of the email notification."),
     },
+    { destructiveHint: true },
     async ({ name, measurement, gridSize, radius, frequency, placeId, keyword, startDate, startTime, aiAnalysis, notify, emailRecipients, emailSubject, emailBody }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -442,6 +450,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
     {
       campaignKey: z.string().describe("The key of the campaign you wish to run."),
     },
+    { destructiveHint: true },
     async ({ campaignKey }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -459,6 +468,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
     {
       campaignKey: z.string().describe("The key of the campaign you wish to pause."),
     },
+    { readOnlyHint: false, destructiveHint: false },
     async ({ campaignKey }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -478,6 +488,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       startDate: z.string().nullish().describe("Optional date to resume and run the campaign. Format: MM/DD/YYYY."),
       startTime: z.string().nullish().describe("Optional time of day the campaign should next run. Format: friendly time like '9:00 AM'."),
     },
+    { readOnlyHint: false, destructiveHint: false },
     async ({ campaignKey, startDate, startTime }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -495,6 +506,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
     {
       campaignKey: z.string().describe("The key of the campaign you wish to reactivate."),
     },
+    { readOnlyHint: false, destructiveHint: false },
     async ({ campaignKey }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -517,6 +529,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       nextToken: z.string().nullish().describe("Pagination token for retrieving the next page of results."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
+    { readOnlyHint: true },
     async ({ reviewsKey, placeId, frequency, limit, nextToken, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -543,6 +556,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       reportKey: z.string().describe("The key of the Reviews Analysis report you wish to retrieve."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
+    { readOnlyHint: true },
     async ({ reportKey, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -564,6 +578,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       nextToken: z.string().nullish().describe("This parameter is used to get the next 'page' of results. The value used with the parameter is provided from a previous response by this endpoint if more 'pages' of results exist."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
+    { readOnlyHint: true },
     async ({ startDate, endDate, status, nextToken, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -585,6 +600,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       endDate: z.string().nullish().describe("Upper limit date for changes and metrics. Expects date formatted as MM/DD/YYYY."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
+    { readOnlyHint: true },
     async ({ placeId, startDate, endDate, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -602,6 +618,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
     {
       placeId: z.string().describe("Platform Place ID(s) to protect. Supports multiple Place IDs separated by commas."),
     },
+    { readOnlyHint: false, destructiveHint: false },
     async ({ placeId }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -620,6 +637,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       guardKey: z.string().nullish().describe("Falcon Guard report key(s) to pause. Supports multiple keys separated by commas."),
       placeId: z.string().nullish().describe("Google Place ID(s) to pause protection for. Supports multiple IDs separated by commas. Required if guardKey is not provided."),
     },
+    { readOnlyHint: false, destructiveHint: false },
     async ({ guardKey, placeId }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -641,6 +659,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       guardKey: z.string().nullish().describe("Falcon Guard report key(s) to resume. Supports multiple keys separated by commas."),
       placeId: z.string().nullish().describe("Google Place ID(s) to resume protection for. Supports multiple IDs separated by commas. Required if guardKey is not provided."),
     },
+    { readOnlyHint: false, destructiveHint: false },
     async ({ guardKey, placeId }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -662,6 +681,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       guardKey: z.string().nullish().describe("Falcon Guard report key(s) to remove. Supports multiple keys separated by commas."),
       placeId: z.string().nullish().describe("Google Place ID(s) to remove protection for. Supports multiple IDs separated by commas. Required if guardKey is not provided."),
     },
+    { destructiveHint: true },
     async ({ guardKey, placeId }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -688,6 +708,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       platform: z.enum(['google', 'apple', 'gaio', 'chatgpt','gemini','grok']).nullish().describe("Filter only results for a specific platform."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
+    { readOnlyHint: true },
     async ({ nextToken, placeId, keyword, startDate, endDate, platform, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       const limit = DEFAULT_LIMIT;
@@ -707,6 +728,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       reportKey: z.string().describe("The report key of the trend report."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
+    { readOnlyHint: true },
     async ({ reportKey, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -732,6 +754,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       platform: z.enum(['google', 'apple', 'gaio', 'chatgpt','gemini','grok']).nullish().describe("The platform of the scan."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
+    { readOnlyHint: true },
     async ({ nextToken, placeId, keyword, gridSize, frequency, status, platform, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -754,6 +777,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       nextToken: z.string().nullish().describe("Pagination token for additional results."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
+    { readOnlyHint: true },
     async ({ placeId, keyword, startDate, endDate, nextToken, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -773,6 +797,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       reportKey: z.string().describe("The report key of the location report."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
+    { readOnlyHint: true },
     async ({ reportKey, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -794,6 +819,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       endDate: z.string().nullish().describe("Upper limit date of a scan report you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
+    { readOnlyHint: true },
     async ({ nextToken, keyword, startDate, endDate, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -813,6 +839,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       reportKey: z.string(),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
+    { readOnlyHint: true },
     async ({ reportKey, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -836,6 +863,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       nextToken: z.string().nullish().describe("This parameter is used to get the next 'page' of results. The value used with the parameter is provided from a previous response by this endpoint if more 'pages' of results exist."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
+    { readOnlyHint: true },
     async ({ startDate, endDate, placeId, keyword, gridSize, nextToken, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -855,6 +883,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       reportKey: z.string().describe("The report_key of the Competitor Report you wish to retrieve."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
+    { readOnlyHint: true },
     async ({ reportKey, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -876,6 +905,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       radius: z.string().describe("The radius of the grid in meters. From 0.1 to 100."),
       measurement: z.enum(['mi', 'km']).nullish().describe("Expects 'mi' or 'km'."),
     },
+    { readOnlyHint: true },
     async ({ lat, lng, gridSize, radius, measurement }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -896,6 +926,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       keyword: z.string().describe("The keyword to search for."),
       zoom: z.string().nullish().describe("The zoom level of the map. From 0 to 18.").default("13"),
     },
+    { readOnlyHint: true },
     async ({ lat, lng, keyword, zoom }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -917,6 +948,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       keyword: z.string().describe("The desired search term or keyword."),
       zoom: z.string().describe("The desired zoom level of the map. From 0 to 18.").default("13"),
     },
+    { readOnlyHint: true },
     async ({ lat, lng, keyword, zoom }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -936,6 +968,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       platform: z.enum(['google', 'apple']).default('google').describe("The platform to search against"),
       proximity: z.string().nullish().describe("Optional proximity filter (e.g., city, state, country)").default(""),
     },
+    { readOnlyHint: true },
     async ({ term, platform, proximity }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -957,6 +990,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       lat: z.string().describe("Latitude (required for Apple)").nullish(),
       lng: z.string().describe("Longitude (required for Apple)").nullish(),
     },
+    { readOnlyHint: false, destructiveHint: false },
     async ({ platform, placeId, name, lat, lng }, ctx) => {
       const apiKey = getApiKey(ctx);
 
@@ -1002,6 +1036,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       returnField: z.enum(['user', 'credit package', 'subscription', 'credits']).nullish().describe("Optional specific return information"),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
+    { readOnlyHint: true },
     async ({ returnField, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -1039,6 +1074,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       limit: z.string().nullish().describe("Maximum number of articles to return."),
       nextToken: z.string().nullish().describe("Pagination token for additional results."),
     },
+    { readOnlyHint: true },
     async ({ q, categoryId, limit, nextToken }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -1056,6 +1092,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
     {
       articleId: z.string().describe("The numeric ID of the Knowledge Base article to retrieve (e.g. '70'). If the user says 'KB70' or 'article 70', just pass '70'."),
     },
+    { readOnlyHint: true },
     async ({ articleId }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
