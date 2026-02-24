@@ -411,7 +411,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       emailSubject: z.string().nullish().describe("Email subject of the email notification. Required if notify is true."),
       emailBody: z.string().nullish().describe("Email body of the email notification."),
     },
-    { destructiveHint: true },
+    { readOnlyHint: false, destructiveHint: false },
     async ({ name, measurement, gridSize, radius, frequency, placeId, keyword, startDate, startTime, aiAnalysis, notify, emailRecipients, emailSubject, emailBody }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
