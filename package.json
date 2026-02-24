@@ -1,8 +1,28 @@
 {
   "name": "@local-falcon/mcp",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "An MCP server for the Local Falcon API.",
   "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/local-falcon/mcp"
+  },
+  "homepage": "https://www.localfalcon.com",
+  "bugs": {
+    "url": "https://github.com/local-falcon/mcp/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "local-falcon",
+    "ai-seo",
+    "ai-search-tracking",
+    "local-seo",
+    "seo",
+    "rank-tracking",
+    "google-business-profile",
+    "ai-visibility"
+  ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "bun run index.ts",
@@ -15,7 +35,7 @@
     "docker:build": "docker build -t local-falcon-mcp .",
     "docker:run": "docker run -it --rm --env-file .env --name local-falcon-mcp local-falcon-mcp"
   },
-  "author": "",
+  "author": "Local Falcon <account@localfalcon.com> (https://www.localfalcon.com)",
   "license": "MIT",
   "type": "module",
   "dependencies": {

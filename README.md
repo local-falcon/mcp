@@ -109,7 +109,7 @@ For MacOS/Unix:
       "command": "node",
       "args": ["/Users/YOUR_USERNAME/lf-mcp/node_modules/@local-falcon/mcp/dist/index.js"],
       "env": {
-        "LOCALFALCON_API_KEY": "INSERT_YOUR_API_KEY_HERE"
+        "LOCAL_FALCON_API_KEY": "INSERT_YOUR_API_KEY_HERE"
       }
     }
   }
@@ -124,7 +124,7 @@ For Windows:
       "command": "node",
       "args": ["C:\\Users\\YOUR_USERNAME\\lf-mcp\\node_modules\\@local-falcon\\mcp\\dist\\index.js"],
       "env": {
-        "LOCALFALCON_API_KEY": "INSERT_YOUR_API_KEY_HERE"
+        "LOCAL_FALCON_API_KEY": "INSERT_YOUR_API_KEY_HERE"
       }
     }
   }
