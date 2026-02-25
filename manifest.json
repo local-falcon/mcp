@@ -1,0 +1,102 @@
+{
+  "manifest_version": "0.3",
+  "name": "local-falcon-mcp",
+  "display_name": "Local Falcon",
+  "version": "1.0.0",
+  "description": "Monitor and improve visibility across AI search platforms (ChatGPT, Gemini, Grok, Google AI Overviews, AI Mode) and in local search (Google Maps, Apple Maps) with 37 tools for AI visibility tracking, geo-grid rank analysis, competitor intelligence, campaign management, and Google Business Profile monitoring.",
+  "long_description": "An MCP server for the Local Falcon AI Visibility and local SEO platform. Connect Claude to your Local Falcon account to track how businesses appear across AI search results and traditional map platforms.\n\nCapabilities include running geo-grid scans that check visibility from dozens of surrounding coordinates simultaneously, retrieving scan reports with AI-powered analysis, tracking visibility trends over time, managing scheduled campaigns across multiple locations and keywords, monitoring Google Business Profiles for unwanted changes with Falcon Guard, analyzing reviews with sentiment and topic breakdowns, and researching competitors to identify strategic opportunities.\n\nSupported platforms: Google Maps, Apple Maps, Google AI Overviews, Google AI Mode, ChatGPT, Gemini, and Grok.",
+  "author": {
+    "name": "Local Falcon",
+    "email": "support@localfalcon.com",
+    "url": "https://github.com/local-falcon"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/local-falcon/mcp.git"
+  },
+  "homepage": "https://www.localfalcon.com",
+  "documentation": "https://docs.localfalcon.com",
+  "support": "https://github.com/local-falcon/mcp/issues",
+  "license": "MIT",
+  "icon": "assets/icons/icon-light.png",
+  "icons": [
+    { "src": "assets/icons/icon-light.png", "size": "512x512", "theme": "light" },
+    { "src": "assets/icons/icon-light-32.png", "size": "32x32", "theme": "light" },
+    { "src": "assets/icons/icon-light-16.png", "size": "16x16", "theme": "light" },
+    { "src": "assets/icons/icon-dark.png", "size": "512x512", "theme": "dark" },
+    { "src": "assets/icons/icon-dark-32.png", "size": "32x32", "theme": "dark" },
+    { "src": "assets/icons/icon-dark-16.png", "size": "16x16", "theme": "dark" }
+  ],
+  "server": {
+    "type": "node",
+    "entry_point": "dist/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/index.js"],
+      "env": {
+        "LOCAL_FALCON_API_KEY": "${user_config.api_key}"
+      }
+    }
+  },
+  "user_config": {
+    "api_key": {
+      "type": "string",
+      "title": "Local Falcon API Key",
+      "description": "Your Local Falcon API key. Find it at localfalcon.com/api/credentials under Developers > API & MCP Credentials.",
+      "required": true,
+      "sensitive": true
+    }
+  },
+  "tools": [
+    { "name": "listLocalFalconScanReports", "description": "Lists existing scan reports with metadata including date, keyword, location, ARP, ATRP, SoLV, grid size, and platform." },
+    { "name": "getLocalFalconReport", "description": "Retrieves a specific scan report by report_key with full ranking data including ARP, ATRP, SoLV, competitor summary, grid visualization images, and AI analysis." },
+    { "name": "listAllLocalFalconLocations", "description": "Lists all business locations already configured in the Local Falcon account." },
+    { "name": "getLocalFalconGoogleBusinessLocations", "description": "Searches Google for business listings to find Place IDs needed for running scans." },
+    { "name": "runLocalFalconScan", "description": "Runs a new geo-grid ranking scan for a business. Costs credits. Supports Google Maps, Apple Maps, and AI platforms." },
+    { "name": "listLocalFalconCampaignReports", "description": "Lists campaign reports for scheduled, recurring scans across multiple locations and/or keywords." },
+    { "name": "getLocalFalconCampaignReport", "description": "Retrieves a specific campaign report with aggregated ARP, ATRP, SoLV metrics, individual scan results, and scheduling info." },
+    { "name": "createLocalFalconCampaign", "description": "Creates a new campaign with scheduled recurring scans for one or multiple locations with one or multiple keywords." },
+    { "name": "runLocalFalconCampaign", "description": "Manually triggers a campaign to run immediately. Costs credits." },
+    { "name": "pauseLocalFalconCampaign", "description": "Pauses a campaign to stop it from running on its scheduled frequency." },
+    { "name": "resumeLocalFalconCampaign", "description": "Resumes a campaign from a deactivated or paused status." },
+    { "name": "reactivateLocalFalconCampaign", "description": "Reactivates a campaign that was deactivated due to insufficient credits." },
+    { "name": "listLocalFalconReviewsAnalysisReports", "description": "Lists Reviews Analysis reports with AI-powered review insights for target businesses and competitors." },
+    { "name": "getLocalFalconReviewsAnalysisReport", "description": "Retrieves a specific Reviews Analysis report with RVS, RQS, review velocity, freshness, sentiment, and topic analysis." },
+    { "name": "listLocalFalconGuardReports", "description": "Lists locations monitored by Falcon Guard for Google Business Profile changes." },
+    { "name": "getLocalFalconGuardReport", "description": "Retrieves a Falcon Guard report showing GBP monitoring data, metrics, and historical changes for a location." },
+    { "name": "addLocationsToFalconGuard", "description": "Adds one or multiple locations to be protected by Falcon Guard monitoring." },
+    { "name": "pauseFalconGuardProtection", "description": "Pauses Falcon Guard protection for one or multiple locations." },
+    { "name": "resumeFalconGuardProtection", "description": "Resumes Falcon Guard protection for previously paused locations." },
+    { "name": "removeFalconGuardProtection", "description": "Removes locations from Falcon Guard monitoring entirely." },
+    { "name": "listLocalFalconTrendReports", "description": "Lists trend reports showing ranking changes over time for location + keyword combinations." },
+    { "name": "getLocalFalconTrendReport", "description": "Retrieves a specific trend report showing historical ARP, ATRP, and SoLV changes across multiple scan dates." },
+    { "name": "listLocalFalconAutoScans", "description": "Lists individually scheduled automatic scans (not campaign-based)." },
+    { "name": "listLocalFalconLocationReports", "description": "Lists location reports aggregating scan data across multiple keywords for a specific business location." },
+    { "name": "getLocalFalconLocationReport", "description": "Retrieves a specific location report showing keyword performance for one business location." },
+    { "name": "listLocalFalconKeywordReports", "description": "Lists keyword reports aggregating scan data across multiple locations for a specific keyword." },
+    { "name": "getLocalFalconKeywordReport", "description": "Retrieves a specific keyword report showing location performance for one keyword." },
+    { "name": "getLocalFalconCompetitorReports", "description": "Lists competitor analysis reports showing top-ranking businesses in scanned areas." },
+    { "name": "getLocalFalconCompetitorReport", "description": "Retrieves a specific competitor report with competitive landscape data including ARP, ATRP, SoLV, reviews, and ratings." },
+    { "name": "getLocalFalconGrid", "description": "Generates grid coordinates for use with single-point ranking checks." },
+    { "name": "getLocalFalconRankingAtCoordinate", "description": "Checks ranking at exactly one coordinate. For comprehensive analysis, use runLocalFalconScan instead." },
+    { "name": "getLocalFalconKeywordAtCoordinate", "description": "Shows raw search results at one single point. For ranking analysis, use runLocalFalconScan instead." },
+    { "name": "searchForLocalFalconBusinessLocation", "description": "Searches for business locations on Google or Apple Maps platforms." },
+    { "name": "saveLocalFalconBusinessLocationToAccount", "description": "Saves a business location to your Local Falcon account. Required before running scans." },
+    { "name": "viewLocalFalconAccountInformation", "description": "Retrieves Local Falcon account information including user, credits, and subscription details." },
+    { "name": "searchLocalFalconKnowledgeBase", "description": "Searches the Local Falcon Knowledge Base for help articles, how-to guides, and platform documentation." },
+    { "name": "getLocalFalconKnowledgeBaseArticle", "description": "Retrieves the full content of a specific Knowledge Base article by ID." }
+  ],
+  "privacy_policies": [
+    "https://www.localfalcon.com/privacy-policy"
+  ],
+  "keywords": [
+    "local-seo", "rank-tracking", "geo-grid", "google-business-profile",
+    "competitor-analysis", "ai-visibility", "local-falcon"
+  ],
+  "compatibility": {
+    "platforms": ["darwin", "win32"],
+    "runtimes": {
+      "node": ">=18.0.0"
+    }
+  }
+}

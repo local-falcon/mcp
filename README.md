@@ -93,6 +93,8 @@ For MCP clients that use `mcp-remote` (all platforms):
 
 ## Running via STDIO
 
+**One-click install:** Download the latest `.mcpb` bundle from [Releases](https://github.com/local-falcon/mcp/releases) and open it in Claude Desktop. For manual installation, follow the steps below.
+
 For local installations, first install the package:
 
 ```bash

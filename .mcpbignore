@@ -1,0 +1,19 @@
+# Source files (bundle uses dist/)
+*.ts
+tsconfig.json
+
+# Development files
+.env*
+.git/
+.github/
+.gitignore
+_spec/
+test.*
+CLAUDE.md
+skill/
+mcpb-packaging-brief.md
+bun.lock
+Dockerfile
+
+# Already bundled or unnecessary
+node_modules/.cache/

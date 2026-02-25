@@ -141,3 +141,5 @@ dist
 _spec/
 test.ts
 nul
+mcpb-packaging-brief.md
+*.mcpb
