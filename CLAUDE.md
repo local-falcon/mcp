@@ -4,9 +4,10 @@
 
 This is the **Local Falcon MCP Server** (`@local-falcon/mcp`), a Model Context Protocol server that wraps the [Local Falcon API](https://docs.localfalcon.com). It enables AI agents to run geo-grid rank tracking scans, retrieve reports, manage campaigns, monitor Google Business Profiles, and analyze competitive positioning across Google Maps, Apple Maps, and AI search platforms.
 
-**Package:** `@local-falcon/mcp` (npm)
+**Package:** [`@local-falcon/mcp`](https://www.npmjs.com/package/@local-falcon/mcp) (npm)
+**Version:** 1.0.1
 **License:** MIT
-**Runtime:** Node.js / Bun
+**Runtime:** Node.js 18+
 **Language:** TypeScript (strict mode)
 
 ## Architecture
@@ -42,10 +43,10 @@ Started via CLI argument to `index.ts`:
 
 | Mode | Command | Description |
 |---|---|---|
-| `stdio` (default) | `bun run index.ts` or `bun run index.ts stdio` | Standard I/O for local MCP clients |
-| `sse` | `bun run index.ts sse` | Server-Sent Events, OAuth 2.1 protected |
-| `http` | `bun run index.ts http` | Streamable HTTP, OAuth 2.1 protected |
-| `HTTPAndSSE` | `bun run index.ts HTTPAndSSE` | Both HTTP and SSE on same server |
+| `stdio` (default) | `npm run start` or `npm run start:stdio` | Standard I/O for local MCP clients |
+| `sse` | `npm run start:sse` | Server-Sent Events, OAuth 2.1 protected |
+| `http` | `npm run start:http` | Streamable HTTP, OAuth 2.1 protected |
+| `HTTPAndSSE` | `npm run start:HTTPAndSSE` | Both HTTP and SSE on same server |
 
 Remote modes (SSE, HTTP) use OAuth 2.1 with PKCE for authentication. The server implements RFC 8414 (Authorization Server Metadata), RFC 9728 (Protected Resource Metadata), and RFC 7591 (Dynamic Client Registration).
 
@@ -205,15 +206,31 @@ The Local Falcon API has two base URLs used by `localfalcon.ts`:
 
 Public API documentation: [docs.localfalcon.com](https://docs.localfalcon.com)
 
+## Release & Deployment
+
+| Component | Details |
+|---|---|
+| npm auto-publish | GitHub Action (`.github/workflows/npm-publish.yml`) triggers on GitHub release creation |
+| MCPB packaging | `manifest.json` (v0.3 spec) + `.mcpbignore` + `mcpb pack . local-falcon-mcp.mcpb` |
+| OAuth 2.1 | Working end-to-end for remote transports (SSE, HTTP). RFC 8414 / RFC 9728 / RFC 7591 |
+| SKILL.md | AI client integration skill definition in `skill/` with 3 reference files |
+
+### MCPB Build
+```bash
+npm run build                          # Compile TypeScript to dist/
+mcpb validate manifest.json            # Validate manifest
+mcpb pack . local-falcon-mcp.mcpb      # Create .mcpb bundle
+```
+
 ## Development
 
 ### Prerequisites
-- Node.js 18+ or Bun
+- Node.js 18+
 - TypeScript 5.8+
 
 ### Setup
 ```bash
-npm install        # or: bun install
+npm install
 cp .env.example .env.local
 # Add your LOCAL_FALCON_API_KEY to .env.local
 ```
@@ -270,8 +287,11 @@ npm run docker:run
 | `localfalcon.ts` | API client — fetch functions, rate limiter, retry logic, types |
 | `oauth/` | OAuth 2.1 implementation (authorization, tokens, PKCE, client registration) |
 | `package.json` | Package config, scripts, dependencies |
+| `manifest.json` | MCPB Desktop Extension manifest (v0.3 spec) — tools, icons, user_config |
+| `.mcpbignore` | Exclusion patterns for MCPB bundle creation |
 | `tsconfig.json` | TypeScript compiler configuration |
 | `.env.example` | Environment variable template |
 | `Dockerfile` | Container build configuration |
-| `skill/` | MCP skill definition (SKILL.md) and reference docs for AI client integration |
+| `skill/` | MCP skill definition (SKILL.md) and 3 reference docs for AI client integration |
+| `.github/workflows/` | npm auto-publish on GitHub release |
 | `_spec/` | Internal development specs (gitignored, not published) |

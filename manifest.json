@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "local-falcon-mcp",
   "display_name": "Local Falcon",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Monitor and improve visibility across AI search platforms (ChatGPT, Gemini, Grok, Google AI Overviews, AI Mode) and in local search (Google Maps, Apple Maps) with 37 tools for AI visibility tracking, geo-grid rank analysis, competitor intelligence, campaign management, and Google Business Profile monitoring.",
   "long_description": "An MCP server for the Local Falcon AI Visibility and local SEO platform. Connect Claude to your Local Falcon account to track how businesses appear across AI search results and traditional map platforms.\n\nCapabilities include running geo-grid scans that check visibility from dozens of surrounding coordinates simultaneously, retrieving scan reports with AI-powered analysis, tracking visibility trends over time, managing scheduled campaigns across multiple locations and keywords, monitoring Google Business Profiles for unwanted changes with Falcon Guard, analyzing reviews with sentiment and topic breakdowns, and researching competitors to identify strategic opportunities.\n\nSupported platforms: Google Maps, Apple Maps, Google AI Overviews, Google AI Mode, ChatGPT, Gemini, and Grok.",
   "author": {

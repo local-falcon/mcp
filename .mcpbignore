@@ -15,5 +15,8 @@ mcpb-packaging-brief.md
 bun.lock
 Dockerfile
 
+# Stray files
+/icon-light.png
+
 # Already bundled or unnecessary
 node_modules/.cache/

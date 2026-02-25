@@ -9,7 +9,10 @@
 </p>
 
 <p align="center">
-    <a href="https://github.com/local-falcon/mcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  <a href="https://www.npmjs.com/package/@local-falcon/mcp"><img src="https://img.shields.io/npm/v/@local-falcon/mcp.svg" alt="npm version"></a>
+  <a href="https://github.com/local-falcon/mcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg" alt="Node.js"></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.8-blue.svg" alt="TypeScript"></a>
   <a href="https://www.localfalcon.com"><img src="https://img.shields.io/badge/Local%20Falcon-Website-red" alt="Local Falcon"></a>
   <a href="https://docs.localfalcon.com"><img src="https://img.shields.io/badge/API%20Docs-docs.localfalcon.com-green" alt="API Docs"></a>
 </p>
@@ -200,30 +203,35 @@ For Windows:
 
 ---
 
-## For developers
+## For Developers
 
-- Build (necessary to run in local MCP host applications):
+> **Note:** End users only need [Node.js](https://nodejs.org/) (LTS) and npm to install and run this server. The instructions below are for contributors and developers working on the source code.
 
-  ```bash
-  bun run build
-  ```
+### Prerequisites
 
-- Run MCP Inspector:
-  ```bash
-  bun run inspector
-  ```
+- [Node.js](https://nodejs.org/) 18+ (LTS recommended)
+- npm (included with Node.js)
 
-- Run MCP Server:
+### Build
 
-  Run one of the following:
+```bash
+npm install
+npm run build
+```
 
-  ```bash
-  bun run start
-  bun run start:sse
-  bun run start:stdio
-  ```
+### Run MCP Inspector
 
-  Note: if sse is not specified, the server will default to stdio.
+```bash
+npm run inspector
+```
+
+### Run MCP Server
+
+```bash
+npm run start             # STDIO mode (default)
+npm run start:sse         # SSE mode with OAuth
+npm run start:http        # HTTP mode with OAuth
+```
 
 
 ---
@@ -238,4 +246,4 @@ MIT
 ## Acknowledgments
 - [Local Falcon API Documentation](https://docs.localfalcon.com)
 - [Model Context Protocol (MCP)](https://github.com/modelcontextprotocol)
-- [Bun](https://bun.sh/)
+- [@modelcontextprotocol/sdk](https://www.npmjs.com/package/@modelcontextprotocol/sdk) (Anthropic MCP SDK)
