@@ -75,7 +75,7 @@ For MCP clients that use `mcp-remote` (all platforms):
 
 ## Running via Remote (SSE — Legacy)
 
-** The /sse endpoint is considered legacy and will be removed in a future version. Use the /mcp endpoint instead.
+**The /sse endpoint is considered legacy and will be removed in a future version. Use the /mcp endpoint instead.**
 
 ```json
 {
