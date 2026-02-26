@@ -64,16 +64,6 @@ This reference covers behavioral differences between each platform supported by 
 
 **Strategic notes:** AI Mode is newer and evolving rapidly. Monitor for trend data but avoid making major strategic changes based on volatile early results. Track SAIV over multiple scans to identify genuine patterns vs. noise.
 
-## Google Immersive AI Overviews (`giao`)
-
-**The newest Google AI search format** — enhanced AI Overviews with richer visual and interactive elements.
-
-**Available metrics:** ARP, ATRP, SAIV, Found In, Total Competitors
-
-**Behavior:** Extension of the gaio format with additional immersive features. Same fundamental ranking dynamics — authority and citeability matter more than proximity.
-
-**Strategic notes:** As the newest platform, data patterns are still emerging. Useful for early monitoring and establishing baselines, but be cautious about drawing conclusions from limited scan history.
-
 ## ChatGPT (`chatgpt`)
 
 **OpenAI's conversational AI** — users ask ChatGPT for local recommendations.

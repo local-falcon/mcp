@@ -148,7 +148,7 @@ Gather all available data — do not run new scans unless explicitly requested:
 - Apple Maps does not include review/rating data and does not support AI analysis
 - Both support the full positional metric set: ARP, ATRP, SoLV, Competition SoLV, Max SoLV, Opportunity SoLV, Found In
 
-### AI Platforms (gaio, chatgpt, gemini, grok, aimode, giao)
+### AI Platforms (gaio, chatgpt, gemini, grok, aimode)
 
 - Use **SAIV** instead of SoLV — never apply SoLV to AI scans
 - ARP/ATRP on AI scans are pseudo-ranks derived from mention order, not map positions

@@ -203,6 +203,17 @@ For Windows:
 
 ---
 
+## Skills
+
+This repo includes two AI skills under `skills/`:
+
+| Skill | Path | Description |
+|---|---|---|
+| **Local Falcon MCP** | `skills/local-falcon-mcp/` | MCP tool usage guidance — helps AI agents use the 37 MCP tools effectively |
+| **Local Visibility** | `skills/local-visibility-skill/` | General AI visibility & local SEO strategy — platform analysis, metrics interpretation, prompt templates |
+
+---
+
 ## For Developers
 
 > **Note:** End users only need [Node.js](https://nodejs.org/) (LTS) and npm to install and run this server. The instructions below are for contributors and developers working on the source code.

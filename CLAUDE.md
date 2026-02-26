@@ -132,7 +132,7 @@ All enum values are validated via Zod schemas in `server.ts`.
 ### Platform
 
 **`runLocalFalconScan`:**
-`google`, `apple`, `gaio`, `chatgpt`, `gemini`, `grok`, `aimode`, `giao`
+`google`, `apple`, `gaio`, `chatgpt`, `gemini`, `grok`, `aimode`
 
 **Filter/list tools (`listLocalFalconScanReports`, `listLocalFalconTrendReports`, `listLocalFalconAutoScans`):**
 `google`, `apple`, `gaio`, `chatgpt`, `gemini`, `grok`
@@ -213,7 +213,7 @@ Public API documentation: [docs.localfalcon.com](https://docs.localfalcon.com)
 | npm auto-publish | GitHub Action (`.github/workflows/npm-publish.yml`) triggers on GitHub release creation |
 | MCPB packaging | `manifest.json` (v0.3 spec) + `.mcpbignore` + `mcpb pack . local-falcon-mcp.mcpb` |
 | OAuth 2.1 | Working end-to-end for remote transports (SSE, HTTP). RFC 8414 / RFC 9728 / RFC 7591 |
-| SKILL.md | AI client integration skill definition in `skill/` with 3 reference files |
+| SKILL.md | AI client integration skill definition in `skills/` with 3 reference files |
 
 ### MCPB Build
 ```bash
@@ -292,6 +292,8 @@ npm run docker:run
 | `tsconfig.json` | TypeScript compiler configuration |
 | `.env.example` | Environment variable template |
 | `Dockerfile` | Container build configuration |
-| `skill/` | MCP skill definition (SKILL.md) and 3 reference docs for AI client integration |
+| `skills/` | AI skills — MCP tool usage skill and local visibility strategy skill |
+| `.claude-plugin/` | Claude Code plugin manifest (`plugin.json`) |
+| `.mcp.json` | Remote MCP server configuration for Claude Code plugin |
 | `.github/workflows/` | npm auto-publish on GitHub release |
 | `_spec/` | Internal development specs (gitignored, not published) |
