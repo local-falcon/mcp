@@ -18,9 +18,16 @@ tsconfig.json
 CLAUDE.md
 Dockerfile
 
-# Don't publish internal spec and skill directories
+# Don't publish internal spec directory
 _spec/
-skill/
+
+# Don't publish build artifacts
+*.mcpb
+nul
+
+# Don't publish CI/CD and lockfiles
+.github/
+bun.lock
 
 # Don't publish node_modules (npm does this by default anyway)
 node_modules/
