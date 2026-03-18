@@ -294,6 +294,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       const apiKey = getApiKey(extra);
       if (!apiKey) {
         return {
+          _meta: {},
           contents: [{
             uri: uri.href,
             mimeType: "application/json",
@@ -303,6 +304,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       }
       const fullReport = await fetchLocalFalconReport(apiKey, reportKey as string, "data_points,places,sources,version,place_id,ai_place_id");
       return {
+        _meta: {},
         contents: [{
           uri: uri.href,
           mimeType: "application/json",
