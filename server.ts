@@ -1,9 +1,13 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import dotenv from "dotenv";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import { fetchLocalFalconAutoScans, fetchLocalFalconFullGridSearch, fetchLocalFalconGoogleBusinessLocations, fetchLocalFalconGrid, fetchLocalFalconKeywordAtCoordinate, fetchLocalFalconKeywordReport, fetchLocalFalconKeywordReports, fetchLocalFalconLocationReport, fetchLocalFalconLocationReports, fetchAllLocalFalconLocations, fetchLocalFalconRankingAtCoordinate, fetchLocalFalconReport, fetchLocalFalconReports, fetchLocalFalconTrendReport, fetchLocalFalconTrendReports, fetchLocalFalconCompetitorReports, fetchLocalFalconCompetitorReport, fetchLocalFalconCampaignReports, fetchLocalFalconCampaignReport, fetchLocalFalconGuardReports, fetchLocalFalconGuardReport, runLocalFalconScan, searchForLocalFalconBusinessLocation, fetchLocalFalconAccountInfo, saveLocalFalconBusinessLocationToAccount, addLocationsToFalconGuard, pauseFalconGuardProtection, resumeFalconGuardProtection, removeFalconGuardProtection, createLocalFalconCampaign, runLocalFalconCampaign, pauseLocalFalconCampaign, resumeLocalFalconCampaign, reactivateLocalFalconCampaign, fetchLocalFalconReviewsAnalysisReports, fetchLocalFalconReviewsAnalysisReport, searchLocalFalconKnowledgeBase, getLocalFalconKnowledgeBaseArticle } from "./localfalcon.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { registerAppResource, registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 
 dotenv.config({ path: ".env.local" });
 
@@ -28,7 +32,8 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
     return sessionHeaders.apiKey;
   };
 
-  const server = new McpServer({
+  const server = new McpServer(
+    {
     name: "Local Falcon MCP Server",
     version: "1.0.0",  // Keep in sync with package.json
     icons: [
@@ -233,7 +238,73 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
 7. **Pagination:** Most list tools return limited results per page. Use the nextToken from responses to fetch additional pages when needed.
 8. **Credit awareness:** runLocalFalconScan, runLocalFalconCampaign, and createLocalFalconCampaign consume credits. Use viewLocalFalconAccountInformation to check credit balance if relevant.
     `
+  },
+  { capabilities: { extensions: { "io.modelcontextprotocol/ui": {} } } as any }
+  );
+
+  // ── MCP Apps: Geo-Grid Heatmap ─────────────────────────────────────────────
+  // Resolve the built HTML file (handles both source dev and compiled dist paths)
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  const geogridHtmlPath = path.resolve(__dirname, "dist/ui/geogrid-heatmap/index.html");
+
+  // Register the geo-grid heatmap as an MCP App resource
+  registerAppResource(server, "Geo-Grid Heatmap", "ui://reports/geogrid-heatmap", {}, async () => {
+    const html = fs.readFileSync(geogridHtmlPath, "utf-8");
+    return {
+      contents: [{
+        uri: "ui://reports/geogrid-heatmap",
+        mimeType: "text/html;profile=mcp-app",
+        text: html,
+        _meta: {
+          ui: {
+            csp: {
+              connectDomains: [
+                "https://maps.googleapis.com",
+                "https://*.googleapis.com",
+                "https://*.google.com",
+              ],
+              resourceDomains: [
+                "https://maps.googleapis.com",
+                "https://*.googleapis.com",
+                "https://*.gstatic.com",
+                "https://*.google.com",
+                "https://*.googleusercontent.com",
+              ],
+            },
+          },
+        },
+      }],
+    };
   });
+
+  // Data points resource — provides full grid data to the heatmap widget
+  server.resource(
+    "scan-report-data-points",
+    new ResourceTemplate("localfalcon://reports/{report_key}/data_points", { list: undefined }),
+    { mimeType: "application/json" },
+    async (uri, variables, extra) => {
+      const reportKey = variables.report_key;
+      const apiKey = getApiKey(extra);
+      if (!apiKey) {
+        return {
+          contents: [{
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify({ error: "Missing API key" }),
+          }],
+        };
+      }
+      const fullReport = await fetchLocalFalconReport(apiKey, reportKey as string, "data_points,places,sources,version,place_id,ai_place_id");
+      return {
+        contents: [{
+          uri: uri.href,
+          mimeType: "application/json",
+          text: JSON.stringify(fullReport),
+        }],
+      };
+    }
+  );
 
   // Get list of Scan Reports
   server.tool(
@@ -262,15 +333,23 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
     }
   );
 
-  // Get a Specific Scan Report
-  server.tool(
+  // Get a Specific Scan Report (MCP App-aware — links to geo-grid heatmap widget)
+  registerAppTool(server,
     "getLocalFalconReport",
-    `Retrieves a specific scan report by report_key. Returns full ranking data including ARP, ATRP, SoLV, competitor summary, grid visualization images, and AI analysis text (if enabled). NOTE: The raw data_points array (rank at every grid coordinate) is stripped by default — it is extremely large and rarely needed. ONLY include "data_points" in the fieldmask when the user explicitly asks for per-grid-point data, raw coordinate-level rankings, or a point-by-point breakdown. For general ranking insights, weaknesses, and competitive analysis, use the ai_analysis field instead — it already summarizes grid-level patterns in plain language. Use fieldmask to control response size. Recommended fieldmask for analysis: "report_key,date,place_id,keyword,location,arp,atrp,solv,found_in,total_competitors,competition_solv,max_solv,opportunity_solv,grid_size,radius,measurement,ai_analysis,image,heatmap". Requires a report_key from listLocalFalconScanReports. Cannot create new reports — use runLocalFalconScan for that.`,
     {
-      reportKey: z.string().describe("The report key of the scan report."),
-      fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
+      description: `Retrieves a specific scan report by report_key. Returns full ranking data including ARP, ATRP, SoLV, competitor summary, grid visualization images, and AI analysis text (if enabled). NOTE: The raw data_points array (rank at every grid coordinate) is stripped by default — it is extremely large and rarely needed. ONLY include "data_points" in the fieldmask when the user explicitly asks for per-grid-point data, raw coordinate-level rankings, or a point-by-point breakdown. For general ranking insights, weaknesses, and competitive analysis, use the ai_analysis field instead — it already summarizes grid-level patterns in plain language. Use fieldmask to control response size. Recommended fieldmask for analysis: "report_key,date,place_id,ai_place_id,platform,keyword,location,arp,atrp,solv,found_in,total_competitors,competition_solv,max_solv,opportunity_solv,grid_size,radius,measurement,ai_analysis,image,heatmap". Requires a report_key from listLocalFalconScanReports. Cannot create new reports — use runLocalFalconScan for that.`,
+      inputSchema: {
+        reportKey: z.string().describe("The report key of the scan report."),
+        fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
+      },
+      title: "Get Scan Report",
+      annotations: { readOnlyHint: true },
+      _meta: {
+        ui: {
+          resourceUri: "ui://reports/geogrid-heatmap",
+        },
+      },
     },
-    { title: "Get Scan Report", readOnlyHint: true },
     async ({ reportKey, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -278,7 +357,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       }
       const resp = await fetchLocalFalconReport(apiKey, reportKey, handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
-    }
+    },
   );
 
   // Get list of Saved Locations
