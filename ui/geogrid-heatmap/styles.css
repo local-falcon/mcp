@@ -1,0 +1,452 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #ffffff;
+  --text: #1a1a1a;
+  --panel-bg: #f8f9fa;
+  --border: #e0e0e0;
+  --muted: #6b7280;
+  --accent: #284060;
+  --rank-badge: #4B88FF;
+  --highlight-bg: rgba(75, 136, 255, 0.1);
+  --star-empty: #DADCE0;
+  --star-filled: #FBBC04;
+  --score-color: #70757A;
+  --reviews-color: #CCC;
+  --address-color: #8C8C8C;
+  --category-color: rgba(0, 0, 0, 0.5);
+}
+
+.dark {
+  --bg: #1a1a2e;
+  --text: #e5e7eb;
+  --panel-bg: #16213e;
+  --border: #374151;
+  --muted: #9ca3af;
+  --accent: #60a5fa;
+  --rank-badge: #4B88FF;
+  --highlight-bg: rgba(75, 136, 255, 0.15);
+  --address-color: #9ca3af;
+  --category-color: rgba(255, 255, 255, 0.5);
+}
+
+html, body {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  position: relative;
+}
+
+#loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 14px;
+  color: var(--muted);
+  z-index: 100;
+}
+
+#loading.hidden { display: none; }
+
+/* Metrics panel */
+#metrics-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 10px 14px;
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.4;
+  z-index: 10;
+}
+
+.metric {
+  display: flex;
+  gap: 4px;
+}
+
+.metric-label {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.metric-value {
+  font-weight: 600;
+}
+
+/* Map wrapper — square aspect ratio via padding trick (matches LF production) */
+#map-wrapper {
+  position: relative;
+  width: 100%;
+  height: 0;
+  padding-bottom: 100%; /* 1:1 square */
+}
+
+/* Map fills the square wrapper */
+#map-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+/* Distance banner — bottom of map (inside #map-wrapper) */
+.distance-banner {
+  position: absolute;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.88);
+  color: #6b8a9a;
+  border: 1px solid rgba(180, 210, 225, 0.55);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  padding: 4px 14px;
+  border-radius: 3px;
+  z-index: 5;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Detail panel (overlay) — matches LF production modal */
+#detail-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 400px;
+  max-width: 90%;
+  height: 100%;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  z-index: 20;
+  box-shadow: -2px 0 8px rgba(0,0,0,0.1);
+  font-size: 14px;
+}
+
+#detail-panel.hidden { display: none; }
+
+/* Detail panel header */
+.detail-header {
+  text-align: center;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+
+.detail-header .detail-keyword {
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.detail-header .detail-keyword b {
+  font-weight: 600;
+}
+
+.detail-coord {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 4px 12px;
+}
+
+.detail-coord .pin-icon {
+  color: #EA4335;
+  font-size: 14px;
+}
+
+.detail-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 2px 6px;
+  line-height: 1;
+}
+.detail-close:hover { color: var(--text); }
+
+/* Business listing — matches LF production .google_location */
+.google_location {
+  position: relative;
+  padding: 1em 1.5em;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  text-align: left;
+}
+
+.dark .google_location {
+  border-bottom-color: var(--border);
+}
+
+.google_location:first-of-type {
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.dark .google_location:first-of-type {
+  border-top-color: var(--border);
+}
+
+.google_location:last-of-type {
+  border-bottom: 0;
+}
+
+.google_location.highlighted {
+  background-color: var(--highlight-bg);
+}
+
+.google_location.ranked {
+  padding-left: 5em;
+}
+
+/* Rank badge — blue circle */
+.google_location .rank_container {
+  position: absolute;
+  z-index: 10;
+  left: 1em;
+  top: 50%;
+  transform: translateY(-50%);
+  text-align: center;
+}
+
+.google_location .rank_container .rank {
+  display: block;
+  text-align: center;
+  width: 2.5em;
+  height: 2.5em;
+  background-color: var(--rank-badge);
+  color: #FFF;
+  font-weight: 600;
+  line-height: 2.5em;
+  border-radius: 100%;
+  font-size: 14px;
+}
+
+/* Business details */
+.google_location .details .name {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+
+.google_location .details .address {
+  color: var(--address-color);
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+
+/* Star rating */
+.google_location .details .rating {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+
+.google_location .details .rating .score {
+  color: var(--score-color);
+  margin-right: 6px;
+}
+
+.google_location .details .rating .stars {
+  position: relative;
+  display: inline-flex;
+  color: var(--star-empty);
+  font-size: 12px;
+  margin-right: 4px;
+  line-height: 1;
+}
+
+.google_location .details .rating .stars .stars-inner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  color: var(--star-filled);
+  display: inline-flex;
+}
+
+.google_location .details .rating .reviews {
+  color: var(--reviews-color);
+}
+
+/* Categories */
+.google_location .details .categories {
+  font-size: 11px;
+  color: var(--category-color);
+  font-style: italic;
+  text-transform: uppercase;
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.google_location .details .categories .cat-icon {
+  font-size: 10px;
+}
+
+.google_location .details .categories .more-cats {
+  color: var(--accent);
+  font-style: normal;
+  text-transform: none;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+/* AI detail panel sections */
+.ai-detail-section {
+  padding: 0 1.5em;
+}
+
+.ai-section-heading {
+  text-align: center;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 16px 0 12px;
+  padding: 0 1.5em;
+}
+
+/* AI response content */
+.ai-response {
+  margin-top: 8px;
+  line-height: 1.6;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 13px;
+  max-height: 200px;
+  overflow: hidden;
+  position: relative;
+}
+
+.ai-response.expanded {
+  max-height: none;
+}
+
+.ai-response img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  margin: 8px 0;
+}
+
+.ai-response-toggle {
+  display: inline-block;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 8px;
+}
+
+.ai-response h1, .ai-response h2, .ai-response h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 12px 0 6px;
+}
+
+.ai-response p { margin: 6px 0; }
+.ai-response ul, .ai-response ol { margin: 6px 0 6px 20px; }
+.ai-response li { margin: 3px 0; }
+
+.ai-response a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.ai-no-response {
+  color: var(--muted);
+  font-style: italic;
+  padding: 12px 0;
+}
+
+/* Sources section (legacy/fallback) */
+.sources-section {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.sources-section h4 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.source-link {
+  display: block;
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: none;
+  padding: 3px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-link:hover { text-decoration: underline; }
+
+/* Source Information list (AI scans) */
+.source-list {
+  padding: 0 0 16px;
+}
+
+.source-item {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.dark .source-item {
+  border-bottom-color: var(--border);
+}
+
+.source-item:last-child {
+  border-bottom: none;
+}
+
+.source-item a {
+  color: var(--accent);
+  text-decoration: underline;
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.source-item a:hover {
+  text-decoration: none;
+}
+
+.source-domain {
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 2px;
+}
