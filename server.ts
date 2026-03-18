@@ -272,6 +272,9 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
                 "https://*.googleusercontent.com",
               ],
             },
+            // Stable origin for widget sandbox — required by ChatGPT for app submission
+            // Format: URL-derived subdomain per OpenAI's oaiusercontent.com pattern
+            domain: "mcp-localfalcon-com.oaiusercontent.com",
           },
         },
       }],
