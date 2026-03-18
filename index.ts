@@ -231,6 +231,12 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
     exposedHeaders: ['mcp-session-id', 'WWW-Authenticate'],
   }));
 
+  // OpenAI domain verification token
+  app.get("/.well-known/openai-apps-challenge", (_req: Request, res: Response): void => {
+    res.set("Content-Type", "text/plain");
+    res.status(200).send("Qwq9UUOPu2HyUuzn_O5BqcB-vEX_O12G2JvAQbsDQ9w");
+  });
+
   // Health check endpoints
   app.get("/ping", (_req: Request, res: Response): void => {
     res.status(200).json({ status: "ok", message: "Local Falcon MCP server is up." });
