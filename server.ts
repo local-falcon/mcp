@@ -270,6 +270,9 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
                 "https://*.gstatic.com",
                 "https://*.google.com",
                 "https://*.googleusercontent.com",
+                "https://images.openai.com",
+                "https://fastly.4sqi.net",
+                "https://*.amazonaws.com",
               ],
             },
             // Stable origin for widget sandbox — required by ChatGPT for app submission
