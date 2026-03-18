@@ -25,7 +25,7 @@
   ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build:ui": "UI_ENTRY=hello-world vite build --config vite.ui.config.ts && UI_ENTRY=geogrid-heatmap vite build --config vite.ui.config.ts",
+    "build:ui": "UI_ENTRY=geogrid-heatmap vite build --config vite.ui.config.ts",
     "start": "bun run index.ts",
     "start:sse": "bun run index.ts sse",
     "start:stdio": "bun run index.ts stdio",
