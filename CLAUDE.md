@@ -296,4 +296,86 @@ npm run docker:run
 | `.claude-plugin/` | Claude Code plugin manifest (`plugin.json`) |
 | `.mcp.json` | Remote MCP server configuration for Claude Code plugin |
 | `.github/workflows/` | npm auto-publish on GitHub release |
+| `vite.ui.config.ts` | Vite build config for MCP App UI entries |
+| `ui/geogrid-heatmap/` | Geo-grid heatmap MCP App — interactive Google Maps widget |
 | `_spec/` | Internal development specs (gitignored, not published) |
+
+## MCP Apps
+
+The server includes MCP App support via `@modelcontextprotocol/ext-apps`. Apps are interactive HTML widgets embedded in AI clients.
+
+### Geo-Grid Heatmap
+
+An interactive Google Maps widget that visualizes geo-grid scan data with colored rank pins, metrics bar, and clickable detail panels.
+
+| Component | Details |
+|---|---|
+| Source | `ui/geogrid-heatmap/` (index.html, main.ts, styles.css) |
+| Build | `npm run build:ui` → `dist/ui/geogrid-heatmap/index.html` (~230 KB single-file) |
+| Google Maps API Key | Set `GOOGLE_MAPS_API_KEY` env var at build time (GCP project `lf-mcp-apps`) |
+| Resource URI | `ui://reports/geogrid-heatmap` |
+| Linked Tool | `getLocalFalconReport` (via `registerAppTool` with `_meta.ui.resourceUri`) |
+| Data Resource | `localfalcon://reports/{report_key}/data_points` (fetches full grid data for the widget) |
+
+### Build
+
+```bash
+GOOGLE_MAPS_API_KEY=your-key npm run build:ui
+```
+
+The `build` script runs both TypeScript compilation and UI builds.
+
+## ChatGPT MCP Connector Compatibility
+
+### OAuth 2.1 Requirements (ChatGPT-specific)
+
+ChatGPT's MCP connector (`openai-mcp/1.0.0`) has stricter OAuth requirements than Claude's:
+
+| Requirement | Detail | File |
+|---|---|---|
+| **Scopes aligned** | Both `.well-known/oauth-authorization-server` and `.well-known/oauth-protected-resource` must advertise `["api", "offline_access"]` | `index.ts` |
+| **Token response scope** | Token endpoint must return `scope: "api offline_access"` matching the requested scope — mismatches cause re-auth loops | `oauth/routes.ts` |
+| **`refresh_token` grant** | `grant_types_supported` must include `"refresh_token"` | `index.ts` |
+| **Widget domain** | `_meta.ui.domain` required on MCP App resources — without it, ChatGPT loops OAuth on tool calls. Format: `{url-derived}.oaiusercontent.com` | `server.ts` |
+
+### MCP Apps Bridge Differences (ChatGPT vs Claude)
+
+ChatGPT's MCP Apps bridge delivers tool results differently from Claude's:
+
+**Claude:** `ontoolresult` receives `{content: [{type: "text", text: "single-encoded JSON"}]}`
+
+**ChatGPT:** `ontoolresult` receives `params` from `ui/notifications/tool-result` with TWO paths:
+- `content[0].text` — **double-encoded**: JSON string wrapping a `{text: "json"}` envelope
+- `structuredContent.text` — **single-encoded**: clean JSON string (preferred)
+
+**Parsing strategy in `main.ts` (priority order):**
+1. **Tier 0:** `result.structuredContent.text` → `JSON.parse()` (ChatGPT clean path)
+2. **Tier 1:** `result.content[]` array → find `type: "text"` block → `JSON.parse(block.text)` (Claude path)
+3. **Tier 2:** `result.text` as string → `JSON.parse(result.text)` (simple text wrapper)
+4. **Tier 3:** `result.data` or raw `result` (generic fallback)
+5. **Double-encoding unwrapper:** If result has no `report_key` but has `text` string → `JSON.parse(reportData.text)`
+
+### `_meta: null` Workaround (Critical for ChatGPT)
+
+The MCP SDK's `server.resource()` serializes `_meta` as `null` in JSON-RPC responses. ChatGPT's bridge Zod schema requires `_meta` to be an object — `null` fails validation, causing `readServerResource` to time out.
+
+**Fix:** `patchNullMeta()` in `main.ts` — a recursive function that replaces `_meta: null` with `_meta: {}` at any depth. Installed as a monkey-patch on `window.addEventListener` before `new App()`. Safe for Claude — Claude's responses have `_meta` as an object or absent, never `null`.
+
+### Google Maps API Key — ChatGPT Referrer
+
+The Maps JavaScript API key (GCP project `lf-mcp-apps`) must allow ChatGPT's widget sandbox as an HTTP referrer:
+
+| Referrer | Purpose |
+|---|---|
+| `*.oaiusercontent.com/*` | ChatGPT widget sandbox |
+| `*.web-sandbox.oaiusercontent.com/*` | ChatGPT specific sandbox subdomain |
+| `*.claudemcpcontent.com/*` | Claude widget sandbox |
+| `*.localfalcon.com/*` | Production + dev |
+
+### OAuth Browser State Issue
+
+ChatGPT's OAuth dialog enters an infinite React render loop in normal Chrome sessions due to stale React Router state. **Incognito mode works reliably.** This is a ChatGPT frontend bug.
+
+### Error Handling in Tool Responses
+
+Tool handlers never expose raw `error.message` to users — catch blocks log the full error to `console.error` and return a generic user-facing message. This prevents leaking internal API details.
