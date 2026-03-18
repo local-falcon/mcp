@@ -1102,11 +1102,12 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
           ],
         };
       } catch (error: any) {
+        console.error("saveLocalFalconBusinessLocationToAccount error:", error);
         return {
           content: [
             {
               type: "text",
-              text: `Failed to save business location: ${error.message}`,
+              text: "Failed to save business location. Please try again.",
             },
           ],
         };
