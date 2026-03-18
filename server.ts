@@ -275,9 +275,10 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
                 "https://*.amazonaws.com",
               ],
             },
-            // Stable origin for widget sandbox — required by ChatGPT for app submission
-            // Format: URL-derived subdomain per OpenAI's oaiusercontent.com pattern
-            domain: "mcp-localfalcon-com.oaiusercontent.com",
+            // Stable origin for widget sandbox — SHA256 hash of MCP server URL
+            // Claude format: {hash}.claudemcpcontent.com
+            // ChatGPT format (if needed later): mcp-localfalcon-com.oaiusercontent.com
+            domain: "82abe0bc24d93c63b15c80a760135490.claudemcpcontent.com",
           },
         },
       }],
