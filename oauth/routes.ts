@@ -442,7 +442,7 @@ async function handleAuthorizationCodeGrant(req: Request, res: Response): Promis
       token_type: "Bearer",
       expires_in: 86400, // 24 hours
       refresh_token: refreshToken,
-      scope: "api",
+      scope: "api offline_access",
     });
   } catch (error) {
     console.error("[OAuth] Token exchange failed:", error);
@@ -516,7 +516,7 @@ async function handleRefreshTokenGrant(req: Request, res: Response): Promise<voi
       token_type: "Bearer",
       expires_in: 86400, // 24 hours
       refresh_token: newRefreshToken,
-      scope: "api",
+      scope: "api offline_access",
     });
   } catch (error) {
     // API key is no longer valid — revoke the refresh token too
