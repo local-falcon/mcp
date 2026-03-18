@@ -22,7 +22,7 @@ Dockerfile
 _spec/
 
 # Don't publish build artifacts
-dist/ui/
+dist/
 *.mcpb
 nul
 
