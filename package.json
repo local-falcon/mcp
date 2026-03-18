@@ -25,12 +25,13 @@
   ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "build:ui": "UI_ENTRY=hello-world vite build --config vite.ui.config.ts && UI_ENTRY=geogrid-heatmap vite build --config vite.ui.config.ts",
     "start": "bun run index.ts",
     "start:sse": "bun run index.ts sse",
     "start:stdio": "bun run index.ts stdio",
     "start:http": "bun run index.ts http",
     "start:HTTPAndSSE": "bun run index.ts HTTPAndSSE",
-    "build": "npx rimraf dist && tsc --noCheck",
+    "build": "npx rimraf dist && NODE_OPTIONS=--max-old-space-size=4096 tsc --noCheck && bun run build:ui",
     "inspector": "npx @modelcontextprotocol/inspector bun start",
     "docker:build": "docker build -t local-falcon-mcp .",
     "docker:run": "docker run -it --rm --env-file .env --name local-falcon-mcp local-falcon-mcp"
@@ -47,11 +48,16 @@
     "express-rate-limit": "^8.2.1",
     "node-fetch": "^3.3.2",
     "uuid": "^11.1.0",
-    "zod": "^3.25.0"
+    "zod": "^3.25.0",
+    "@modelcontextprotocol/ext-apps": "^1.2.2",
+    "marked": "^17.0.4",
+    "vite": "^8.0.0",
+    "vite-plugin-singlefile": "^2.3.2"
   },
   "devDependencies": {
     "@types/cors": "^2.8.18",
     "@types/express": "^5.0.1",
+    "@types/marked": "^6.0.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
   }
