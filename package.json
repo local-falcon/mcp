@@ -31,7 +31,7 @@
     "start:stdio": "bun run index.ts stdio",
     "start:http": "bun run index.ts http",
     "start:HTTPAndSSE": "bun run index.ts HTTPAndSSE",
-    "build": "npx rimraf dist && NODE_OPTIONS=--max-old-space-size=4096 tsc --noCheck && bun run build:ui",
+    "build": "npx rimraf dist && NODE_OPTIONS=--max-old-space-size=4096 tsc --noCheck && npm run build:ui",
     "inspector": "npx @modelcontextprotocol/inspector bun start",
     "docker:build": "docker build -t local-falcon-mcp .",
     "docker:run": "docker run -it --rm --env-file .env --name local-falcon-mcp local-falcon-mcp"

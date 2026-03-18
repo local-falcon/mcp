@@ -24,6 +24,8 @@ jobs:
 
       - name: Build
         run: npm run build
+        env:
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
 
       - name: Publish to npm
         run: npm publish --access public
