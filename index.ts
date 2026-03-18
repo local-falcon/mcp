@@ -268,7 +268,8 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
       registration_endpoint: `${baseUrl}/register`,
       revocation_endpoint: `${baseUrl}/oauth/revoke`,
       response_types_supported: ["code"],
-      grant_types_supported: ["authorization_code"],
+      grant_types_supported: ["authorization_code", "refresh_token"],
+      scopes_supported: ["api", "offline_access"],
       code_challenge_methods_supported: ["S256"],
       token_endpoint_auth_methods_supported: ["none"],
       revocation_endpoint_auth_methods_supported: ["none"],
@@ -291,7 +292,7 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
       resource: baseUrl,
       authorization_servers: [baseUrl],
       bearer_methods_supported: ["header"],
-      scopes_supported: ["api"],
+      scopes_supported: ["api", "offline_access"],
     });
   };
   app.get("/.well-known/oauth-protected-resource", protectedResourceMetadata);
