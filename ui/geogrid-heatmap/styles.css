@@ -2,10 +2,10 @@
 
 :root {
   --bg: #ffffff;
-  --text: #1a1a1a;
-  --panel-bg: #f8f9fa;
-  --border: #e0e0e0;
-  --muted: #6b7280;
+  --text: #222;
+  --panel-bg: #FAFAFA;
+  --border: rgba(0,0,0,.05);
+  --muted: #999;
   --accent: #284060;
   --rank-badge: #4B88FF;
   --highlight-bg: rgba(75, 136, 255, 0.1);
@@ -28,13 +28,19 @@
   --highlight-bg: rgba(75, 136, 255, 0.15);
   --address-color: #9ca3af;
   --category-color: rgba(255, 255, 255, 0.5);
+  --star-empty: #4b5563;
+  --score-color: #9ca3af;
+  --reviews-color: #6b7280;
 }
 
 html, body {
   height: 100%;
   width: 100%;
   overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-family: 'SF Pro Text', 'SF Pro Display', -apple-system, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -.022em;
   background: var(--bg);
   color: var(--text);
 }
@@ -121,6 +127,47 @@ html, body {
   pointer-events: none;
 }
 
+.dark .distance-banner {
+  background: rgba(26, 26, 46, 0.88);
+  color: #9ca3af;
+  border-color: rgba(55, 65, 81, 0.55);
+}
+
+/* Fallback CSS grid for brand scans (0,0 coordinates — no Google Map) */
+.fallback-grid {
+  display: grid;
+  justify-content: center;
+  align-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  background: var(--panel-bg);
+}
+
+.fallback-pin {
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #FFF;
+  font-weight: bold;
+  font-family: Arial, sans-serif;
+  border: 1.5px solid rgba(0,0,0,0.2);
+  cursor: pointer;
+  transition: transform .2s linear;
+}
+
+.fallback-pin:hover {
+  transform: scale(1.15);
+}
+
+.fallback-caption {
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 6px 0;
+}
+
 /* Detail panel (overlay) — matches LF production modal */
 #detail-panel {
   position: absolute;
@@ -128,10 +175,14 @@ html, body {
   right: 0;
   width: 400px;
   max-width: 90%;
-  height: 100%;
+  height: 100vh;                      /* Concrete height — 100% can fail in iframes */
+  max-height: 100%;                   /* Don't exceed parent bounds */
   background: var(--bg);
   border-left: 1px solid var(--border);
-  overflow-y: auto;
+  overflow-y: scroll;                 /* Force scroll context on mobile browsers */
+  -webkit-overflow-scrolling: touch;  /* Momentum scrolling on older mobile WebKit */
+  touch-action: pan-y;                /* Tell browser this element handles vertical touch */
+  overscroll-behavior: contain;       /* Prevent scroll chaining to parent (map) */
   z-index: 20;
   box-shadow: -2px 0 8px rgba(0,0,0,0.1);
   font-size: 14px;

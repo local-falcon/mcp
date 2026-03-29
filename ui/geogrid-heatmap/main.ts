@@ -360,13 +360,14 @@ function createPinSvg(color: string): string {
   )}`;
 }
 
-// "No AI Results" prohibited pin — light pink circle with 🚫 symbol
-// Used for AI scans where no AI overview was triggered at this coordinate
+// "No AI Results" prohibited pin — gray circle with slash (matches LF design system)
+// Used for GAIO scans where no AI Overview was generated at this coordinate.
+// Design system spec: gray (#999) circle with prohibited/banned icon (circle with slash).
 const NO_RESULTS_PIN_SVG = `data:image/svg+xml,${encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">` +
-  `<circle cx="20" cy="20" r="18" fill="#f0c0c0" stroke="rgba(180,60,60,0.35)" stroke-width="1.5"/>` +
-  `<circle cx="20" cy="20" r="12" fill="none" stroke="rgba(180,60,60,0.5)" stroke-width="2"/>` +
-  `<line x1="11.5" y1="11.5" x2="28.5" y2="28.5" stroke="rgba(180,60,60,0.5)" stroke-width="2"/>` +
+  `<circle cx="20" cy="20" r="18" fill="#999" stroke="rgba(0,0,0,0.2)" stroke-width="1.5"/>` +
+  `<circle cx="20" cy="20" r="12" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="2"/>` +
+  `<line x1="11.5" y1="11.5" x2="28.5" y2="28.5" stroke="rgba(255,255,255,0.6)" stroke-width="2"/>` +
   `</svg>`
 )}`;
 
@@ -379,7 +380,7 @@ function renderStarRating(rating: number | string | undefined, reviews: number |
   const stars = "★★★★★";
   const rev = Number(reviews);
   const reviewsStr = rev ? `(${numberFormat(rev)})` : "";
-  return `<div class="rating">
+  return `<div class="rating" title="${r.toFixed(1)} out of 5 stars">
     <span class="score">${r.toFixed(1)}</span>
     <span class="stars">${stars}<span class="stars-inner" style="width:${ratingPct}">${stars}</span></span>
     <span class="reviews">${reviewsStr}</span>
@@ -576,6 +577,11 @@ function applyTheme(dark: boolean) {
             { elementType: "labels.text.fill", stylers: [{ color: "#8b95a5" }] },
             { featureType: "road", elementType: "geometry", stylers: [{ color: "#2c3e6b" }] },
             { featureType: "water", elementType: "geometry", stylers: [{ color: "#0e1a3a" }] },
+            { featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] },
+            { featureType: "transit", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+            { featureType: "road", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+            { featureType: "road.highway", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+            { featureType: "road", elementType: "labels.text.fill", stylers: [{ lightness: 30 }] },
           ]
         : [
             { elementType: "geometry", stylers: [{ lightness: 50 }] },
@@ -631,7 +637,7 @@ function showDetailPanel(point: DataPoint, report: ScanReport) {
         <span class="pin-icon">&#x1F4CD;</span>
         ${Number(lat).toFixed(7)}, ${Number(lng).toFixed(7)}
       </div>
-      <button class="detail-close" id="close-detail">&times;</button>
+      <button class="detail-close" id="close-detail" aria-label="Close panel">&times;</button>
     </div>
   `;
 
@@ -699,6 +705,8 @@ function showDetailPanel(point: DataPoint, report: ScanReport) {
 
   detailPanelEl.innerHTML = html;
   detailPanelEl.classList.remove("hidden");
+  // Block map touch events while panel is open (prevents map from stealing scroll on mobile)
+  mapContainerEl.style.pointerEvents = "none";
 
   // Mark as just-opened — suppresses the triggering click from immediately closing the panel
   detailJustOpened = true;
@@ -707,6 +715,7 @@ function showDetailPanel(point: DataPoint, report: ScanReport) {
   document.getElementById("close-detail")?.addEventListener("click", (e) => {
     e.stopPropagation();
     detailPanelEl.classList.add("hidden");
+    mapContainerEl.style.pointerEvents = "";
     if (currentOutsideClickHandler) {
       document.removeEventListener("click", currentOutsideClickHandler);
       currentOutsideClickHandler = null;
@@ -718,6 +727,7 @@ function showDetailPanel(point: DataPoint, report: ScanReport) {
     if (detailJustOpened) return;
     if (!detailPanelEl.contains(e.target as Node)) {
       detailPanelEl.classList.add("hidden");
+      mapContainerEl.style.pointerEvents = "";
       document.removeEventListener("click", currentOutsideClickHandler!);
       currentOutsideClickHandler = null;
     }
@@ -784,6 +794,128 @@ function isAIPlatform(platform?: string): boolean {
   return ["chatgpt", "gemini", "grok", "gaio", "aimode"].includes(p);
 }
 
+// ── Fallback Grid (brand scans with 0,0 coordinates) ────────────────────────
+
+function allZeroCoords(points: DataPoint[]): boolean {
+  return points.length > 0 && points.every(function(p) {
+    return Math.abs(parseFloat(String(p.lat))) < 0.01 && Math.abs(parseFloat(String(p.lng))) < 0.01;
+  });
+}
+
+function renderFallbackGrid(report: ScanReport, data: GridData) {
+  var points = data.data_points || [];
+  var gs = Number(report.grid_size) || Math.round(Math.sqrt(points.length));
+  var isAI = isAIPlatform(report.platform);
+
+  // Pin size scaling (same logic as map pins)
+  var pinSizeMap: Record<number, number> = { 3: 40, 5: 36, 7: 32, 9: 26, 11: 22, 13: 20, 15: 18 };
+  var pinSize = pinSizeMap[gs] || (gs <= 3 ? 40 : gs <= 5 ? 36 : gs <= 7 ? 32 : gs <= 9 ? 26 : gs <= 11 ? 22 : gs <= 13 ? 20 : 18);
+  var labelFontSize = gs <= 5 ? 14 : gs <= 7 ? 12 : gs <= 9 ? 11 : 10;
+
+  // Build the CSS grid
+  var grid = document.createElement("div");
+  grid.className = "fallback-grid";
+  grid.style.gridTemplateColumns = "repeat(" + gs + ", " + pinSize + "px)";
+  grid.style.gridTemplateRows = "repeat(" + gs + ", " + pinSize + "px)";
+
+  for (var i = 0; i < points.length; i++) {
+    var point = points[i];
+    var targetRank = getTargetRank(point, report);
+
+    // Determine pin color, label, and title — SAME logic as map renderMap()
+    // has_ai field may be missing — infer from scrape content (false = no AI overview)
+    var hasAI = point.has_ai != null ? Boolean(point.has_ai) : (point.scrape !== false);
+    var isNoAIResults = isAI && !hasAI;
+
+    var color: string;
+    var labelText = "";
+    var title = "";
+
+    if (isNoAIResults) {
+      // GAIO: no AI Overview at this location — gray prohibited icon
+      color = "#999";
+      labelText = "";
+      title = "Search Returned No AI Results";
+    } else if (isAI) {
+      if (!targetRank) {
+        // AI: business not mentioned — dark red, no text
+        color = RANK_COLORS[9];
+        labelText = "";
+        title = "Your Business Not Found";
+      } else {
+        color = getRankColor(targetRank);
+        labelText = String(targetRank);
+        title = "Brand Position: " + targetRank;
+      }
+    } else {
+      if (!targetRank || targetRank >= 20) {
+        // Google Maps: not ranked or ranked >20 — dark red with "20+"
+        color = RANK_COLORS[9];
+        labelText = "20+";
+        title = targetRank ? "Your Rank: " + targetRank : "Your Business Not Found";
+      } else {
+        color = getRankColor(targetRank);
+        labelText = String(targetRank);
+        title = "Your Rank: " + targetRank;
+      }
+    }
+
+    var pin = document.createElement("div");
+    pin.className = "fallback-pin";
+    pin.style.width = pinSize + "px";
+    pin.style.height = pinSize + "px";
+    pin.style.backgroundColor = color;
+    pin.style.fontSize = labelFontSize + "px";
+
+    if (labelText === "20+") {
+      pin.style.fontSize = (gs >= 9 ? 8 : 10) + "px";
+    }
+
+    // GAIO no-AI-overview: render prohibited slash icon inside pin via SVG background
+    if (isNoAIResults) {
+      var slashSize = Math.round(pinSize * 0.6);
+      var slashSvg = "data:image/svg+xml," + encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="' + slashSize + '" height="' + slashSize + '" viewBox="0 0 24 24">' +
+        '<circle cx="12" cy="12" r="9" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="2"/>' +
+        '<line x1="5.5" y1="5.5" x2="18.5" y2="18.5" stroke="rgba(255,255,255,0.7)" stroke-width="2"/>' +
+        '</svg>'
+      );
+      pin.style.backgroundImage = "url(\"" + slashSvg + "\")";
+      pin.style.backgroundRepeat = "no-repeat";
+      pin.style.backgroundPosition = "center";
+    } else {
+      pin.textContent = labelText;
+    }
+
+    pin.title = title;
+
+    // Click handler — reuse existing detail panel
+    (function(pt) {
+      pin.addEventListener("click", function() {
+        showDetailPanel(pt, report);
+      });
+    })(point);
+
+    grid.appendChild(pin);
+  }
+
+  // Replace the map container content with the fallback grid
+  // Reset the wrapper from square-aspect-ratio map to auto-height
+  var mapWrapper = document.getElementById("map-wrapper")!;
+  mapWrapper.style.height = "auto";
+  mapWrapper.style.paddingBottom = "0";
+
+  mapContainerEl.style.position = "static";
+  mapContainerEl.innerHTML = "";
+  mapContainerEl.appendChild(grid);
+
+  // Caption below grid (matches production: "N x N grid = X query repetitions per keyword")
+  var caption = document.createElement("div");
+  caption.className = "fallback-caption";
+  caption.textContent = gs + " x " + gs + " grid = " + points.length + " query repetitions per keyword";
+  mapContainerEl.appendChild(caption);
+}
+
 // ── Map Rendering ────────────────────────────────────────────────────────────
 
 async function renderMap(report: ScanReport, data: GridData) {
@@ -835,6 +967,13 @@ async function renderMap(report: ScanReport, data: GridData) {
   const isAI = isAIPlatform(report.platform);
   const bounds = new google.maps.LatLngBounds();
 
+  // Pin size scales with grid size to prevent overlap on larger grids
+  const gs = Number(report.grid_size) || 3;
+  const pinSizeMap: Record<number, number> = { 3: 40, 5: 36, 7: 32, 9: 26, 11: 22, 13: 20, 15: 18 };
+  const pinSize = pinSizeMap[gs] || (gs <= 3 ? 40 : gs <= 5 ? 36 : gs <= 7 ? 32 : gs <= 9 ? 26 : gs <= 11 ? 22 : gs <= 13 ? 20 : 18);
+  const pinAnchor = pinSize / 2;
+  const labelFontSize = gs <= 5 ? "14px" : gs <= 7 ? "12px" : gs <= 9 ? "11px" : "10px";
+
   // Track clickable points for map-level click handling
   // (marker.addListener doesn't work in claude.ai's iframe sandbox)
   interface ClickablePoint {
@@ -852,8 +991,10 @@ async function renderMap(report: ScanReport, data: GridData) {
 
     const targetRank = getTargetRank(point, report);
 
-    // AI scans: check has_ai to distinguish "no AI results" from "AI results but not found"
-    const hasAI = point.has_ai !== false; // default true if field missing (traditional scans)
+    // AI scans: detect "no AI overview" at this grid point.
+    // The API doesn't always include has_ai — infer from scrape content when missing.
+    // scrape === false means no AI response was generated at this coordinate.
+    const hasAI = point.has_ai != null ? Boolean(point.has_ai) : (point.scrape !== false);
     const isNoAIResults = isAI && !hasAI;
 
     // Determine pin icon, label, and title — matches production build_markers()
@@ -898,14 +1039,14 @@ async function renderMap(report: ScanReport, data: GridData) {
       map,
       icon: {
         url: pinUrl,
-        scaledSize: new google.maps.Size(40, 40),
-        anchor: new google.maps.Point(20, 20),
+        scaledSize: new google.maps.Size(pinSize, pinSize),
+        anchor: new google.maps.Point(pinAnchor, pinAnchor),
       },
       label: {
         text: labelText || " ",
         color: labelText.trim() ? "#ffffff" : "transparent",
         fontWeight: "bold",
-        fontSize: labelText.length > 2 ? "10px" : "14px",
+        fontSize: labelText.length > 2 ? (gs >= 9 ? "8px" : "10px") : labelFontSize,
         fontFamily: "Arial, sans-serif",
       },
       title,
@@ -1111,7 +1252,15 @@ app.ontoolresult = async (result: any) => {
     }
 
     loadingEl.textContent = `Rendering ${gridData.data_points.length} points...`;
-    await renderMap(scanReport, gridData);
+
+    // Brand scans have all data points at 0,0 — render CSS grid fallback instead of Google Maps
+    if (allZeroCoords(gridData.data_points)) {
+      console.log("[geogrid] Brand scan detected (all coords 0,0) — using CSS grid fallback");
+      renderFallbackGrid(scanReport, gridData);
+    } else {
+      await renderMap(scanReport, gridData);
+    }
+
     loadingEl.classList.add("hidden");
 
     // Tell host our preferred size — square map + metrics bar

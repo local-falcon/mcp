@@ -35,7 +35,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
   const server = new McpServer(
     {
     name: "Local Falcon MCP Server",
-    version: "1.0.0",  // Keep in sync with package.json
+    version: "1.3.0",  // Keep in sync with package.json
     icons: [
       {
         src: "data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHN2ZyBpZD0iTGF5ZXJfMSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB2ZXJzaW9uPSIxLjEiIHZpZXdCb3g9IjAgMCA3MTQuNzIgMTAwMCI+CiAgPCEtLSBHZW5lcmF0b3I6IEFkb2JlIElsbHVzdHJhdG9yIDI5LjAuMCwgU1ZHIEV4cG9ydCBQbHVnLUluIC4gU1ZHIFZlcnNpb246IDIuMS4wIEJ1aWxkIDE4NikgIC0tPgogIDxkZWZzPgogICAgPHN0eWxlPgogICAgICAuc3QwIHsKICAgICAgICBmaWxsOiAjMjg0MDYwOwogICAgICB9CgogICAgICAuc3QwLCAuc3QxIHsKICAgICAgICBmaWxsLXJ1bGU6IGV2ZW5vZGQ7CiAgICAgIH0KCiAgICAgIC5zdDEgewogICAgICAgIGZpbGw6ICNlNjJhMmQ7CiAgICAgIH0KICAgIDwvc3R5bGU+CiAgPC9kZWZzPgogIDxwYXRoIGNsYXNzPSJzdDEiIGQ9Ik0xMjguNTIsMjM2Ljc3YzAsNjUuMzgsMjUuODksMTI0LjU4LDY3LjcyLDE2Ny40M2wxNjEuMDksMTY0Ljk3LDE2MS4wOC0xNjQuOTdjNDEuODMtNDIuODUsNjcuNzItMTAyLjA1LDY3LjcyLTE2Ny40M0M1ODYuMTMsMTA2LjgyLDQ4My45MSwxLjMyLDM1Ny4zMywwYy0xMjYuNTksMS4zMi0yMjguODEsMTA2LjgyLTIyOC44MSwyMzYuNzdaTTI1NC43NiwyMzcuMTVjMC01Ni43NSw0NS45Mi0xMDIuNzYsMTAyLjU3LTEwMi43NnMxMDIuNTYsNDYuMDEsMTAyLjU2LDEwMi43Ni00NS45MiwxMDIuNzctMTAyLjU2LDEwMi43Ny0xMDIuNTctNDYuMDEtMTAyLjU3LTEwMi43N1oiLz4KICA8cGF0aCBjbGFzcz0ic3QwIiBkPSJNMjA0Ljg3LDY3OC45OWwtMjguNDQsNDguODJzLTYuOTQsOS43OS04LjgzLDI4LjQxYy0xLjg5LDE4LjYzLDEwLjc1LDMwLjcyLDEwLjc1LDMwLjcyLDAsMC0yLjk2LDE3LjgyLS42NSwzMC44Niw1LjUxLDMxLjAxLDM5LjEyLDI0LjY2LDM5LjEyLDI0LjY2LDAsMC05LjE4LTcuOC0xMC43Ni0xNS42OS0xLjU5LTcuODksOS44MS0yMS4zOSw5LjgxLTIxLjM5bDQ5LjI1LTY1LjQ5YzEuMTksMS41MSwyLjM2LDMuMDQsMy41Myw0LjU4di4wMmMzLjE0LDQuMTUsNi4xNyw4LjQsOS4wOSwxMi43NCw1LjQzLDguMDgsMTAuNSwxNi40NywxNS4yNCwyNS4wNiwxNi4wNy01MS43NSw0MS4yMi0xMDguOTIsNzkuOTgtMTQ5Ljg4LDU1LjgyLTU5LjAxLDE0My43LTEyMi4yMiwyMDAuNzMtMTk4LjkxaC4yMWMzNC42NS00Ni42LDU3LjkyLTk4LjE4LDU1LjY4LTE1Ni44Mi0uNy0xOC4zNC0zLjc3LTM1LjM5LTguNjQtNTEuMTktMi4zOC01LjU2LTYuMDMtMTMuNjgtOS0xOC40OS0zLjQ1LTUuNjEtNy4xOC0xMC4zOC0xMC4zMS0xMy45OSwyLjgxLDE0LjE4LDQuMjgsMjguODEsNC4yOCw0My43NiwwLDE5LjA3LTIuMzgsMzcuNjItNi45LDU1LjM4LTkuMjYsNTIuNDItMzguMjksOTguOTQtNzUuMDIsMTQxLjM1aC0uMmMtNDcuNzEsNTUuMDktMTA4LjQsMTAzLjI2LTE1NS42MSwxNDguNGwtMTEsMTAuOTl2LS4yNmMtNC4wOCw0LjA2LTguMDMsOC4wOS0xMS44NCwxMi4xMS0yMS44NSwyMy4xLTM5LjM3LDUxLjM1LTUzLjM3LDgwLjg3bC0xLjcxLTEuODJDMjAyLjE3LDU5MC42OCwzNC4yNSw0ODcuMDksMzMuNywzMzYuNTdjLTYuNDQsNC44OS0xNi41NSwxNC45MS0yNS40MywzMy45My0xMC44MSwyMy4xNy04LjUsNDguMTMtNi44OSw1OC4yOSwyNy4xLDEwMS4wNCwxMjYuMTIsMTc5Ljg1LDIwMy40OSwyNTAuMlpNMTkwLjczLDc3NC41N2MtLjk4LS4xNS0xLjg3LS41Ni0yLjYzLTEuMiwzLjAxLTEuMjUsNS42NS00LjkzLDYuNDktOS41NS44NS00LjYyLS4zNC04Ljg1LTIuNzYtMTAuODcuOTUtLjQsMS45NC0uNTUsMi45Mi0uNDEsNC4xLjU5LDYuNTEsNS45OSw1LjQsMTIuMDgtMS4xMSw2LjA4LTUuMzMsMTAuNTMtOS40Miw5Ljk1Wk0xMTguMjcsOTIyLjU1czU3LjI2LDE0LDE0Ny43LTE5LjAxYzE3LjUtNi4zOCwzMi45Mi0xMy40NSw0Ni40LTIwLjY4LTMuODEtMTEuMTYtOC4wNi0yMi40Ni0xMi43OC0zMy42OS0xNy43OCwxNC41My0zNy43NCwyOC4xMy01OC41MSwzNy4zNy02OS43LDMxLjAxLTEyMi44MSwzNi4wMS0xMjIuODEsMzYuMDFaTTY5Ni4yNyw4MjMuNTVzLTUzLjExLTUtMTIyLjgxLTM2LjAxYy0zMS40OS0xNC4wMS02MS4xMi0zOC4wMy04NC4xNC02MC4xNS00LjAxLDQtNy44OSw3Ljk3LTExLjYzLDExLjkzLTUuNTksNS45MS0xMC44OSwxMi4xNS0xNS45MywxOC42NiwxOS45NSwxNS4yNCw0OC4zNiwzMi41Myw4Ni44MSw0Ni41Niw5MC40NCwzMy4wMSwxNDcuNywxOS4wMSwxNDcuNywxOS4wMVpNNzA2LjI3LDg4Ni41cy02NC01LTE0OC0zNmMtNDMuMzEtMTUuOTgtODMuNjktNDQuOTktMTEyLjY1LTY5LjM1LTguMDYsMTIuNzktMTUuMjcsMjYuMjQtMjEuNzQsMzkuOTQsMjQuMDMsMTUuMiw1OC4xOSwzMi40MiwxMDQuMzksNDYuNDEsMTA5LDMzLDE3OCwxOSwxNzgsMTlaTTMwNC4yMSw2MTguODljLTkzLjMtODguNTEtMjM2LjMxLTE4OC45LTIzMC45MS0zMzAuMzUuNTgtMTUuMjUsMi40OC0yOC45NSw1LjU1LTQxLjUyLTUuNTQsNS4yMi0xNC40NSwxNS4yMi0yMi41OCwzMS40OC01Ljc2LDExLjUzLTEwLDIwLTEwLjU5LDM3LjcxLTQuOCwxNDQuNzUsMTQ0LjMxLDI0Ni40NiwyMzcuMywzMzYuNDgsNi40NC0xMS43MiwxMy41LTIzLjA4LDIxLjIzLTMzLjhaTTM0MS4zMyw1NzcuMTVjLTgzLjQ3LTc4LjY4LTIwNC43Ni0xNjYuODgtMjI1LjYzLTI4NS00LjUxLTE3Ljc2LTYuOS0zNi4zMS02LjktNTUuMzgsMC0xNC45NSwxLjQ3LTI5LjU4LDQuMjgtNDMuNzYtMy4xMywzLjYxLTYuODYsOC4zOC0xMC4zMSwxMy45OS0yLjk2LDQuODEtNi42MSwxMi45My04Ljk5LDE4LjQ5LTQuODgsMTUuOC03Ljk1LDMyLjg1LTguNjUsNTEuMTktNS4zNiwxNDAuNjYsMTM2LjAzLDI0MC43MiwyMjkuMzUsMzI4Ljg3LDMuNTktNC4zNiw3LjI5LTguNiwxMS4xNC0xMi42NiwzLjgtNC4wMiw3Ljc1LTguMDYsMTEuODMtMTIuMTJ2LjI2bDMuODgtMy44OFpNMzMzLjY2LDgxNy45NmMzLjIzLTEwLjE5LDYuODItMjAuNTksMTAuODEtMzFsLjUzLTEuMzcuMjktLjc1LjU4LTEuNDYuOTItMi4zNSwyLjAzLTUuMDZjMTUuNDItMzcuNjksMzYuMDctNzQuOTUsNjMuNTgtMTA0LjAzLDY1LjE0LTY4Ljg1LDE3My45LTE0My40MiwyMjYuMzktMjM4LjQ0aC0uMDljMTkuODYtMzUuOTEsMzEuNzQtNzQuNzQsMzAuMzMtMTE3LjI5LS41OS0xNy43MS00LjgyLTI2LjE4LTEwLjU5LTM3LjcxLTguMTMtMTYuMjYtMTcuMDQtMjYuMjYtMjIuNTgtMzEuNDgsMy4wOCwxMi41Nyw0Ljk4LDI2LjI3LDUuNTYsNDEuNTIsMi4wNSw1My43MS0xNy4zLDEwMS40OS00Ny4yLDE0NC45NmgtLjIxYy01Ni40Niw4Mi4wOC0xNTAuNTQsMTQ4Ljc1LTIwOS4yMiwyMTAuNzctMjQsMjUuMzYtNDIuNzcsNTYuOTYtNTcuNDEsODkuNjItOC40OCwxOC45NC0xNS41OCwzOC4yMi0yMS40OSw1Ni44OGwtMi4wMSw5LjcsMiw3LjM2YzQuMzQsOS4zNSw4LjMzLDE4LjgxLDEyLDI4LjI2LDIuMDksNS4zOCw0LjA3LDEwLjc1LDUuOTUsMTYuMSwyLjg1LTEwLjk5LDYuMS0yMi40OCw5LjgzLTM0LjIzWk0zNTcuMzMsMTAwMHYtMS40OHMtLjA4LjcyLS4wOC43MmwuMDguNzZaTTM1Ny4zMiw5OTguNTJjMS44My0xNy40NywyMS4zNi0xODUuMzQsMTA2LjM3LTI3NS4yLDc2LjQzLTgwLjc5LDIxMi45NS0xNjkuNDYsMjQ4LjExLTI4OS44MmguMjFjLjQ2LTEuNTYuOS0zLjEzLDEuMzItNC43MSwxLjYyLTEwLjE2LDMuOTMtMzUuMTItNi44OS01OC4yOS04Ljg3LTE5LjAyLTE4Ljk5LTI5LjA0LTI1LjQzLTMzLjkzLS4xMiwzNC42NS05LjEyLDY2LjgxLTIzLjk3LDk2LjkzaC0uMjFjLTQ5LjY2LDEwMC43Mi0xNjQuNzcsMTc4LjYxLTIzMi41OSwyNTAuMjktMjkuNTksMzEuMjgtNTEuMjYsNzIuMDItNjYuOTksMTEyLjU3bC0uMDQuMDktLjAzLjExYy0xMC45OCwyOC4zMS0xOS4wNyw1Ni41My0yNC45Niw4MS4zNiwxOC4wNSw1OS44MSwyMy45OSwxMTEuMzgsMjQuOTUsMTIwLjYxbC4wOC43MS4wNy0uNzJaTTM1Ny4xNyw5OTguNTN2MS40N3MuMDgtLjc2LjA4LS43NmwtLjA4LS43MVoiLz4KPC9zdmc+",
@@ -280,6 +280,23 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
             // ChatGPT format (if needed later): mcp-localfalcon-com.oaiusercontent.com
             domain: "82abe0bc24d93c63b15c80a760135490.claudemcpcontent.com",
           },
+          "openai/widgetCSP": {
+            connect_domains: [
+              "https://maps.googleapis.com",
+              "https://*.googleapis.com",
+              "https://*.google.com",
+            ],
+            resource_domains: [
+              "https://maps.googleapis.com",
+              "https://*.googleapis.com",
+              "https://*.gstatic.com",
+              "https://*.google.com",
+              "https://*.googleusercontent.com",
+              "https://images.openai.com",
+              "https://fastly.4sqi.net",
+              "https://*.amazonaws.com",
+            ],
+          },
         },
       }],
     };
@@ -357,6 +374,8 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
         ui: {
           resourceUri: "ui://reports/geogrid-heatmap",
         },
+        "openai/outputTemplate": "ui://reports/geogrid-heatmap",
+        "openai/widgetDescription": "Interactive geo-grid showing local search rankings across a geographic area with color-coded position indicators",
       },
     },
     async ({ reportKey, fieldmask }, ctx) => {
@@ -423,7 +442,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       platform: z.enum(['google', 'apple', 'gaio', 'chatgpt', 'gemini', 'grok', 'aimode']).describe("The platform to run the scan against."),
       aiAnalysis: z.boolean().default(false).describe("Whether AI analysis should be generated for this scan (optional, defaults to false)."),
     },
-    { title: "Run Ranking Scan", destructiveHint: true, openWorldHint: false },
+    { title: "Run Ranking Scan", readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     async ({ placeId, keyword, lat, lng, gridSize, radius, measurement, platform, aiAnalysis }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -439,10 +458,10 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
     "listLocalFalconCampaignReports",
     `Lists campaign reports in the account. Campaigns are the primary method for scheduled, recurring scans across multiple locations and/or keywords. Can be configured as: single location + single keyword, multiple locations + single keyword, single location + multiple keywords, or multiple locations + multiple keywords. Campaign scans consolidate all data in the campaign report — no separate location/keyword/trend reports are generated. Use fieldmask to control returned fields. Recommended fieldmask: "report_key,name,status,locations,keywords,frequency,last_run,next_run,arp,atrp,solv,arp_move,atrp_move,solv_move".`,
     {
-      startDate: z.string().date().nullish().describe("A lower limit date of a Campaign run you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
-      endDate: z.string().date().nullish().describe("Upper limit date of a Campaign run or schedule you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
+      startDate: z.string().date().nullish().describe("A lower limit date of a Campaign run you wish to retrieve. Expects date formatted as YYYY-MM-DD (ISO 8601)."),
+      endDate: z.string().date().nullish().describe("Upper limit date of a Campaign run or schedule you wish to retrieve. Expects date formatted as YYYY-MM-DD (ISO 8601)."),
       placeId: z.string().nullish().describe("Filter only results for specific Google Place ID. Supports multiple Google Place IDs, seperated by commas."),
-      runDate: z.string().date().nullish().describe("Filter only results for a specific Campaign run date. Expects date formatted as MM/DD/YYYY. Defaults to the last report run."),
+      runDate: z.string().date().nullish().describe("Filter only results for a specific Campaign run date. Expects date formatted as YYYY-MM-DD (ISO 8601). Defaults to the last report run."),
       nextToken: z.string().nullish().describe("This parameter is used to get the next 'page' of results. The value used with the parameter is provided from a previous response by this endpoint if more 'pages' of results exist."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
     },
@@ -537,7 +556,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
     {
       campaignKey: z.string().describe("The key of the campaign you wish to run."),
     },
-    { title: "Run Campaign", destructiveHint: true, openWorldHint: false },
+    { title: "Run Campaign", readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     async ({ campaignKey }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -659,8 +678,8 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
     "listLocalFalconGuardReports",
     `Lists locations monitored by Falcon Guard. Guard monitors Google Business Profiles for unwanted changes, checking twice daily. $1/month for up to 10 locations. OAuth-connected locations include enhanced metrics: calls, website clicks, directions, impressions (up to 18 months historical). Non-OAuth locations only show GBP change history. Use fieldmask to control returned fields. Recommended fieldmask: "report_key,place_id,location.name,location.address,location.rating,location.reviews,status,date_added,date_last". Filter by date range or status (protected/paused).`,
     {
-      startDate: z.string().date().nullish().describe("A lower limit date you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
-      endDate: z.string().date().nullish().describe("Upper limit date you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
+      startDate: z.string().date().nullish().describe("A lower limit date you wish to retrieve. Expects date formatted as YYYY-MM-DD (ISO 8601)."),
+      endDate: z.string().date().nullish().describe("Upper limit date you wish to retrieve. Expects date formatted as YYYY-MM-DD (ISO 8601)."),
       status: z.enum(['protected', 'paused']).nullish().describe("Filter results by status: protected or paused."),
       nextToken: z.string().nullish().describe("This parameter is used to get the next 'page' of results. The value used with the parameter is provided from a previous response by this endpoint if more 'pages' of results exist."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
@@ -768,7 +787,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       guardKey: z.string().nullish().describe("Falcon Guard report key(s) to remove. Supports multiple keys separated by commas."),
       placeId: z.string().nullish().describe("Google Place ID(s) to remove protection for. Supports multiple IDs separated by commas. Required if guardKey is not provided."),
     },
-    { title: "Remove Falcon Guard Protection", destructiveHint: true, openWorldHint: false },
+    { title: "Remove Falcon Guard Protection", readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     async ({ guardKey, placeId }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
@@ -942,8 +961,8 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
     "getLocalFalconCompetitorReports",
     `Lists competitor analysis reports. One is AUTO-GENERATED with every scan, showing top-ranking businesses in the scanned area. Filter by placeId, keyword, date range, or grid size. Use fieldmask to control returned fields. Recommended fieldmask: "report_key,date,keyword,location.name,grid_size,platform".`,
     {
-      startDate: z.string().date().nullish().describe("A lower limit (oldest) date you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
-      endDate: z.string().date().nullish().describe("Upper limit (newest) date you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
+      startDate: z.string().date().nullish().describe("A lower limit (oldest) date you wish to retrieve. Expects date formatted as YYYY-MM-DD (ISO 8601)."),
+      endDate: z.string().date().nullish().describe("Upper limit (newest) date you wish to retrieve. Expects date formatted as YYYY-MM-DD (ISO 8601)."),
       placeId: z.string().nullish().describe("Filter only results for specific Google Place ID. Supports multiple Google Place IDs, seperated by commas."),
       keyword: z.string().nullish().describe("Filter only results similar to specified keyword (loose match)."),
       gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15']).nullish().describe("Filter only for specific grid sizes. Expects 3, 5, 7, 9, 11, 13, or 15."),
