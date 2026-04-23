@@ -242,6 +242,16 @@ async function fetchWithTimeout(url: string, options = {}, timeoutMs = DEFAULT_T
   }
 }
 
+// Matches both "timeout" (one word) and "timed out" (two words). The fetchWithTimeout
+// helper above throws "Request timed out after Nms", so a naive .includes('timeout')
+// check misses it — the bug that caused scan submissions to surface as errors instead
+// of the intended "submitted and processing" success response.
+export function isTimeoutError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (error.name === 'AbortError') return true;
+  return /timeout|timed out/i.test(error.message ?? '');
+}
+
 // Rate limiting implementation
 class RateLimiter {
   maxRequests: number;
@@ -1487,7 +1497,7 @@ export async function runLocalFalconScan(
       );
     } catch (error) {
       // Timeout = scan was submitted and is processing (this is expected, not an error)
-      if ((error as Error).name === 'AbortError' || (error as Error).message?.includes('timeout')) {
+      if (isTimeoutError(error)) {
         return {
           success: true,
           message: "Scan submitted successfully and is now processing. Scans typically take 30 seconds to several minutes to complete depending on grid size and queue load.",
