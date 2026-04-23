@@ -1438,6 +1438,54 @@ export async function fetchLocalFalconGuardReport(apiKey: string, placeId: strin
   });
 }
 
+type ScanSubmissionParams = {
+  placeId: string;
+  keyword: string;
+  gridSize: string;
+  platform: string;
+};
+
+// Shape the MCP return for the HTTP 202 "scan is processing" branch. When the server
+// accepts a scan under eager mode but can't finish within its 20s eager budget, it
+// returns 202 with data.report_key populated so the agent can poll. Mirrors the 202
+// pattern in fetchLocalFalconReport().
+export function buildEagerPendingResponse(
+  data: any,
+  params: ScanSubmissionParams
+): any {
+  const reportKey = data?.data?.report_key;
+  const status = data?.data?.status ?? 'pending';
+  return {
+    success: true,
+    message: reportKey
+      ? `Scan submitted successfully and is processing. Report key: ${reportKey}. Poll getLocalFalconReport with this key to check status — it will return HTTP 202 with a pending note until the scan completes.`
+      : "Scan submitted successfully and is processing. Poll listLocalFalconScanReports with the same placeId to find the report_key.",
+    report_key: reportKey,
+    status,
+    place_id: params.placeId,
+    keyword: params.keyword,
+    grid_size: params.gridSize,
+    platform: params.platform,
+    _mcp_note: "The scan is queued and processing. Call getLocalFalconReport with this report_key to poll status. Do NOT retry runLocalFalconScan — retrying consumes additional credits."
+  };
+}
+
+// Shape the MCP return for the network-timeout fallback. Shouldn't fire under normal
+// conditions (SCAN_SUBMIT_TIMEOUT_MS > server's 20s eager wait), but can happen under
+// network congestion. report_key isn't available here; agent must recover by listing
+// recent scans.
+export function buildScanTimeoutFallback(params: ScanSubmissionParams): any {
+  return {
+    success: true,
+    message: "Scan submitted successfully but the report key could not be captured due to a network timeout. Check your recent scans via listLocalFalconScanReports in a moment to find it.",
+    place_id: params.placeId,
+    keyword: params.keyword,
+    grid_size: params.gridSize,
+    platform: params.platform,
+    _mcp_note: "The scan is running. Use listLocalFalconScanReports with the same placeId to find the submitted report. Do NOT retry runLocalFalconScan — retrying consumes additional credits."
+  };
+}
+
 /**
  * Runs a scan at the specified coordinate point and gets ranking data for a specified business.
  * @param {string} apiKey - Your Local Falcon API key
@@ -1478,12 +1526,17 @@ export async function runLocalFalconScan(
     form.append('measurement', measurement);
     form.append('platform', platform);
     form.append('ai_analysis', aiAnalysis.toString());
+    // eager=1 tells LF.api's methods/v2/run-scan/method.php runtime_check() to cap
+    // its server-side wait at 20s instead of 360s. If the scan completes in <20s we
+    // get HTTP 200 with the full report; otherwise HTTP 202 with data.report_key
+    // populated so the agent can poll via getLocalFalconReport. Resolves Bug #2
+    // (submission previously returned no report_key on timeout).
+    form.append('eager', '1');
 
-    // Scan submission strategy:
-    // The Local Falcon API blocks until the scan completes, which can take seconds to 10+ minutes.
-    // We use a short timeout to catch auth/validation errors, then treat a timeout as a SUCCESSFUL
-    // submission — the scan was queued and is processing. No retries (would consume extra credits).
-    const SCAN_SUBMIT_TIMEOUT_MS = 15000; // 15s — enough to catch errors, not meant to wait for completion
+    // Server's eager budget is 20s (runtime_check in LF.api). 25s keeps a 5s margin so
+    // the MCP's timeout outlasts the server — we capture the 202-with-report_key
+    // response instead of aborting into the network-timeout fallback path.
+    const SCAN_SUBMIT_TIMEOUT_MS = 25_000;
 
     let response: any;
     try {
@@ -1496,28 +1549,29 @@ export async function runLocalFalconScan(
         SCAN_SUBMIT_TIMEOUT_MS
       );
     } catch (error) {
-      // Timeout = scan was submitted and is processing (this is expected, not an error)
+      // MCP-side timeout before server responded — shouldn't happen with 25s > 20s
+      // eager budget, but possible under network congestion. report_key is unreachable
+      // from here; agent recovers via listings.
       if (isTimeoutError(error)) {
-        return {
-          success: true,
-          message: "Scan submitted successfully and is now processing. Scans typically take 30 seconds to several minutes to complete depending on grid size and queue load.",
-          place_id: placeId,
-          keyword: keyword,
-          grid_size: gridSize,
-          platform: platform,
-          _mcp_note: "The scan is running. Use listLocalFalconScanReports with the same placeId to find the completed report. Do NOT retry runLocalFalconScan — the scan is already queued and retrying would consume additional credits. If the report does not appear after 4-5 polling attempts, inform the user that their scan is still processing and suggest they check https://www.localfalcon.com/reports for results, or ask again in a few minutes."
-        };
+        return buildScanTimeoutFallback({ placeId, keyword, gridSize, platform });
       }
       throw error;
     }
 
-    // If the API responded within 15s, the scan completed quickly — return the full result
     const data = await safeParseJson(response);
 
     if (!response.ok) {
       throw new Error(data.message || `HTTP error! status: ${response.status}`);
     }
 
+    // HTTP 202 — scan still processing after server's eager wait. report_key is present
+    // in data.data so the agent can poll getLocalFalconReport until completion.
+    if (response.status === 202) {
+      return buildEagerPendingResponse(data, { placeId, keyword, gridSize, platform });
+    }
+
+    // HTTP 200 — scan completed within server's 20s eager budget. Full report is in
+    // the response body with report_key inside data.
     return data;
   } catch (error) {
     console.error('Error running scan:', error);
