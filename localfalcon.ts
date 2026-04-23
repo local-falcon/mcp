@@ -252,6 +252,124 @@ export function isTimeoutError(error: unknown): boolean {
   return /timeout|timed out/i.test(error.message ?? '');
 }
 
+// Parses a Local Falcon API error into a clearer MCP Error. Accepts either the raw
+// response body as a string (from `await res.text()`) or the already-parsed data
+// object (as used by scan/action endpoints that call safeParseJson before the
+// error check). Maps the server's status code to specific agent-facing guidance;
+// preserves the server's message as supplemental context.
+//
+// Mapping is driven by V.3 probe evidence:
+//   - 404: server message conflates "not available / no permission"; MCP rewrites
+//     to "not found OR different account OR expired" so agents understand the
+//     options. Server message attached for transparency.
+//   - 403: similar conflation; MCP rewrites to be explicit about auth/account scope.
+//   - 400: server-side malformed input (M6's Zod validation catches client-side
+//     malformed input before the request). Pass the server message through.
+//   - 401: auth failure — "Check your API key."
+//   - 429: rate-limited — "Wait a moment before retrying."
+//   - Non-JSON error body (e.g., reviewsAnalysis plain text): pass through with a
+//     generic "Local Falcon API error" prefix and status.
+//   - Unknown/5xx: generic fallback with status + server message.
+export function parseApiError(status: number, errorBody: string | any): Error {
+  let parsed: any = null;
+  if (typeof errorBody === 'string') {
+    try {
+      parsed = JSON.parse(errorBody);
+    } catch {
+      // Non-JSON body (e.g., plain-text error from some endpoints)
+    }
+  } else if (errorBody && typeof errorBody === 'object') {
+    parsed = errorBody;
+  }
+
+  const rawMessage = typeof parsed?.message === 'string' ? parsed.message.trim() : '';
+  const serverMessage = rawMessage.length > 0 ? rawMessage : undefined;
+  const serverCode = typeof parsed?.code === 'number' ? parsed.code : status;
+  const serverSuffix = serverMessage ? ` (Server: ${serverMessage})` : '';
+
+  const effectiveStatus = serverCode || status;
+
+  if (effectiveStatus === 404) {
+    return new Error(
+      `Report not found. The reportKey may not exist, may have expired, or may belong to a different account. Verify the reportKey is correct.${serverSuffix}`
+    );
+  }
+  if (effectiveStatus === 403) {
+    return new Error(
+      `Access denied. This resource belongs to a different account, or the API key / OAuth token lacks permission. Verify the API key and scope.${serverSuffix}`
+    );
+  }
+  if (effectiveStatus === 400) {
+    const fallbackText =
+      typeof errorBody === 'string' && !parsed ? ` ${errorBody.trim().slice(0, 500)}` : '';
+    return new Error(
+      `Invalid request (400).${serverSuffix || fallbackText || ' No server detail provided.'}`
+    );
+  }
+  if (effectiveStatus === 401) {
+    return new Error(
+      `Authentication failed. Check your API key.${serverSuffix}`
+    );
+  }
+  if (effectiveStatus === 429) {
+    return new Error(
+      `Rate limit exceeded. Wait a moment before retrying.${serverSuffix}`
+    );
+  }
+
+  // Non-JSON plain-text error body (e.g., the reviewsAnalysis endpoint returning
+  // "You do not have permission to access this resource.")
+  if (parsed === null && typeof errorBody === 'string' && errorBody.trim()) {
+    return new Error(
+      `Local Falcon API error (status ${status}): ${errorBody.trim().slice(0, 500)}`
+    );
+  }
+
+  return new Error(`Local Falcon API error: ${status}${serverSuffix}`);
+}
+
+// Unwraps LF.api's standard {code, success, message, parameters, data, field_mask_warnings}
+// wrapper down to its `data` payload, AND preserves field_mask_warnings.exceptions[] as
+// a _warnings string array attached to the returned result. Call sites that used to do
+// `return data.data` (silently discarding the warnings siblings) should use this helper.
+//
+// Handling rules:
+//   - When response.data is missing, falls back to returning `response` itself, matching
+//     the defensive `data?.data ?? data` pattern used in several fetch functions.
+//   - When no warnings are present, returns the inner data unchanged (no _warnings key,
+//     no extra noise).
+//   - When warnings are present and inner is an object, spreads inner and adds
+//     _warnings as a sibling.
+//   - When warnings are present and inner is an array, wraps into { items, _warnings }
+//     (shape-changing, but no current call site returns a bare array to agents, so this
+//     only fires in unusual scenarios).
+//   - When warnings are present and inner is a scalar or undefined, wraps into
+//     { value, _warnings }.
+//   - Each raw path (e.g., "reports.fake.name") is humanized to
+//     "Unknown field in fieldmask: <path>" so agents read it without knowing the
+//     wrapper shape.
+export function unwrapWithWarnings(response: any): any {
+  // Use `'data' in response` (not `?.data ?? response`) so that an explicit
+  // null data value passes through as null instead of falling back to the wrapper.
+  const hasWrapper =
+    response !== null && typeof response === 'object' && 'data' in response;
+  const inner = hasWrapper ? response.data : response;
+  const exceptions: string[] | undefined =
+    response?.field_mask_warnings?.exceptions;
+
+  if (!exceptions?.length) return inner;
+
+  const warnings = exceptions.map((field) => `Unknown field in fieldmask: ${field}`);
+
+  if (Array.isArray(inner)) {
+    return { items: inner, _warnings: warnings };
+  }
+  if (inner !== null && typeof inner === 'object') {
+    return { ...inner, _warnings: warnings };
+  }
+  return { value: inner, _warnings: warnings };
+}
+
 // Rate limiting implementation
 class RateLimiter {
   maxRequests: number;
@@ -368,31 +486,32 @@ export async function fetchLocalFalconReports(apiKey: string, limit: string, nex
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
+      throw parseApiError(res.status, errorText);
     }
 
     const data = await safeParseJson(res);
+    const unwrapped = unwrapWithWarnings(data);
 
     // When fieldmask is used, the API returns the standard structure with filtered fields
     if (fieldmask) {
-      if (data?.data?.reports) {
+      if (unwrapped?.reports) {
         return {
-          ...data.data,
-          reports: data.data.reports.slice(0, parseInt(limit) || data.data.reports.length)
+          ...unwrapped,
+          reports: unwrapped.reports.slice(0, parseInt(limit) || unwrapped.reports.length)
         };
       }
-      // Fallback: return whatever the API gave us
-      return data?.data ?? data;
+      // Fallback: return whatever the unwrap gave us (preserves _warnings if present)
+      return unwrapped;
     }
 
     // Validate response structure before processing
-    if (!data || !data.data || !data.data.reports) {
+    if (!unwrapped || !unwrapped.reports) {
       throw new Error('Invalid response format from Local Falcon API');
     }
 
     return {
-      ...data.data,
-      reports: data.data.reports.slice(0, parseInt(limit) || data.data.reports.length)
+      ...unwrapped,
+      reports: unwrapped.reports.slice(0, parseInt(limit) || unwrapped.reports.length)
     };
   });
 }
@@ -429,30 +548,31 @@ export async function fetchLocalFalconTrendReports(apiKey: string, limit: string
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
+      throw parseApiError(res.status, errorText);
     }
 
     const data = await safeParseJson(res);
+    const unwrapped = unwrapWithWarnings(data);
 
     // When fieldmask is used, the API returns the standard structure with filtered fields
     if (fieldmask) {
-      if (data?.data?.reports) {
+      if (unwrapped?.reports) {
         return {
-          ...data.data,
-          reports: data.data.reports.slice(0, parseInt(limit) || data.data.reports.length)
+          ...unwrapped,
+          reports: unwrapped.reports.slice(0, parseInt(limit) || unwrapped.reports.length)
         };
       }
-      return data?.data ?? data;
+      return unwrapped;
     }
 
     // Validate response structure
-    if (!data || !data.data || !data.data.reports) {
+    if (!unwrapped || !unwrapped.reports) {
       throw new Error('Invalid response format from Local Falcon API');
     }
 
     return {
-      ...data.data,
-      reports: data.data.reports.slice(0, parseInt(limit) || data.data.reports.length)
+      ...unwrapped,
+      reports: unwrapped.reports.slice(0, parseInt(limit) || unwrapped.reports.length)
     };
   });
 }
@@ -491,7 +611,7 @@ export async function fetchLocalFalconAutoScans(apiKey: string, nextToken?: stri
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
+      throw parseApiError(res.status, errorText);
     }
 
     return await safeParseJson(res);
@@ -530,34 +650,34 @@ export async function fetchLocalFalconLocationReports(apiKey: string, limit: str
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
+      throw parseApiError(res.status, errorText);
     }
 
     const data = await safeParseJson(res);
+    const unwrapped = unwrapWithWarnings(data);
 
     // When fieldmask is used, the API returns the standard structure with filtered fields
     if (fieldmask) {
-      if (data?.data?.reports) {
+      if (unwrapped?.reports) {
         return {
-          ...data.data,
-          reports: data.data.reports.slice(0, parseInt(limit) || data.data.reports.length)
+          ...unwrapped,
+          reports: unwrapped.reports.slice(0, parseInt(limit) || unwrapped.reports.length)
         };
       }
-      return data?.data ?? data;
+      return unwrapped;
     }
 
     // Validate response
-    if (!data || !data.data || !data.data.reports) {
+    if (!unwrapped || !unwrapped.reports) {
       throw new Error('Invalid response format from Local Falcon API');
     }
 
-    const report = data.data;
-    const limitNum = parseInt(limit) || report.reports.length;
+    const limitNum = parseInt(limit) || unwrapped.reports.length;
 
-    return {
-      next_token: report.next_token,
-      ai_analysis: report.ai_analysis,
-      reports: report.reports.slice(0, limitNum).map((report: any) => {
+    const out: any = {
+      next_token: unwrapped.next_token,
+      ai_analysis: unwrapped.ai_analysis,
+      reports: unwrapped.reports.slice(0, limitNum).map((report: any) => {
         return {
           report_key: report.report_key,
           last_date: report.last_date,
@@ -570,6 +690,8 @@ export async function fetchLocalFalconLocationReports(apiKey: string, limit: str
         };
       }),
     };
+    if (unwrapped._warnings) out._warnings = unwrapped._warnings;
+    return out;
   });
 }
 
@@ -596,7 +718,7 @@ export async function fetchAllLocalFalconLocations(apiKey: string, query?: strin
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
+      throw parseApiError(res.status, errorText);
     }
 
     return await safeParseJson(res);
@@ -624,7 +746,7 @@ export async function fetchLocalFalconLocationReport(apiKey: string, reportKey: 
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
+      throw parseApiError(res.status, errorText);
     }
 
     return await safeParseJson(res);
@@ -657,32 +779,34 @@ export async function fetchLocalFalconReport(apiKey: string, reportKey: string, 
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
+      throw parseApiError(res.status, errorText);
     }
 
     const data = await safeParseJson(res);
+    const unwrapped = unwrapWithWarnings(data);
 
     // Handle 202 Accepted — scan report is still processing
     if (res.status === 202) {
       return {
-        ...(data?.data ?? data),
+        ...unwrapped,
         _mcp_note: "This scan report is still processing. Wait 30-60 seconds and call getLocalFalconReport again with the same report_key."
       };
     }
 
     try {
       // Validate the response
-      if (!data || !data.data) {
+      if (!unwrapped) {
         throw new Error('Invalid response format from Local Falcon API');
       }
 
       // Strip data_points by default — too large for LLM context windows
       // (e.g. 81 grid points × 20 results each). Preserve when fieldmask explicitly requests them.
+      // _warnings (if present from unwrapWithWarnings) passes through either branch.
       const wantsDataPoints = fieldmask && fieldmask.includes('data_points');
       if (wantsDataPoints) {
-        return data.data;
+        return unwrapped;
       }
-      const { data_points, ...cleanData } = data.data;
+      const { data_points, ...cleanData } = unwrapped;
       return cleanData;
     } catch (err) {
       throw new Error(`Failed to parse report data: ${err}`);
@@ -719,16 +843,17 @@ export async function fetchLocalFalconTrendReport(apiKey: string, reportKey: str
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
+      throw parseApiError(res.status, errorText);
     }
 
     const data = await safeParseJson(res);
+    const unwrapped = unwrapWithWarnings(data);
 
-    if (!data || !data.data) {
+    if (!unwrapped) {
       throw new Error('Invalid response format from Local Falcon API');
     }
 
-    const report = data.data;
+    const report = unwrapped;
 
     // Always clean up the response — strip heavy nested data regardless of fieldmask.
     // The scans array and locations array contain data_points that are too large for LLM context.
@@ -824,32 +949,33 @@ export async function fetchLocalFalconKeywordReports(apiKey: string, limit: stri
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
+      throw parseApiError(res.status, errorText);
     }
 
     const data = await safeParseJson(res);
+    const unwrapped = unwrapWithWarnings(data);
 
     // When fieldmask is used, the API returns the standard structure with filtered fields
     if (fieldmask) {
-      if (data?.data?.reports) {
+      if (unwrapped?.reports) {
         return {
-          ...data.data,
-          reports: data.data.reports.slice(0, parseInt(limit) || data.data.reports.length)
+          ...unwrapped,
+          reports: unwrapped.reports.slice(0, parseInt(limit) || unwrapped.reports.length)
         };
       }
-      return data?.data ?? data;
+      return unwrapped;
     }
 
     // Validate the response
-    if (!data || !data.data || !data.data.reports) {
+    if (!unwrapped || !unwrapped.reports) {
       throw new Error('Invalid response format from Local Falcon API');
     }
 
-    const limitNum = parseInt(limit) || data.data.reports.length;
+    const limitNum = parseInt(limit) || unwrapped.reports.length;
 
     return {
-      ...data.data,
-      reports: data.data.reports.slice(0, limitNum).map((report: any) => {
+      ...unwrapped,
+      reports: unwrapped.reports.slice(0, limitNum).map((report: any) => {
         // Remove unnecessary fields to save bandwidth
         const { last_timestamp, looker_last_date, scan_count, pdf, ...cleanReport } = report;
         return cleanReport;
@@ -884,7 +1010,7 @@ export async function fetchLocalFalconKeywordReport(apiKey: string, reportKey: s
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
+      throw parseApiError(res.status, errorText);
     }
 
     return await safeParseJson(res);
@@ -921,7 +1047,7 @@ export async function fetchLocalFalconGrid(apiKey: string, lat?: string, lng?: s
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
+      throw parseApiError(res.status, errorText);
     }
 
     return await safeParseJson(res);
@@ -955,7 +1081,7 @@ export async function fetchLocalFalconGoogleBusinessLocations(apiKey: string, ne
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
+      throw parseApiError(res.status, errorText);
     }
 
     return await safeParseJson(res);
@@ -989,7 +1115,7 @@ export async function fetchLocalFalconRankingAtCoordinate(apiKey: string, lat: s
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
+      throw parseApiError(res.status, errorText);
     }
 
     return await safeParseJson(res);
@@ -1023,7 +1149,7 @@ export async function fetchLocalFalconKeywordAtCoordinate(apiKey: string, lat: s
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
+      throw parseApiError(res.status, errorText);
     }
 
     return await safeParseJson(res);
@@ -1082,7 +1208,7 @@ export async function fetchLocalFalconFullGridSearch(
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
+      throw parseApiError(res.status, errorText);
     }
 
     const responseData = await safeParseJson(res);
@@ -1146,32 +1272,33 @@ export async function fetchLocalFalconCompetitorReports(apiKey: string, limit: s
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
+      throw parseApiError(res.status, errorText);
     }
 
     const data = await safeParseJson(res);
+    const unwrapped = unwrapWithWarnings(data);
 
     // When fieldmask is used, the API returns the standard structure with filtered fields
     if (fieldmask) {
-      if (data?.data?.reports) {
+      if (unwrapped?.reports) {
         return {
-          ...data.data,
-          reports: data.data.reports.slice(0, parseInt(limit) || data.data.reports.length)
+          ...unwrapped,
+          reports: unwrapped.reports.slice(0, parseInt(limit) || unwrapped.reports.length)
         };
       }
-      return data?.data ?? data;
+      return unwrapped;
     }
 
     // Validate the response
-    if (!data || !data.data || !data.data.reports) {
+    if (!unwrapped || !unwrapped.reports) {
       throw new Error('Invalid response format from Local Falcon API');
     }
 
-    const limitNum = parseInt(limit) || data.data.reports.length;
+    const limitNum = parseInt(limit) || unwrapped.reports.length;
 
     return {
-      ...data.data,
-      reports: data.data.reports.slice(0, limitNum).map((report: any) => {
+      ...unwrapped,
+      reports: unwrapped.reports.slice(0, limitNum).map((report: any) => {
         // Remove unnecessary fields to save bandwidth
         const {
           data_points,
@@ -1214,17 +1341,18 @@ export async function fetchLocalFalconCompetitorReport(apiKey: string, reportKey
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
+      throw parseApiError(res.status, errorText);
     }
 
     const data = await safeParseJson(res);
+    const unwrapped = unwrapWithWarnings(data);
 
     try {
-      if (!data || !data.data) {
+      if (!unwrapped) {
         throw new Error('Invalid response format from Local Falcon API');
       }
 
-      const reportData = data.data;
+      const reportData = unwrapped;
 
       // Strip data_points from each business by default — too large for LLM context
       // (e.g. 31 competitors × 9 grid points × 20 results each).
@@ -1277,32 +1405,33 @@ export async function fetchLocalFalconCampaignReports(apiKey: string, limit: str
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
+      throw parseApiError(res.status, errorText);
     }
 
     const data = await safeParseJson(res);
+    const unwrapped = unwrapWithWarnings(data);
 
     // When fieldmask is used, the API returns the standard structure with filtered fields
     if (fieldmask) {
-      if (data?.data?.reports) {
+      if (unwrapped?.reports) {
         return {
-          ...data.data,
-          reports: data.data.reports.slice(0, parseInt(limit) || data.data.reports.length)
+          ...unwrapped,
+          reports: unwrapped.reports.slice(0, parseInt(limit) || unwrapped.reports.length)
         };
       }
-      return data?.data ?? data;
+      return unwrapped;
     }
 
     // Validate the response
-    if (!data || !data.data || !data.data.reports) {
+    if (!unwrapped || !unwrapped.reports) {
       throw new Error('Invalid response format from Local Falcon API');
     }
 
-    const limitNum = parseInt(limit) || data.data.reports.length;
+    const limitNum = parseInt(limit) || unwrapped.reports.length;
 
     return {
-      ...data.data,
-      reports: data.data.reports.slice(0, limitNum).map((report: any) => {
+      ...unwrapped,
+      reports: unwrapped.reports.slice(0, limitNum).map((report: any) => {
         // Remove only truly unnecessary fields
         const {
           data_points,
@@ -1342,7 +1471,7 @@ export async function fetchLocalFalconCampaignReport(apiKey: string, reportKey: 
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
+      throw parseApiError(res.status, errorText);
     }
 
     return await safeParseJson(res);
@@ -1378,32 +1507,33 @@ export async function fetchLocalFalconGuardReports(apiKey: string, limit: string
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
+      throw parseApiError(res.status, errorText);
     }
 
     const data = await safeParseJson(res);
+    const unwrapped = unwrapWithWarnings(data);
 
     // When fieldmask is used, the API returns the standard structure with filtered fields
     if (fieldmask) {
-      if (data?.data?.reports) {
+      if (unwrapped?.reports) {
         return {
-          ...data.data,
-          reports: data.data.reports.slice(0, parseInt(limit) || data.data.reports.length)
+          ...unwrapped,
+          reports: unwrapped.reports.slice(0, parseInt(limit) || unwrapped.reports.length)
         };
       }
-      return data?.data ?? data;
+      return unwrapped;
     }
 
     // Validate the response
-    if (!data || !data.data || !data.data.reports) {
+    if (!unwrapped || !unwrapped.reports) {
       throw new Error('Invalid response format from Local Falcon API');
     }
 
-    const limitNum = parseInt(limit) || data.data.reports.length;
+    const limitNum = parseInt(limit) || unwrapped.reports.length;
 
     return {
-      ...data.data,
-      reports: data.data.reports.slice(0, limitNum)
+      ...unwrapped,
+      reports: unwrapped.reports.slice(0, limitNum)
     };
   });
 }
@@ -1431,7 +1561,7 @@ export async function fetchLocalFalconGuardReport(apiKey: string, placeId: strin
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
+      throw parseApiError(res.status, errorText);
     }
 
     return await safeParseJson(res);
@@ -1561,7 +1691,7 @@ export async function runLocalFalconScan(
     const data = await safeParseJson(response);
 
     if (!response.ok) {
-      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+      throw parseApiError(response.status, data);
     }
 
     // HTTP 202 — scan still processing after server's eager wait. report_key is present
@@ -1616,7 +1746,7 @@ export async function searchForLocalFalconBusinessLocation(
     const data = await safeParseJson(response);
     
     if (!response.ok) {
-      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+      throw parseApiError(response.status, data);
     }
 
     return data;
@@ -1668,7 +1798,7 @@ export async function saveLocalFalconBusinessLocationToAccount(
     const data = await safeParseJson(response);
 
     if (!response.ok) {
-      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+      throw parseApiError(response.status, data);
     }
 
     return data;
@@ -1710,7 +1840,7 @@ export async function fetchLocalFalconAccountInfo(
     const data = await safeParseJson(response);
 
     if (!response.ok) {
-      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+      throw parseApiError(response.status, data);
     }
 
     return data;
@@ -1744,7 +1874,7 @@ export async function addLocationsToFalconGuard(
     const data = await safeParseJson(response);
 
     if (!response.ok) {
-      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+      throw parseApiError(response.status, data);
     }
 
     return data;
@@ -1787,7 +1917,7 @@ export async function pauseFalconGuardProtection(
     const data = await safeParseJson(response);
 
     if (!response.ok) {
-      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+      throw parseApiError(response.status, data);
     }
 
     return data;
@@ -1830,7 +1960,7 @@ export async function resumeFalconGuardProtection(
     const data = await safeParseJson(response);
 
     if (!response.ok) {
-      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+      throw parseApiError(response.status, data);
     }
 
     return data;
@@ -1873,7 +2003,7 @@ export async function removeFalconGuardProtection(
     const data = await safeParseJson(response);
 
     if (!response.ok) {
-      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+      throw parseApiError(response.status, data);
     }
 
     return data;
@@ -1941,7 +2071,7 @@ export async function createLocalFalconCampaign(
     const data = await safeParseJson(response);
 
     if (!response.ok) {
-      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+      throw parseApiError(response.status, data);
     }
 
     return data;
@@ -1999,7 +2129,7 @@ export async function runLocalFalconCampaign(
     const data = await safeParseJson(response);
 
     if (!response.ok) {
-      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+      throw parseApiError(response.status, data);
     }
 
     return data;
@@ -2039,7 +2169,7 @@ export async function pauseLocalFalconCampaign(
     const data = await safeParseJson(response);
 
     if (!response.ok) {
-      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+      throw parseApiError(response.status, data);
     }
 
     return data;
@@ -2085,7 +2215,7 @@ export async function resumeLocalFalconCampaign(
     const data = await safeParseJson(response);
 
     if (!response.ok) {
-      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+      throw parseApiError(response.status, data);
     }
 
     return data;
@@ -2125,7 +2255,7 @@ export async function reactivateLocalFalconCampaign(
     const data = await safeParseJson(response);
 
     if (!response.ok) {
-      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+      throw parseApiError(response.status, data);
     }
 
     return data;
@@ -2179,7 +2309,7 @@ export async function fetchLocalFalconReviewsAnalysisReports(
     const data = await safeParseJson(response);
 
     if (!response.ok) {
-      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+      throw parseApiError(response.status, data);
     }
 
     return data;
@@ -2221,7 +2351,7 @@ export async function fetchLocalFalconReviewsAnalysisReport(
     const data = await safeParseJson(response);
 
     if (!response.ok) {
-      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+      throw parseApiError(response.status, data);
     }
 
     return data;
@@ -2265,7 +2395,7 @@ export async function searchLocalFalconKnowledgeBase(
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
+      throw parseApiError(res.status, errorText);
     }
 
     return await safeParseJson(res);
@@ -2295,7 +2425,7 @@ export async function getLocalFalconKnowledgeBaseArticle(
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Local Falcon API error: ${res.status} ${res.statusText} - ${errorText}`);
+      throw parseApiError(res.status, errorText);
     }
 
     return await safeParseJson(res);
