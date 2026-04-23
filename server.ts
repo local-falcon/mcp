@@ -109,36 +109,47 @@ Most get* and list* tools accept an optional \`fieldmask\` parameter — a comma
 Scan report — quick overview:
 \`report_key,date,keyword,location.name,location.address,arp,atrp,solv,found_in,grid_size,radius,measurement\`
 
-Scan report — full analysis:
-\`report_key,date,place_id,keyword,location,lat,lng,grid_size,radius,measurement,arp,atrp,solv,found_in,total_competitors,competition_solv,max_solv,opportunity_solv,ai_analysis,image,heatmap\`
+Scan report — full analysis (Maps platforms — google, apple):
+\`report_key,date,place_id,platform,keyword,location,lat,lng,grid_size,radius,measurement,arp,atrp,solv,found_in,unique_competitors,insights.solv_competitors.total,insights.solv_competitors.active,ai_analysis.summary,image,heatmap\`
 
-Scan report list — browsing:
+Scan report — full analysis (AI platforms — chatgpt, gemini, aimode, gaio, grok):
+\`report_key,date,place_id,ai_place_id,platform,keyword,location,lat,lng,grid_size,radius,measurement,arp,atrp,saiv,found_in,unique_competitors,sources,ai_analysis.summary,image,heatmap\`
+
+Scan report list — browsing (polymorphic \`solv\` carries SoLV on Maps, SAIV on AI):
 \`report_key,date,keyword,location.name,arp,atrp,solv,grid_size,platform\`
 
-Trend report — performance tracking:
-\`report_key,last_date,keyword,location.name,scan_count,scans.*.date,scans.*.arp,scans.*.atrp,scans.*.solv\`
+Trend report — performance tracking (use \`scans.*.saiv\` on AI-platform trend reports):
+\`last_date,keyword,location.name,scan_count,scans.*.date,scans.*.arp,scans.*.atrp,scans.*.solv\`
 
-Competitor report — competitive analysis:
+Competitor report — competitive analysis (swap \`businesses.*.solv\` for \`businesses.*.saiv\` on AI-platform scans):
 \`date,keyword,grid_size,radius,businesses.*.name,businesses.*.place_id,businesses.*.arp,businesses.*.atrp,businesses.*.solv,businesses.*.reviews,businesses.*.rating,businesses.*.lat,businesses.*.lng\`
 
-Campaign report list — overview:
+Campaign report list — overview (\`*_move\` fields exist ONLY on list items, not on single-get):
 \`report_key,name,status,locations,keywords,frequency,last_run,next_run,arp,atrp,solv,arp_move,atrp_move,solv_move\`
 
-Campaign report — detailed:
-\`report_key,name,status,locations,keywords,frequency,last_run,next_run,arp,atrp,solv,arp_move,atrp_move,solv_move,scans,grid_size,radius,measurement\`
+Campaign report — detailed (single-get, no \`*_move\` fields here):
+\`report_key,name,status,locations,keywords,frequency,last_run,next_run,arp,atrp,solv,scans,grid_size,radius,measurement\`
 
 Guard report list:
 \`report_key,place_id,location.name,location.address,location.rating,location.reviews,status,date_added,date_last\`
 
 Reviews analysis:
-\`reviews_key,name,date,locations,frequency,statistics.metrics.primaryBusiness\`
+\`reviews_key,name,review_date,locations,frequency,statistics.metrics.primaryBusiness\`
 
 **Fieldmask rules:**
-- Use dot notation for nested fields: \`location.name\`, \`statistics.metrics.primaryBusiness\`
-- Use wildcards for arrays: \`scans.*.arp\`, \`businesses.*.name\`
+- Use dot notation for nested fields: \`location.name\`, \`insights.solv_competitors.total\`
+- Wildcards behave differently depending on what's under the path: see each tool's fieldmask parameter description for the array vs object-dict vs scalar-dict rules
 - Start with the minimal fieldmask for the task, expand only if more data is needed
+- For narrative-only analysis, prefer \`ai_analysis.summary\` over the whole \`ai_analysis\` object (the object also contains structured arrays for problem/success/vulnerable/competitors/citations)
 - When a user asks a specific question (e.g., "what's my ARP?"), use a narrow fieldmask
-- When performing comprehensive analysis, use broader fieldmasks but still exclude raw grid point arrays when aggregate metrics suffice
+- When performing comprehensive analysis, use broader fieldmasks but still exclude raw grid-point arrays when aggregate metrics suffice
+
+**Platform-specific field note:**
+- \`solv\` (Share of Local Voice) → Maps platforms only at the top level of \`getLocalFalconReport\`
+- \`saiv\` (Share of AI Visibility) → AI platforms only at the top level of \`getLocalFalconReport\`
+- \`insights\` object (\`solv_competitors\`, \`osolv\`, \`solv_distance\`) → Maps platforms only
+- \`sources\` array (AI-platform citations) → AI platforms only
+- \`unique_competitors\` → universal on both platform groups
 
 ## TOOL WORKFLOW PATTERNS
 
@@ -195,8 +206,8 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
 
 **Competitive analysis framework:**
 - Compare ARP, SoLV, review count, rating, and primary categories between the target business and top competitors.
-- High Opportunity SoLV with low Competition SoLV = untapped market potential, quick win zone.
-- High Competition SoLV with low Opportunity SoLV = saturated market, consider adjacent keywords or geographic expansion.
+- On Maps scans, \`insights.osolv.yours\` vs \`insights.osolv.top\` gives your SoLV against the top competitor's — a large gap signals the leader has defensible share; a small gap signals the race is open.
+- \`insights.solv_competitors.active\` out of \`.total\` shows how many competitors are actually appearing in the grid vs how many the scan even considered — a low active-to-total ratio suggests opportunity for challengers.
 - Competitors with significantly more reviews or higher ratings often dominate despite proximity disadvantages.
 
 **AI visibility analysis:**
@@ -363,7 +374,32 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
   registerAppTool(server,
     "getLocalFalconReport",
     {
-      description: `Retrieves a specific scan report by report_key. Returns full ranking data including ARP, ATRP, SoLV, competitor summary, grid visualization images, and AI analysis text (if enabled). NOTE: The raw data_points array (rank at every grid coordinate) is stripped by default — it is extremely large and rarely needed. ONLY include "data_points" in the fieldmask when the user explicitly asks for per-grid-point data, raw coordinate-level rankings, or a point-by-point breakdown. For general ranking insights, weaknesses, and competitive analysis, use the ai_analysis field instead — it already summarizes grid-level patterns in plain language. Use fieldmask to control response size. Recommended fieldmask for analysis: "report_key,date,place_id,ai_place_id,platform,keyword,location,arp,atrp,solv,found_in,total_competitors,competition_solv,max_solv,opportunity_solv,grid_size,radius,measurement,ai_analysis,image,heatmap". Requires a report_key from listLocalFalconScanReports. Cannot create new reports — use runLocalFalconScan for that.`,
+      description: `Retrieves a specific scan report by report_key. Returns full ranking data, competitor summary, grid visualization images, and AI analysis.
+
+**STRONGLY RECOMMEND** passing a fieldmask on every call. Without one, a single scan report is typically 100-300KB (grid-3 ~112KB, denser markets up to ~300KB), which can overflow LLM context windows. Size hints: \`places\` is the largest single field (~50KB on competitive verticals, 100+ entries each); \`sources\` on AI scans is ~5-15KB (citation list); \`ai_analysis.summary\` alone is ~2KB of HTML-bearing prose and is almost always the right surgical fieldmask for narrative-only analysis. Always strip \`data_points\` (stripped by default) unless per-grid-point data is specifically requested.
+
+**Response shape is platform-specific — pick the recipe that matches your scan's platform:**
+
+- Maps scans (\`platform: google\` or \`apple\`) return top-level \`solv\` plus an \`insights\` object containing:
+  - \`insights.solv_competitors.{total, active}\` — total competitors considered vs how many are actually in the grid
+  - \`insights.osolv.{yours, top}\` — your SoLV vs the top competitor's SoLV (opportunity-gap signal)
+  - \`insights.solv_distance.{yours, average}\` — distance metric around top-3 rankings
+  - Per-place metadata includes rating, reviews, phone, url, categories, store_code
+- AI scans (\`platform: chatgpt\`, \`gemini\`, \`aimode\`, \`gaio\`, \`grok\`) return top-level \`saiv\` instead of \`solv\`, a \`sources\` array (AI-platform citations), \`ai_place_id\`, and \`bps\`. No \`insights\` object on AI. Per-place metadata is leaner (no rating/reviews/phone).
+- \`unique_competitors\` is universal on both platform groups.
+- \`rankings\` keys mirror the top-level metric: \`by_solv\` on Maps, \`by_saiv\` on AI; \`by_arp\` and \`by_atrp\` on both.
+
+**Recommended fieldmask for Maps analysis:**
+\`report_key,date,place_id,platform,keyword,location,lat,lng,grid_size,radius,measurement,arp,atrp,solv,found_in,unique_competitors,insights.solv_competitors.total,insights.solv_competitors.active,ai_analysis.summary,image,heatmap\`
+
+**Recommended fieldmask for AI analysis:**
+\`report_key,date,place_id,ai_place_id,platform,keyword,location,arp,atrp,saiv,found_in,unique_competitors,sources,ai_analysis.summary,image,heatmap\`
+
+**About \`ai_analysis\`:** this is a STRUCTURED OBJECT, not an HTML string. Shape: \`{summary, problem: {major[], minor[]}, success: {major[], minor[]}, vulnerable[], competitors, citations[]}\`. The \`summary\` field is a string (HTML-bearing). If you only need the narrative, fieldmask \`ai_analysis.summary\`; if you need the structured breakdown, fieldmask the whole \`ai_analysis\` object.
+
+**Note on list-vs-get asymmetry:** \`listLocalFalconScanReports\` returns the visibility metric polymorphically as \`solv\` regardless of platform (listing convenience). \`getLocalFalconReport\` is platform-explicit — request \`solv\` on Maps or \`saiv\` on AI; the wrong field will simply be absent from the response.
+
+Requires a report_key from listLocalFalconScanReports. Cannot create new reports — use runLocalFalconScan for that.`,
       inputSchema: {
         reportKey: z.string().describe("The report key of the scan report."),
         fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
@@ -480,7 +516,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
   // Get a Specific Campaign Report
   server.tool(
     "getLocalFalconCampaignReport",
-    `Retrieves a specific campaign report with full details: aggregated ARP, ATRP, SoLV metrics, individual scan results, performance breakdowns by keyword and location, and scheduling info. Use the 'run' parameter (MM/DD/YYYY) to retrieve a specific historical run — defaults to the latest run. Use fieldmask to control response size — campaign reports with many locations/keywords can be very large. Recommended fieldmask for overview: "report_key,name,status,locations,keywords,arp,atrp,solv,arp_move,atrp_move,solv_move,frequency,last_run,next_run". Get the report_key from listLocalFalconCampaignReports.`,
+    `Retrieves a specific campaign report with full details: aggregated ARP, ATRP, SoLV metrics, individual scan results, performance breakdowns by keyword and location, and scheduling info. Use the 'run' parameter (MM/DD/YYYY) to retrieve a specific historical run — defaults to the latest run. STRONGLY RECOMMEND fieldmask — campaign reports with many locations/keywords can be very large. Recommended fieldmask for overview: "report_key,name,status,locations,keywords,arp,atrp,solv,frequency,last_run,next_run,scans,grid_size,radius,measurement". Note: \`arp_move\`, \`atrp_move\`, \`solv_move\` delta fields appear on list-endpoint items (listLocalFalconCampaignReports) but are not present on this single-get endpoint. Get the report_key from listLocalFalconCampaignReports.`,
     {
       reportKey: z.string().describe("The report_key of the Campaign Report you wish to retrieve."),
       run: z.string().nullish().describe("Optional specific campaign run date to retrieve (MM/DD/YYYY). Defaults to latest run."),
@@ -626,7 +662,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
   // List all Reviews Analysis Reports
   server.tool(
     "listLocalFalconReviewsAnalysisReports",
-    `Lists Reviews Analysis reports in the account. These are premium AI-powered review analyses ($19/location) that evaluate up to 1M Google reviews for a target business plus up to 3 competitors. Separate from ranking scan reports. Filter by placeId, frequency, or reviewsKey. Use fieldmask to control returned fields. Recommended fieldmask: "reviews_key,name,date,locations,frequency,statistics.metrics.primaryBusiness". Use getLocalFalconReviewsAnalysisReport with a report key to see full results.`,
+    `Lists Reviews Analysis reports in the account. These are premium AI-powered review analyses ($19/location) that evaluate up to 1M Google reviews for a target business plus up to 3 competitors. Separate from ranking scan reports. Filter by placeId, frequency, or reviewsKey. Use fieldmask to control returned fields. Recommended fieldmask: "reviews_key,name,review_date,locations,frequency,statistics.metrics.primaryBusiness". Use getLocalFalconReviewsAnalysisReport with a report key to see full results.`,
     {
       reviewsKey: z.string().nullish().describe("Filter by parent Reviews Analysis record key to retrieve only reports from that specific configuration."),
       placeId: z.string().nullish().describe("Filter by platform Place ID(s). Supports multiple IDs separated by commas."),
@@ -984,7 +1020,13 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
   // Get specific Competitor Report
   server.tool(
     "getLocalFalconCompetitorReport",
-    `Retrieves a specific competitor report showing the competitive landscape from a scan. Includes top-ranking businesses with their ARP, ATRP, SoLV (or SAIV for AI scans), review counts, ratings, and geographic coordinates. NOTE: Per-competitor data_points (showing each competitor's rank at every grid coordinate) are stripped by default — they are extremely large. ONLY include "data_points" in the fieldmask when the user explicitly asks for per-grid-point competitive positioning, raw coordinate-level data, or a point-by-point breakdown of where specific competitors rank. For general competitive overviews, the summary metrics (ARP, ATRP, SoLV, rating, reviews) are sufficient. Use fieldmask to control which competitor fields are returned. Recommended fieldmask: "date,keyword,grid_size,radius,businesses.*.name,businesses.*.place_id,businesses.*.arp,businesses.*.atrp,businesses.*.solv,businesses.*.reviews,businesses.*.rating,businesses.*.lat,businesses.*.lng". Available for all platform types including AI scans. Get the report_key from getLocalFalconCompetitorReports.`,
+    `Retrieves a specific competitor report showing the competitive landscape from a scan. Includes top-ranking businesses with their ARP, ATRP, SoLV (Maps) / SAIV (AI), review counts, ratings, and geographic coordinates. NOTE: Per-competitor data_points (showing each competitor's rank at every grid coordinate) are stripped by default — they are extremely large. ONLY include "data_points" in the fieldmask when the user explicitly asks for per-grid-point competitive positioning, raw coordinate-level data, or a point-by-point breakdown. For general competitive overviews, the summary metrics are sufficient. Use fieldmask to control which competitor fields are returned.
+
+**Recommended fieldmask (Maps scans):** "date,keyword,grid_size,radius,businesses.*.name,businesses.*.place_id,businesses.*.arp,businesses.*.atrp,businesses.*.solv,businesses.*.reviews,businesses.*.rating,businesses.*.lat,businesses.*.lng"
+
+**Recommended fieldmask (AI scans):** swap \`businesses.*.solv\` for \`businesses.*.saiv\`. AI-platform competitor reports return the same overall shape but per-competitor metadata is leaner (no rating/reviews/phone/categories) and the visibility metric is \`saiv\` instead of \`solv\`. The businesses array may also be empty for AI scans where no structured competitors were cited.
+
+Available for all platform types. Get the report_key from getLocalFalconCompetitorReports.`,
     {
       reportKey: z.string().describe("The report_key of the Competitor Report you wish to retrieve."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Use dot notation for nested fields (e.g., 'location.name'). Use wildcards for arrays (e.g., 'scans.*.arp'). Omit to return all fields."),
