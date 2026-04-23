@@ -693,7 +693,7 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
   // Get specific Reviews Analysis Report
   server.tool(
     "getLocalFalconReviewsAnalysisReport",
-    "Retrieves a specific Reviews Analysis report with full metrics: Review Volume Score (RVS), Review Quality Score (RQS), review velocity, freshness, total reviews, rating analysis, response rates, Local Guide reviews, photo reviews, and sentiment/topic analysis. Includes competitor comparison data if competitors were configured. Use fieldmask to control response size — review reports can be very large. Get the report key from listLocalFalconReviewsAnalysisReports.",
+    "Retrieves a specific Reviews Analysis report with full metrics: Review Volume Score (RVS), Review Quality Score (RQS), review velocity, freshness, total reviews, rating analysis, response rates, Local Guide reviews, photo reviews, and sentiment/topic analysis. Includes competitor comparison data if competitors were configured. STRONGLY RECOMMEND fieldmask — review reports can exceed 100KB given sentiment/topic breakdowns across up to 1M reviews. Recommended fieldmask for overview: 'reviews_key,name,review_date,locations,frequency,statistics.metrics.primaryBusiness'. For competitor comparison add 'statistics.metrics.competitors'; for sentiment detail add 'statistics.sentiment'. Get the report key from listLocalFalconReviewsAnalysisReports.",
     {
       reportKey: z.string().min(1).regex(/^[a-f0-9]{15}$/, "reportKey must be 15 lowercase hex characters (a-f, 0-9)").describe("The key of the Reviews Analysis report you wish to retrieve. 15-character lowercase hex string."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Dot notation for nested paths (e.g., 'location.name'). The `.*.` wildcard works on arrays (e.g., 'scans.*.arp' on trend/campaign reports, where scans is an array) AND on dicts of objects (e.g., 'places.*.solv' on scan reports, where places is keyed by place_id with object values). For dicts of scalars like 'rankings.by_arp' (where values are numbers/strings keyed by place_id, not objects), request the whole dict by path alone — `.*.X` returns nothing because scalars can't be descended into. Omit to return all fields. STRONGLY recommended on every call: default responses can exceed 100KB."),
@@ -865,7 +865,15 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
   // Get a Specific Trend Report
   server.tool(
     "getLocalFalconTrendReport",
-    `Retrieves a specific trend report showing historical ARP, ATRP, and SoLV changes across multiple scan dates for one location + one keyword. Returns: scans array (historical snapshots with date, ARP, ATRP, SoLV, grid images per scan), locations array (competitor leaderboard with aggregated metrics across all scans), location object (full GBP profile of the target business), and top-level metadata (keyword, grid config, PDF link). Heavy nested data (data_points, per-scan locations) is automatically stripped to save context. Get the report_key from listLocalFalconTrendReports.`,
+    `Retrieves a specific trend report showing historical ARP, ATRP, and SoLV changes across multiple scan dates for one location + one keyword. Returns: scans array (historical snapshots with date, ARP, ATRP, SoLV, grid images per scan), locations array (competitor leaderboard with aggregated metrics across all scans), location object (full GBP profile of the target business), and top-level metadata (keyword, grid config, PDF link). Heavy nested data (data_points, per-scan locations) is automatically stripped to save context.
+
+**STRONGLY RECOMMEND** fieldmask — trend reports with many historical scans can grow large (scans[] array scales with snapshot count).
+
+**Recommended fieldmask (Maps-platform trend reports):** "last_date,keyword,location.name,scan_count,scans.*.date,scans.*.arp,scans.*.atrp,scans.*.solv"
+
+**Recommended fieldmask (AI-platform trend reports):** swap \`scans.*.solv\` for \`scans.*.saiv\`.
+
+Get the report_key from listLocalFalconTrendReports.`,
     {
       reportKey: z.string().min(1).regex(/^[a-f0-9]{15}$/, "reportKey must be 15 lowercase hex characters (a-f, 0-9)").describe("The report key of the trend report. 15-character lowercase hex string."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Dot notation for nested paths (e.g., 'location.name'). The `.*.` wildcard works on arrays (e.g., 'scans.*.arp' on trend/campaign reports, where scans is an array) AND on dicts of objects (e.g., 'places.*.solv' on scan reports, where places is keyed by place_id with object values). For dicts of scalars like 'rankings.by_arp' (where values are numbers/strings keyed by place_id, not objects), request the whole dict by path alone — `.*.X` returns nothing because scalars can't be descended into. Omit to return all fields. STRONGLY recommended on every call: default responses can exceed 100KB."),
@@ -934,7 +942,7 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
   // Get a Specific Location Report
   server.tool(
     "getLocalFalconLocationReport",
-    "Retrieves a specific location report aggregating scan data across multiple keywords for one business location. Shows which keywords perform best/worst for that location. Use fieldmask to control response size. Get the report_key from listLocalFalconLocationReports.",
+    "Retrieves a specific location report aggregating scan data across multiple keywords for one business location. Shows which keywords perform best/worst for that location. STRONGLY RECOMMEND fieldmask — location reports aggregating many keywords can grow large. Recommended fieldmask: 'report_key,last_date,place_id,location.name,location.address,keyword_count,keywords.*.keyword,keywords.*.arp,keywords.*.atrp,keywords.*.solv'. Get the report_key from listLocalFalconLocationReports.",
     {
       reportKey: z.string().min(1).regex(/^[a-f0-9]{15}$/, "reportKey must be 15 lowercase hex characters (a-f, 0-9)").describe("The report key of the location report. 15-character lowercase hex string."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Dot notation for nested paths (e.g., 'location.name'). The `.*.` wildcard works on arrays (e.g., 'scans.*.arp' on trend/campaign reports, where scans is an array) AND on dicts of objects (e.g., 'places.*.solv' on scan reports, where places is keyed by place_id with object values). For dicts of scalars like 'rankings.by_arp' (where values are numbers/strings keyed by place_id, not objects), request the whole dict by path alone — `.*.X` returns nothing because scalars can't be descended into. Omit to return all fields. STRONGLY recommended on every call: default responses can exceed 100KB."),
@@ -976,7 +984,7 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
   // Get specific Keyword Report
   server.tool(
     "getLocalFalconKeywordReport",
-    "Retrieves a specific keyword report aggregating scan data across multiple locations for one keyword. Shows which locations perform best/worst for that keyword. Use fieldmask to control response size. Get the report_key from listLocalFalconKeywordReports.",
+    "Retrieves a specific keyword report aggregating scan data across multiple locations for one keyword. Shows which locations perform best/worst for that keyword. STRONGLY RECOMMEND fieldmask — keyword reports aggregating many locations can grow large. Recommended fieldmask: 'report_key,last_date,keyword,location_count,locations.*.place_id,locations.*.name,locations.*.arp,locations.*.atrp,locations.*.solv'. Get the report_key from listLocalFalconKeywordReports.",
     {
       reportKey: z.string().min(1).regex(/^[a-f0-9]{15}$/, "reportKey must be 15 lowercase hex characters (a-f, 0-9)").describe("The report_key of the keyword report. 15-character lowercase hex string."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Dot notation for nested paths (e.g., 'location.name'). The `.*.` wildcard works on arrays (e.g., 'scans.*.arp' on trend/campaign reports, where scans is an array) AND on dicts of objects (e.g., 'places.*.solv' on scan reports, where places is keyed by place_id with object values). For dicts of scalars like 'rankings.by_arp' (where values are numbers/strings keyed by place_id, not objects), request the whole dict by path alone — `.*.X` returns nothing because scalars can't be descended into. Omit to return all fields. STRONGLY recommended on every call: default responses can exceed 100KB."),
