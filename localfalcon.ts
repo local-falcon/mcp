@@ -258,13 +258,13 @@ export function isTimeoutError(error: unknown): boolean {
 // error check). Maps the server's status code to specific agent-facing guidance;
 // preserves the server's message as supplemental context.
 //
-// Mapping is driven by V.3 probe evidence:
+// Mapping is driven by observed API behavior:
 //   - 404: server message conflates "not available / no permission"; MCP rewrites
 //     to "not found OR different account OR expired" so agents understand the
 //     options. Server message attached for transparency.
 //   - 403: similar conflation; MCP rewrites to be explicit about auth/account scope.
-//   - 400: server-side malformed input (M6's Zod validation catches client-side
-//     malformed input before the request). Pass the server message through.
+//   - 400: server-side malformed input (schema-level Zod validation catches
+//     client-side malformed input before the request). Pass the server message through.
 //   - 401: auth failure — "Check your API key."
 //   - 429: rate-limited — "Wait a moment before retrying."
 //   - Non-JSON error body (e.g., reviewsAnalysis plain text): pass through with a
@@ -1656,11 +1656,11 @@ export async function runLocalFalconScan(
     form.append('measurement', measurement);
     form.append('platform', platform);
     form.append('ai_analysis', aiAnalysis.toString());
-    // eager=1 tells LF.api's methods/v2/run-scan/method.php runtime_check() to cap
-    // its server-side wait at 20s instead of 360s. If the scan completes in <20s we
-    // get HTTP 200 with the full report; otherwise HTTP 202 with data.report_key
-    // populated so the agent can poll via getLocalFalconReport. Resolves Bug #2
-    // (submission previously returned no report_key on timeout).
+    // eager=1 tells the server-side run-scan handler to cap its completion-wait at
+    // 20s instead of 360s. If the scan finishes in <20s we get HTTP 200 with the
+    // full report; otherwise HTTP 202 with data.report_key populated so the agent
+    // can poll via getLocalFalconReport. Previously the MCP's 15s timeout consistently
+    // fired before the server responded, so the report_key was never surfaced.
     form.append('eager', '1');
 
     // Server's eager budget is 20s (runtime_check in LF.api). 25s keeps a 5s margin so

@@ -196,7 +196,7 @@ describe("unwrapWithWarnings", () => {
     expect(result._warnings).toEqual(["Unknown field in fieldmask: x"]);
   });
 
-  test("real V.2 probe shape: data has 6 good fields + 4 exceptions", () => {
+  test("real API response shape: data has 6 good fields + 4 exceptions", () => {
     // Shape from scratch/session-2/verification/V2-raw-api-response.json
     const wrapper = {
       code: 200,
@@ -321,7 +321,7 @@ describe("fetch-function unwrap pattern (end-to-end simulation)", () => {
 });
 
 describe("parseApiError", () => {
-  test("404 with standard wrapper (verified V.3 shape): rewrites to 'Report not found' + server suffix", () => {
+  test("404 with standard wrapper shape: rewrites to 'Report not found' + server suffix", () => {
     const wrapper = JSON.stringify({
       code: 404,
       code_desc: false,
@@ -378,7 +378,7 @@ describe("parseApiError", () => {
   });
 
   test("plain-text error body (non-JSON, e.g., reviewsAnalysis endpoint): falls back to status + body", () => {
-    // The reviewsAnalysis endpoint in V.3 returned plain text, not the standard wrapper
+    // Some endpoints (e.g., reviewsAnalysis) return plain text rather than the standard wrapper
     const err = parseApiError(500, "You do not have permission to access this resource.");
     expect(err.message).toContain("status 500");
     expect(err.message).toContain("You do not have permission");
