@@ -1,6 +1,6 @@
 {
   "name": "@local-falcon/mcp",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "description": "An MCP server for the Local Falcon API.",
   "main": "index.js",
   "repository": {
@@ -24,7 +24,7 @@
     "ai-visibility"
   ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "bun test",
     "build:ui": "UI_ENTRY=geogrid-heatmap vite build --config vite.ui.config.ts",
     "start": "bun run index.ts",
     "start:sse": "bun run index.ts sse",
