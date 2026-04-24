@@ -197,7 +197,6 @@ describe("unwrapWithWarnings", () => {
   });
 
   test("real API response shape: data has 6 good fields + 4 exceptions", () => {
-    // Shape from scratch/session-2/verification/V2-raw-api-response.json
     const wrapper = {
       code: 200,
       code_desc: false,
