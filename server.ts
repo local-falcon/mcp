@@ -21,6 +21,21 @@ function handleNullOrUndefined(value: string | null | undefined): string {
   return value;
 }
 
+// Read version from package.json. Tries both source layout (server.ts at
+// repo root) and compiled layout (dist/server.js, package.json one level up).
+function readPackageVersion(): string {
+  for (const candidate of ["./package.json", "../package.json"]) {
+    try {
+      const url = new URL(candidate, import.meta.url);
+      const pkg = JSON.parse(fs.readFileSync(url, "utf8"));
+      if (pkg.version) return pkg.version;
+    } catch {}
+  }
+  return "0.0.0";
+}
+
+const VERSION = readPackageVersion();
+
 
 export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
   const getApiKey = (ctx: any) => {
@@ -35,7 +50,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
   const server = new McpServer(
     {
     name: "Local Falcon MCP Server",
-    version: "1.3.1",  // Keep in sync with package.json
+    version: VERSION,
     icons: [
       {
         src: "data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHN2ZyBpZD0iTGF5ZXJfMSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB2ZXJzaW9uPSIxLjEiIHZpZXdCb3g9IjAgMCA3MTQuNzIgMTAwMCI+CiAgPCEtLSBHZW5lcmF0b3I6IEFkb2JlIElsbHVzdHJhdG9yIDI5LjAuMCwgU1ZHIEV4cG9ydCBQbHVnLUluIC4gU1ZHIFZlcnNpb246IDIuMS4wIEJ1aWxkIDE4NikgIC0tPgogIDxkZWZzPgogICAgPHN0eWxlPgogICAgICAuc3QwIHsKICAgICAgICBmaWxsOiAjMjg0MDYwOwogICAgICB9CgogICAgICAuc3QwLCAuc3QxIHsKICAgICAgICBmaWxsLXJ1bGU6IGV2ZW5vZGQ7CiAgICAgIH0KCiAgICAgIC5zdDEgewogICAgICAgIGZpbGw6ICNlNjJhMmQ7CiAgICAgIH0KICAgIDwvc3R5bGU+CiAgPC9kZWZzPgogIDxwYXRoIGNsYXNzPSJzdDEiIGQ9Ik0xMjguNTIsMjM2Ljc3YzAsNjUuMzgsMjUuODksMTI0LjU4LDY3LjcyLDE2Ny40M2wxNjEuMDksMTY0Ljk3LDE2MS4wOC0xNjQuOTdjNDEuODMtNDIuODUsNjcuNzItMTAyLjA1LDY3LjcyLTE2Ny40M0M1ODYuMTMsMTA2LjgyLDQ4My45MSwxLjMyLDM1Ny4zMywwYy0xMjYuNTksMS4zMi0yMjguODEsMTA2LjgyLTIyOC44MSwyMzYuNzdaTTI1NC43NiwyMzcuMTVjMC01Ni43NSw0NS45Mi0xMDIuNzYsMTAyLjU3LTEwMi43NnMxMDIuNTYsNDYuMDEsMTAyLjU2LDEwMi43Ni00NS45MiwxMDIuNzctMTAyLjU2LDEwMi43Ny0xMDIuNTctNDYuMDEtMTAyLjU3LTEwMi43N1oiLz4KICA8cGF0aCBjbGFzcz0ic3QwIiBkPSJNMjA0Ljg3LDY3OC45OWwtMjguNDQsNDguODJzLTYuOTQsOS43OS04LjgzLDI4LjQxYy0xLjg5LDE4LjYzLDEwLjc1LDMwLjcyLDEwLjc1LDMwLjcyLDAsMC0yLjk2LDE3LjgyLS42NSwzMC44Niw1LjUxLDMxLjAxLDM5LjEyLDI0LjY2LDM5LjEyLDI0LjY2LDAsMC05LjE4LTcuOC0xMC43Ni0xNS42OS0xLjU5LTcuODksOS44MS0yMS4zOSw5LjgxLTIxLjM5bDQ5LjI1LTY1LjQ5YzEuMTksMS41MSwyLjM2LDMuMDQsMy41Myw0LjU4di4wMmMzLjE0LDQuMTUsNi4xNyw4LjQsOS4wOSwxMi43NCw1LjQzLDguMDgsMTAuNSwxNi40NywxNS4yNCwyNS4wNiwxNi4wNy01MS43NSw0MS4yMi0xMDguOTIsNzkuOTgtMTQ5Ljg4LDU1LjgyLTU5LjAxLDE0My43LTEyMi4yMiwyMDAuNzMtMTk4LjkxaC4yMWMzNC42NS00Ni42LDU3LjkyLTk4LjE4LDU1LjY4LTE1Ni44Mi0uNy0xOC4zNC0zLjc3LTM1LjM5LTguNjQtNTEuMTktMi4zOC01LjU2LTYuMDMtMTMuNjgtOS0xOC40OS0zLjQ1LTUuNjEtNy4xOC0xMC4zOC0xMC4zMS0xMy45OSwyLjgxLDE0LjE4LDQuMjgsMjguODEsNC4yOCw0My43NiwwLDE5LjA3LTIuMzgsMzcuNjItNi45LDU1LjM4LTkuMjYsNTIuNDItMzguMjksOTguOTQtNzUuMDIsMTQxLjM1aC0uMmMtNDcuNzEsNTUuMDktMTA4LjQsMTAzLjI2LTE1NS42MSwxNDguNGwtMTEsMTAuOTl2LS4yNmMtNC4wOCw0LjA2LTguMDMsOC4wOS0xMS44NCwxMi4xMS0yMS44NSwyMy4xLTM5LjM3LDUxLjM1LTUzLjM3LDgwLjg3bC0xLjcxLTEuODJDMjAyLjE3LDU5MC42OCwzNC4yNSw0ODcuMDksMzMuNywzMzYuNTdjLTYuNDQsNC44OS0xNi41NSwxNC45MS0yNS40MywzMy45My0xMC44MSwyMy4xNy04LjUsNDguMTMtNi44OSw1OC4yOSwyNy4xLDEwMS4wNCwxMjYuMTIsMTc5Ljg1LDIwMy40OSwyNTAuMlpNMTkwLjczLDc3NC41N2MtLjk4LS4xNS0xLjg3LS41Ni0yLjYzLTEuMiwzLjAxLTEuMjUsNS42NS00LjkzLDYuNDktOS41NS44NS00LjYyLS4zNC04Ljg1LTIuNzYtMTAuODcuOTUtLjQsMS45NC0uNTUsMi45Mi0uNDEsNC4xLjU5LDYuNTEsNS45OSw1LjQsMTIuMDgtMS4xMSw2LjA4LTUuMzMsMTAuNTMtOS40Miw5Ljk1Wk0xMTguMjcsOTIyLjU1czU3LjI2LDE0LDE0Ny43LTE5LjAxYzE3LjUtNi4zOCwzMi45Mi0xMy40NSw0Ni40LTIwLjY4LTMuODEtMTEuMTYtOC4wNi0yMi40Ni0xMi43OC0zMy42OS0xNy43OCwxNC41My0zNy43NCwyOC4xMy01OC41MSwzNy4zNy02OS43LDMxLjAxLTEyMi44MSwzNi4wMS0xMjIuODEsMzYuMDFaTTY5Ni4yNyw4MjMuNTVzLTUzLjExLTUtMTIyLjgxLTM2LjAxYy0zMS40OS0xNC4wMS02MS4xMi0zOC4wMy04NC4xNC02MC4xNS00LjAxLDQtNy44OSw3Ljk3LTExLjYzLDExLjkzLTUuNTksNS45MS0xMC44OSwxMi4xNS0xNS45MywxOC42NiwxOS45NSwxNS4yNCw0OC4zNiwzMi41Myw4Ni44MSw0Ni41Niw5MC40NCwzMy4wMSwxNDcuNywxOS4wMSwxNDcuNywxOS4wMVpNNzA2LjI3LDg4Ni41cy02NC01LTE0OC0zNmMtNDMuMzEtMTUuOTgtODMuNjktNDQuOTktMTEyLjY1LTY5LjM1LTguMDYsMTIuNzktMTUuMjcsMjYuMjQtMjEuNzQsMzkuOTQsMjQuMDMsMTUuMiw1OC4xOSwzMi40MiwxMDQuMzksNDYuNDEsMTA5LDMzLDE3OCwxOSwxNzgsMTlaTTMwNC4yMSw2MTguODljLTkzLjMtODguNTEtMjM2LjMxLTE4OC45LTIzMC45MS0zMzAuMzUuNTgtMTUuMjUsMi40OC0yOC45NSw1LjU1LTQxLjUyLTUuNTQsNS4yMi0xNC40NSwxNS4yMi0yMi41OCwzMS40OC01Ljc2LDExLjUzLTEwLDIwLTEwLjU5LDM3LjcxLTQuOCwxNDQuNzUsMTQ0LjMxLDI0Ni40NiwyMzcuMywzMzYuNDgsNi40NC0xMS43MiwxMy41LTIzLjA4LDIxLjIzLTMzLjhaTTM0MS4zMyw1NzcuMTVjLTgzLjQ3LTc4LjY4LTIwNC43Ni0xNjYuODgtMjI1LjYzLTI4NS00LjUxLTE3Ljc2LTYuOS0zNi4zMS02LjktNTUuMzgsMC0xNC45NSwxLjQ3LTI5LjU4LDQuMjgtNDMuNzYtMy4xMywzLjYxLTYuODYsOC4zOC0xMC4zMSwxMy45OS0yLjk2LDQuODEtNi42MSwxMi45My04Ljk5LDE4LjQ5LTQuODgsMTUuOC03Ljk1LDMyLjg1LTguNjUsNTEuMTktNS4zNiwxNDAuNjYsMTM2LjAzLDI0MC43MiwyMjkuMzUsMzI4Ljg3LDMuNTktNC4zNiw3LjI5LTguNiwxMS4xNC0xMi42NiwzLjgtNC4wMiw3Ljc1LTguMDYsMTEuODMtMTIuMTJ2LjI2bDMuODgtMy44OFpNMzMzLjY2LDgxNy45NmMzLjIzLTEwLjE5LDYuODItMjAuNTksMTAuODEtMzFsLjUzLTEuMzcuMjktLjc1LjU4LTEuNDYuOTItMi4zNSwyLjAzLTUuMDZjMTUuNDItMzcuNjksMzYuMDctNzQuOTUsNjMuNTgtMTA0LjAzLDY1LjE0LTY4Ljg1LDE3My45LTE0My40MiwyMjYuMzktMjM4LjQ0aC0uMDljMTkuODYtMzUuOTEsMzEuNzQtNzQuNzQsMzAuMzMtMTE3LjI5LS41OS0xNy43MS00LjgyLTI2LjE4LTEwLjU5LTM3LjcxLTguMTMtMTYuMjYtMTcuMDQtMjYuMjYtMjIuNTgtMzEuNDgsMy4wOCwxMi41Nyw0Ljk4LDI2LjI3LDUuNTYsNDEuNTIsMi4wNSw1My43MS0xNy4zLDEwMS40OS00Ny4yLDE0NC45NmgtLjIxYy01Ni40Niw4Mi4wOC0xNTAuNTQsMTQ4Ljc1LTIwOS4yMiwyMTAuNzctMjQsMjUuMzYtNDIuNzcsNTYuOTYtNTcuNDEsODkuNjItOC40OCwxOC45NC0xNS41OCwzOC4yMi0yMS40OSw1Ni44OGwtMi4wMSw5LjcsMiw3LjM2YzQuMzQsOS4zNSw4LjMzLDE4LjgxLDEyLDI4LjI2LDIuMDksNS4zOCw0LjA3LDEwLjc1LDUuOTUsMTYuMSwyLjg1LTEwLjk5LDYuMS0yMi40OCw5LjgzLTM0LjIzWk0zNTcuMzMsMTAwMHYtMS40OHMtLjA4LjcyLS4wOC43MmwuMDguNzZaTTM1Ny4zMiw5OTguNTJjMS44My0xNy40NywyMS4zNi0xODUuMzQsMTA2LjM3LTI3NS4yLDc2LjQzLTgwLjc5LDIxMi45NS0xNjkuNDYsMjQ4LjExLTI4OS44MmguMjFjLjQ2LTEuNTYuOS0zLjEzLDEuMzItNC43MSwxLjYyLTEwLjE2LDMuOTMtMzUuMTItNi44OS01OC4yOS04Ljg3LTE5LjAyLTE4Ljk5LTI5LjA0LTI1LjQzLTMzLjkzLS4xMiwzNC42NS05LjEyLDY2LjgxLTIzLjk3LDk2LjkzaC0uMjFjLTQ5LjY2LDEwMC43Mi0xNjQuNzcsMTc4LjYxLTIzMi41OSwyNTAuMjktMjkuNTksMzEuMjgtNTEuMjYsNzIuMDItNjYuOTksMTEyLjU3bC0uMDQuMDktLjAzLjExYy0xMC45OCwyOC4zMS0xOS4wNyw1Ni41My0yNC45Niw4MS4zNiwxOC4wNSw1OS44MSwyMy45OSwxMTEuMzgsMjQuOTUsMTIwLjYxbC4wOC43MS4wNy0uNzJaTTM1Ny4xNyw5OTguNTN2MS40N3MuMDgtLjc2LjA4LS43NmwtLjA4LS43MVoiLz4KPC9zdmc+",
@@ -355,7 +370,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       keyword: z.string().nullish().describe("Filter only results similar to specified keyword (loose match)."),
       gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15', '17', '19', '21']).nullish().describe("Filter only for specific grid sizes. Expects 3, 5, 7, 9, 11, 13, 15, 17, 19, or 21."), 
       campaignKey: z.string().nullish().describe("Filter only results for a specific campaign using the campaign_key."), 
-      platform: z.enum(['google', 'apple', 'gaio', 'chatgpt','gemini','grok']).nullish().describe("Filter only results for a specific platform."),
+      platform: z.enum(['google', 'apple', 'gaio', 'chatgpt','gemini','grok', 'aimode']).nullish().describe("Filter only results for a specific platform."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Dot notation for nested paths (e.g., 'location.name'). The `.*.` wildcard works on arrays (e.g., 'scans.*.arp' on trend/campaign reports, where scans is an array) AND on dicts of objects (e.g., 'places.*.solv' on scan reports, where places is keyed by place_id with object values). For dicts of scalars like 'rankings.by_arp' (where values are numbers/strings keyed by place_id, not objects), request the whole dict by path alone — `.*.X` returns nothing because scalars can't be descended into. Omit to return all fields. STRONGLY recommended on every call: default responses can exceed 100KB."),
     },
     { title: "List Scan Reports", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
@@ -470,10 +485,10 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
     {
       placeId: z.string().describe("The Google Place ID of the business to match against in results."),
       keyword: z.string().describe("The desired search term or keyword."),
-      lat: z.string().describe("The data point latitude value."),
-      lng: z.string().describe("The data point longitude value."),
+      lat: z.coerce.number().min(-90).max(90).describe("The data point latitude value."),
+      lng: z.coerce.number().min(-180).max(180).describe("The data point longitude value."),
       gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15']).describe("The size of the grid."),
-      radius: z.string().describe("The radius of the grid from center point to outer most north/east/south/west point (0.1 to 100)."),
+      radius: z.coerce.number().min(0.1).max(100).describe("The radius of the grid from center point to outer most north/east/south/west point (0.1 to 100)."),
       measurement: z.enum(['mi', 'km']).describe("The measurement unit of the radius (mi for miles, km for kilometers)."),
       platform: z.enum(['google', 'apple', 'gaio', 'chatgpt', 'gemini', 'grok', 'aimode']).describe("The platform to run the scan against."),
       aiAnalysis: z.boolean().default(false).describe("Whether AI analysis should be generated for this scan (optional, defaults to false)."),
@@ -484,7 +499,7 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await runLocalFalconScan(apiKey, placeId, keyword, lat, lng, gridSize, radius, measurement, platform, aiAnalysis);
+      const resp = await runLocalFalconScan(apiKey, placeId, keyword, lat.toString(), lng.toString(), gridSize, radius.toString(), measurement, platform, aiAnalysis);
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     },
   );
@@ -541,7 +556,7 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
       name: z.string().describe("A name to give the campaign."),
       measurement: z.enum(['mi', 'km']).describe("The measurement unit of your radius (mi for miles, km for kilometers)."),
       gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15', '17', '19', '21']).describe("The size of your desired grid."),
-      radius: z.string().describe("The radius of your grid from center point to outer most point (0.1 to 100)."),
+      radius: z.coerce.number().min(0.1).max(100).describe("The radius of your grid from center point to outer most point (0.1 to 100)."),
       frequency: z.enum(['one-time', 'daily', 'weekly', 'biweekly', 'monthly']).describe("The specific run frequency for the campaign."),
       placeId: z.string().describe("The location(s) to include in the campaign. Supports multiple Google Place IDs separated by commas."),
       keyword: z.string().describe("The keyword(s) to run against the campaign locations. Supports multiple keywords separated by commas."),
@@ -569,7 +584,7 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
         name,
         measurement,
         gridSize,
-        radius,
+        radius: radius.toString(),
         frequency,
         placeId,
         keyword,
@@ -847,7 +862,7 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
       keyword: z.string().nullish().describe("Filter only results similar to specified keyword (loose match)."),
       startDate: z.string().nullish().describe("A lower limit date of a scan report you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
       endDate: z.string().nullish().describe("Upper limit date of a scan report you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
-      platform: z.enum(['google', 'apple', 'gaio', 'chatgpt','gemini','grok']).nullish().describe("Filter only results for a specific platform."),
+      platform: z.enum(['google', 'apple', 'gaio', 'chatgpt','gemini','grok', 'aimode']).nullish().describe("Filter only results for a specific platform."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Dot notation for nested paths (e.g., 'location.name'). The `.*.` wildcard works on arrays (e.g., 'scans.*.arp' on trend/campaign reports, where scans is an array) AND on dicts of objects (e.g., 'places.*.solv' on scan reports, where places is keyed by place_id with object values). For dicts of scalars like 'rankings.by_arp' (where values are numbers/strings keyed by place_id, not objects), request the whole dict by path alone — `.*.X` returns nothing because scalars can't be descended into. Omit to return all fields. STRONGLY recommended on every call: default responses can exceed 100KB."),
     },
     { title: "List Trend Reports", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
@@ -901,7 +916,7 @@ Get the report_key from listLocalFalconTrendReports.`,
       gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15', '17', '19', '21']).nullish().describe("The grid size of the scan."),
       frequency: z.enum(["one-time", "daily", "weekly", "biweekly", "monthly"]).nullish().describe("The frequency of the scan."),
       status: z.string().nullish().describe("The status of the scan."),
-      platform: z.enum(['google', 'apple', 'gaio', 'chatgpt','gemini','grok']).nullish().describe("The platform of the scan."),
+      platform: z.enum(['google', 'apple', 'gaio', 'chatgpt','gemini','grok', 'aimode']).nullish().describe("The platform of the scan."),
       fieldmask: z.string().nullish().describe("Comma-separated list of fields to return. Dot notation for nested paths (e.g., 'location.name'). The `.*.` wildcard works on arrays (e.g., 'scans.*.arp' on trend/campaign reports, where scans is an array) AND on dicts of objects (e.g., 'places.*.solv' on scan reports, where places is keyed by place_id with object values). For dicts of scalars like 'rankings.by_arp' (where values are numbers/strings keyed by place_id, not objects), request the whole dict by path alone — `.*.X` returns nothing because scalars can't be descended into. Omit to return all fields. STRONGLY recommended on every call: default responses can exceed 100KB."),
     },
     { title: "List Scheduled Auto-Scans", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
@@ -1055,10 +1070,10 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
     "getLocalFalconGrid",
     "Helper tool that generates grid coordinates for use with getLocalFalconRankingAtCoordinate or getLocalFalconKeywordAtCoordinate. Creates an array of lat/lng points based on your specified grid size and radius. NOTE: This is only useful if you're doing manual single-point checks. For comprehensive ranking analysis, skip this and use runLocalFalconScan instead, which handles grid creation automatically and provides full reports.",
     {
-      lat: z.string().describe("The latitude of the center of the grid."),
-      lng: z.string().describe("The longitude of the center of the grid."),
+      lat: z.coerce.number().min(-90).max(90).describe("The latitude of the center of the grid."),
+      lng: z.coerce.number().min(-180).max(180).describe("The longitude of the center of the grid."),
       gridSize: z.string().describe("Expects 3, 5, 7, 9, 11, 13, or 15."),
-      radius: z.string().describe("The radius of the grid in meters. From 0.1 to 100."),
+      radius: z.coerce.number().min(0.1).max(100).describe("The radius of the grid in meters. From 0.1 to 100."),
       measurement: z.enum(['mi', 'km']).nullish().describe("Expects 'mi' or 'km'."),
     },
     { title: "Generate Grid Coordinates", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
@@ -1067,7 +1082,7 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconGrid(apiKey, lat, lng, gridSize, radius, handleNullOrUndefined(measurement));
+      const resp = await fetchLocalFalconGrid(apiKey, lat.toString(), lng.toString(), gridSize, radius.toString(), handleNullOrUndefined(measurement));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -1077,8 +1092,8 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
     "getLocalFalconRankingAtCoordinate",
     "SINGLE-POINT CHECK ONLY - LIMITED USE TOOL. Checks ranking at exactly ONE coordinate. NOT for comprehensive analysis. WARNING: This is like checking the weather by looking out one window - you miss the full picture. Only use for: debugging specific locations, verifying edge cases, or quick spot checks. For ANY serious ranking analysis, reporting, or visibility assessment, use runLocalFalconScan instead which provides complete geographic coverage. Never use this for client reports or strategic decisions.",
     {
-      lat: z.string().describe("The latitude of the coordinate."),
-      lng: z.string().describe("The longitude of the coordinate."),
+      lat: z.coerce.number().min(-90).max(90).describe("The latitude of the coordinate."),
+      lng: z.coerce.number().min(-180).max(180).describe("The longitude of the coordinate."),
       keyword: z.string().describe("The keyword to search for."),
       zoom: z.string().nullish().describe("The zoom level of the map. From 0 to 18.").default("13"),
     },
@@ -1088,7 +1103,7 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconRankingAtCoordinate(apiKey, lat, lng, keyword, zoom ? zoom : "13");
+      const resp = await fetchLocalFalconRankingAtCoordinate(apiKey, lat.toString(), lng.toString(), keyword, zoom ? zoom : "13");
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -1099,8 +1114,8 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
     "getLocalFalconKeywordAtCoordinate",
     "LIMITED TOOL - Shows raw search results at ONE SINGLE point without ranking analysis. Does not provide ranking positions or competitive insights. Only use for debugging or checking raw SERP data. For actual ranking analysis, use runLocalFalconScan.",
     {
-      lat: z.string().describe("The latitude of the coordinate."),
-      lng: z.string().describe("The longitude of the coordinate."),
+      lat: z.coerce.number().min(-90).max(90).describe("The latitude of the coordinate."),
+      lng: z.coerce.number().min(-180).max(180).describe("The longitude of the coordinate."),
       keyword: z.string().describe("The desired search term or keyword."),
       zoom: z.string().describe("The desired zoom level of the map. From 0 to 18.").default("13"),
     },
@@ -1110,7 +1125,7 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconKeywordAtCoordinate(apiKey, lat, lng, keyword, zoom ? zoom : "13");
+      const resp = await fetchLocalFalconKeywordAtCoordinate(apiKey, lat.toString(), lng.toString(), keyword, zoom ? zoom : "13");
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -1143,8 +1158,8 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
       platform: z.enum(['google', 'apple']).default('google').describe("The platform to add the location from (google or apple)"),
       placeId: z.string().describe("The Business Location ID to add"),
       name: z.string().describe("Business name (required for Apple)").nullish(),
-      lat: z.string().describe("Latitude (required for Apple)").nullish(),
-      lng: z.string().describe("Longitude (required for Apple)").nullish(),
+      lat: z.coerce.number().min(-90).max(90).describe("Latitude (required for Apple)").nullish(),
+      lng: z.coerce.number().min(-180).max(180).describe("Longitude (required for Apple)").nullish(),
     },
     { title: "Save Business Location", readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     async ({ platform, placeId, name, lat, lng }, ctx) => {
@@ -1162,7 +1177,7 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
       }
 
       try {
-        const resp = await saveLocalFalconBusinessLocationToAccount(apiKey, platform, placeId, handleNullOrUndefined(name), handleNullOrUndefined(lat), handleNullOrUndefined(lng));
+        const resp = await saveLocalFalconBusinessLocationToAccount(apiKey, platform, placeId, handleNullOrUndefined(name), handleNullOrUndefined(lat?.toString()), handleNullOrUndefined(lng?.toString()));
         return {
           content: [
             {

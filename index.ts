@@ -35,8 +35,11 @@ interface SessionData {
 // connector proxy routinely drops and reconnects SSE/HTTP transports while
 // reusing the same Bearer token. Revocation now only happens via POST /oauth/revoke.
 
-// Session inactivity timeout - revoke tokens for sessions inactive longer than this
-const SESSION_INACTIVITY_TIMEOUT_MS = 10 * 24 * 60 * 60 * 1000; // 10 days
+// Session inactivity timeout - revoke tokens for sessions inactive longer than this.
+// 8 hours — was 10 days, but the server OOM-cycles every ~50h because the inactivity
+// checker never fires before the leak accumulates. Bearer-token auto-recovery handles
+// reconnection for clients that come back after this window — see attemptSessionRecovery.
+const SESSION_INACTIVITY_TIMEOUT_MS = 8 * 60 * 60 * 1000;
 
 // How often to check for inactive sessions
 const INACTIVITY_CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
@@ -337,6 +340,10 @@ const tokenVerifier = createTokenVerifier();
 // Base Application Setup
 const createBaseApp = (sessionManager: SessionManager): Application => {
   const app = express();
+  // Trust exactly one proxy hop (Render's edge). Required for express-rate-limit
+  // to read the real client IP from X-Forwarded-For without throwing
+  // ERR_ERL_UNEXPECTED_X_FORWARDED_FOR.
+  app.set('trust proxy', 1);
   app.use(express.json());
   app.use(express.urlencoded({ extended: true })); // Required for OAuth token requests
   // CORS: Wildcard origin is intentional. The MCP widget iframe runs from
@@ -882,7 +889,7 @@ const startUnifiedServer = (app: Application, sessionManager: SessionManager, mo
       console.log(`  - HTTP: POST|GET|DELETE /mcp and /`);
     }
     console.log(`  - Health: GET /ping, GET /healthz`);
-    console.log(`  - Session inactivity timeout: ${SESSION_INACTIVITY_TIMEOUT_MS / 1000 / 60 / 60 / 24} days`);
+    console.log(`  - Session inactivity timeout: ${SESSION_INACTIVITY_TIMEOUT_MS / 1000 / 60 / 60} hours`);
   });
 
   process.on("SIGINT", async () => {

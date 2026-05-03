@@ -176,7 +176,7 @@ All 37 tools include MCP tool annotations that signal to AI clients whether a to
 | `readOnlyHint: true` | 26 tools | Read-only data retrieval — safe to auto-execute |
 | `destructiveHint: true` | 3 tools | Consumes credits or permanently removes resources — always confirm with user |
 | `readOnlyHint: false, destructiveHint: false` | 8 tools | Modifies state but reversible and free — confirm recommended |
-| `openWorldHint: false` | All 37 tools | Tools operate within the Local Falcon platform only |
+| `openWorldHint: true` | All 37 tools | Tool data originates from external sources (search engines, AI platforms) accessed via the Local Falcon API. |
 
 ### Scan Reports
 * **listLocalFalconScanReports**: Lists all existing scan reports. Check here first before running new scans to avoid duplicates.
