@@ -121,9 +121,21 @@ export interface LocalFalconTrendReportsResponse {
 
 const API_BASE = "https://api.localfalcon.com/v1";
 const API_BASE_V2 = "https://api.localfalcon.com/v2";
-const HEADERS = {
-  "Content-Type": "application/json",
-};
+
+/**
+ * Build request headers with Bearer Token authentication for the Local Falcon API.
+ * @param apiKey - Local Falcon API key sent as a Bearer token
+ * @param formData - When true, omits Content-Type so fetch can set the multipart boundary
+ */
+function buildHeaders(apiKey: string, formData = false): Record<string, string> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${apiKey}`,
+  };
+  if (!formData) {
+    headers["Content-Type"] = "application/json";
+  }
+  return headers;
+}
 
 // Configuration
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -463,7 +475,6 @@ async function safeParseJson(response: any) {
  */
 export async function fetchLocalFalconReports(apiKey: string, limit: string, nextToken?: string, startDate?: string, endDate?: string, placeId?: string, keyword?: string, gridSize?: string, campaignKey?: string, platform?: string, fieldmask?: string) {
   const url = new URL(`${API_BASE}/reports`);
-  url.searchParams.set("api_key", apiKey);
   url.searchParams.set("limit", limit);
   if (nextToken) url.searchParams.set("next_token", nextToken);
   if (startDate) url.searchParams.set("start_date", startDate);
@@ -481,7 +492,7 @@ export async function fetchLocalFalconReports(apiKey: string, limit: string, nex
   return withRetry(async () => {
     const res = await fetchWithTimeout(url.toString(), {
       method: "POST",
-      headers: HEADERS,
+      headers: buildHeaders(apiKey),
     });
 
     if (!res.ok) {
@@ -527,7 +538,6 @@ export async function fetchLocalFalconReports(apiKey: string, limit: string, nex
  */
 export async function fetchLocalFalconTrendReports(apiKey: string, limit: string, nextToken?: string, placeId?: string, keyword?: string, startDate?: string, endDate?: string, platform?: string, fieldmask?: string) {
   const url = new URL(`${API_BASE}/trend-reports`);
-  url.searchParams.set("api_key", apiKey);
   url.searchParams.set("limit", limit);
   if (nextToken) url.searchParams.set("next_token", nextToken);
   if (placeId) url.searchParams.set("place_id", placeId);
@@ -543,7 +553,7 @@ export async function fetchLocalFalconTrendReports(apiKey: string, limit: string
   return withRetry(async () => {
     const res = await fetchWithTimeout(url.toString(), {
       method: "POST",
-      headers: HEADERS,
+      headers: buildHeaders(apiKey),
     });
 
     if (!res.ok) {
@@ -590,7 +600,6 @@ export async function fetchLocalFalconTrendReports(apiKey: string, limit: string
  */
 export async function fetchLocalFalconAutoScans(apiKey: string, nextToken?: string, placeId?: string, keyword?: string, grid_size?: string, frequency?: string, status?: string, platform?: string, fieldmask?: string) {
   const url = new URL(`${API_BASE}/autoscans`);
-  url.searchParams.set("api_key", apiKey);
 
   if (nextToken) url.searchParams.set("next_token", nextToken);
   if (placeId) url.searchParams.set("place_id", placeId);
@@ -606,7 +615,7 @@ export async function fetchLocalFalconAutoScans(apiKey: string, nextToken?: stri
   return withRetry(async () => {
     const res = await fetchWithTimeout(url.toString(), {
       method: "POST",
-      headers: HEADERS,
+      headers: buildHeaders(apiKey),
     });
 
     if (!res.ok) {
@@ -629,7 +638,6 @@ export async function fetchLocalFalconAutoScans(apiKey: string, nextToken?: stri
  */
 export async function fetchLocalFalconLocationReports(apiKey: string, limit: string, placeId?: string, keyword?: string, startDate?:string, endDate?: string, nextToken?: string, fieldmask?: string) {
   const url = new URL(`${API_BASE}/location-reports`);
-  url.searchParams.set("api_key", apiKey);
   url.searchParams.set("limit", limit);
 
   if (placeId) url.searchParams.set("place_id", placeId);
@@ -645,7 +653,7 @@ export async function fetchLocalFalconLocationReports(apiKey: string, limit: str
   return withRetry(async () => {
     const res = await fetchWithTimeout(url.toString(), {
       method: "POST",
-      headers: HEADERS,
+      headers: buildHeaders(apiKey),
     });
 
     if (!res.ok) {
@@ -703,7 +711,6 @@ export async function fetchLocalFalconLocationReports(apiKey: string, limit: str
  */
 export async function fetchAllLocalFalconLocations(apiKey: string, query?: string, fieldmask?: string) {
   const url = new URL(`${API_BASE}/locations`);
-  url.searchParams.set("api_key", apiKey);
 
   if (query) url.searchParams.set("query", query);
   if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
@@ -713,7 +720,7 @@ export async function fetchAllLocalFalconLocations(apiKey: string, query?: strin
   return withRetry(async () => {
     const res = await fetchWithTimeout(url.toString(), {
       method: "POST",
-      headers: HEADERS,
+      headers: buildHeaders(apiKey),
     });
 
     if (!res.ok) {
@@ -733,7 +740,6 @@ export async function fetchAllLocalFalconLocations(apiKey: string, query?: strin
  */
 export async function fetchLocalFalconLocationReport(apiKey: string, reportKey: string, fieldmask?: string) {
   const url = new URL(`${API_BASE}/location-reports/${reportKey}`);
-  url.searchParams.set("api_key", apiKey);
   if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
 
   await rateLimiter.waitForAvailableSlot();
@@ -741,7 +747,7 @@ export async function fetchLocalFalconLocationReport(apiKey: string, reportKey: 
   return withRetry(async () => {
     const res = await fetchWithTimeout(url.toString(), {
       method: "POST",
-      headers: HEADERS,
+      headers: buildHeaders(apiKey),
     });
 
     if (!res.ok) {
@@ -766,7 +772,6 @@ export async function fetchLocalFalconReport(apiKey: string, reportKey: string, 
     : reportKey;
 
   const url = new URL(`${API_BASE}/reports/${cleanReportKey}`);
-  url.searchParams.set("api_key", apiKey);
   if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
 
   await rateLimiter.waitForAvailableSlot();
@@ -774,7 +779,7 @@ export async function fetchLocalFalconReport(apiKey: string, reportKey: string, 
   return withRetry(async () => {
     const res = await fetchWithTimeout(url.toString(), {
       method: "POST",
-      headers: HEADERS,
+      headers: buildHeaders(apiKey),
     });
 
     if (!res.ok) {
@@ -827,7 +832,6 @@ export async function fetchLocalFalconTrendReport(apiKey: string, reportKey: str
     : reportKey;
 
   const url = new URL(`${API_BASE}/trend-reports/${cleanReportKey}`);
-  url.searchParams.set("api_key", apiKey);
   // Pass fieldmask directly — this is a single-report endpoint, not a list.
   // Do NOT use prefixFieldmaskForList here as it wraps all fields with scans.*
   // which drops top-level fields like report_key, last_date, keyword, location.
@@ -838,7 +842,7 @@ export async function fetchLocalFalconTrendReport(apiKey: string, reportKey: str
   return withRetry(async () => {
     const res = await fetchWithTimeout(url.toString(), {
       method: "POST",
-      headers: HEADERS,
+      headers: buildHeaders(apiKey),
     });
 
     if (!res.ok) {
@@ -929,7 +933,6 @@ export async function fetchLocalFalconTrendReport(apiKey: string, reportKey: str
  */
 export async function fetchLocalFalconKeywordReports(apiKey: string, limit: string, nextToken?: string, keyword?: string, startDate?: string, endDate?: string, fieldmask?: string) {
   const url = new URL(`${API_BASE}/keyword-reports`);
-  url.searchParams.set("api_key", apiKey);
   url.searchParams.set("limit", limit);
 
   if (nextToken) url.searchParams.set("next_token", nextToken);
@@ -944,7 +947,7 @@ export async function fetchLocalFalconKeywordReports(apiKey: string, limit: stri
   return withRetry(async () => {
     const res = await fetchWithTimeout(url.toString(), {
       method: "POST",
-      headers: HEADERS,
+      headers: buildHeaders(apiKey),
     });
 
     if (!res.ok) {
@@ -997,7 +1000,6 @@ export async function fetchLocalFalconKeywordReport(apiKey: string, reportKey: s
     : reportKey;
 
   const url = new URL(`${API_BASE}/keyword-reports/${cleanReportKey}`);
-  url.searchParams.set("api_key", apiKey);
   if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
 
   await rateLimiter.waitForAvailableSlot();
@@ -1005,7 +1007,7 @@ export async function fetchLocalFalconKeywordReport(apiKey: string, reportKey: s
   return withRetry(async () => {
     const res = await fetchWithTimeout(url.toString(), {
       method: "POST",
-      headers: HEADERS,
+      headers: buildHeaders(apiKey),
     });
 
     if (!res.ok) {
@@ -1029,7 +1031,6 @@ export async function fetchLocalFalconKeywordReport(apiKey: string, reportKey: s
  */
 export async function fetchLocalFalconGrid(apiKey: string, lat?: string, lng?: string, gridSize?: string, radius?: string, measurement?: string) {
   const url = new URL(`${API_BASE}/grid`);
-  url.searchParams.set("api_key", apiKey);
 
   if (lat) url.searchParams.set("lat", lat);
   if (lng) url.searchParams.set("lng", lng);
@@ -1042,7 +1043,7 @@ export async function fetchLocalFalconGrid(apiKey: string, lat?: string, lng?: s
   return withRetry(async () => {
     const res = await fetchWithTimeout(url.toString(), {
       method: "POST",
-      headers: HEADERS,
+      headers: buildHeaders(apiKey),
     });
 
     if (!res.ok) {
@@ -1064,7 +1065,6 @@ export async function fetchLocalFalconGrid(apiKey: string, lat?: string, lng?: s
  */
 export async function fetchLocalFalconGoogleBusinessLocations(apiKey: string, nextToken?: string, query?: string, near?: string, fieldmask?: string) {
   const url = new URL(`${API_BASE}/places`);
-  url.searchParams.set("api_key", apiKey);
 
   if (nextToken) url.searchParams.set("next_token", nextToken);
   if (query) url.searchParams.set("query", query);
@@ -1076,7 +1076,7 @@ export async function fetchLocalFalconGoogleBusinessLocations(apiKey: string, ne
   return withRetry(async () => {
     const res = await fetchWithTimeout(url.toString(), {
       method: "POST",
-      headers: HEADERS,
+      headers: buildHeaders(apiKey),
     });
 
     if (!res.ok) {
@@ -1099,7 +1099,6 @@ export async function fetchLocalFalconGoogleBusinessLocations(apiKey: string, ne
  */
 export async function fetchLocalFalconRankingAtCoordinate(apiKey: string, lat: string, lng: string, keyword: string, zoom = "13") {
   const url = new URL(`${API_BASE}/result`);
-  url.searchParams.set("api_key", apiKey);
   url.searchParams.set("lat", lat);
   url.searchParams.set("lng", lng);
   url.searchParams.set("keyword", keyword);
@@ -1110,7 +1109,7 @@ export async function fetchLocalFalconRankingAtCoordinate(apiKey: string, lat: s
   return withRetry(async () => {
     const res = await fetchWithTimeout(url.toString(), {
       method: "POST",
-      headers: HEADERS,
+      headers: buildHeaders(apiKey),
     });
 
     if (!res.ok) {
@@ -1133,7 +1132,6 @@ export async function fetchLocalFalconRankingAtCoordinate(apiKey: string, lat: s
  */
 export async function fetchLocalFalconKeywordAtCoordinate(apiKey: string, lat: string, lng: string, keyword: string, zoom = "13") {
   const url = new URL(`${API_BASE}/search`);
-  url.searchParams.set("api_key", apiKey);
   url.searchParams.set("lat", lat);
   url.searchParams.set("lng", lng);
   url.searchParams.set("keyword", keyword);
@@ -1144,7 +1142,7 @@ export async function fetchLocalFalconKeywordAtCoordinate(apiKey: string, lat: s
   return withRetry(async () => {
     const res = await fetchWithTimeout(url.toString(), {
       method: "POST",
-      headers: HEADERS,
+      headers: buildHeaders(apiKey),
     }, LONG_OPERATION_TIMEOUT_MS); // Longer timeout for search operations
 
     if (!res.ok) {
@@ -1185,7 +1183,6 @@ export async function fetchLocalFalconFullGridSearch(
   const url = "https://api.localfalcon.com/v2/run-scan/";
   
   const formData = new FormData();
-  formData.append("api_key", apiKey);
   formData.append("place_id", placeId);
   formData.append("keyword", keyword);
   formData.append("lat", lat);
@@ -1204,6 +1201,7 @@ export async function fetchLocalFalconFullGridSearch(
     const res = await fetchWithTimeout(url, {
       method: "POST",
       body: formData,
+      headers: buildHeaders(apiKey, true),
     }, LONG_OPERATION_TIMEOUT_MS); // Long timeout for grid searches
 
     if (!res.ok) {
@@ -1250,7 +1248,6 @@ export async function fetchLocalFalconFullGridSearch(
  */
 export async function fetchLocalFalconCompetitorReports(apiKey: string, limit: string, startDate?: string, endDate?: string, placeId?: string, keyword?: string, gridSize?: string, nextToken?: string, fieldmask?: string) {
   const url = new URL(`${API_BASE}/competitor-reports`);
-  url.searchParams.set("api_key", apiKey);
   url.searchParams.set("limit", limit);
 
   if (startDate) url.searchParams.set("start_date", startDate);
@@ -1267,7 +1264,7 @@ export async function fetchLocalFalconCompetitorReports(apiKey: string, limit: s
   return withRetry(async () => {
     const res = await fetchWithTimeout(url.toString(), {
       method: "POST",
-      headers: HEADERS,
+      headers: buildHeaders(apiKey),
     });
 
     if (!res.ok) {
@@ -1328,7 +1325,6 @@ export async function fetchLocalFalconCompetitorReport(apiKey: string, reportKey
     : reportKey;
 
   const url = new URL(`${API_BASE}/competitor-reports/${cleanReportKey}`);
-  url.searchParams.set("api_key", apiKey);
   if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
 
   await rateLimiter.waitForAvailableSlot();
@@ -1336,7 +1332,7 @@ export async function fetchLocalFalconCompetitorReport(apiKey: string, reportKey
   return withRetry(async () => {
     const res = await fetchWithTimeout(url.toString(), {
       method: "POST",
-      headers: HEADERS,
+      headers: buildHeaders(apiKey),
     });
 
     if (!res.ok) {
@@ -1384,7 +1380,6 @@ export async function fetchLocalFalconCompetitorReport(apiKey: string, reportKey
  */
 export async function fetchLocalFalconCampaignReports(apiKey: string, limit: string, startDate?: string, endDate?: string, placeId?: string, runDate?: string, nextToken?: string, fieldmask?: string) {
   const url = new URL(`${API_BASE}/campaigns`);
-  url.searchParams.set("api_key", apiKey);
   url.searchParams.set("limit", limit);
 
   if (startDate) url.searchParams.set("start_date", startDate);
@@ -1400,7 +1395,7 @@ export async function fetchLocalFalconCampaignReports(apiKey: string, limit: str
   return withRetry(async () => {
     const res = await fetchWithTimeout(url.toString(), {
       method: "POST",
-      headers: HEADERS,
+      headers: buildHeaders(apiKey),
     });
 
     if (!res.ok) {
@@ -1456,7 +1451,6 @@ export async function fetchLocalFalconCampaignReport(apiKey: string, reportKey: 
     : reportKey;
 
   const url = new URL(`${API_BASE}/campaigns/${cleanReportKey}`);
-  url.searchParams.set("api_key", apiKey);
 
   if (runDate) url.searchParams.set("run", runDate);
   if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
@@ -1466,7 +1460,7 @@ export async function fetchLocalFalconCampaignReport(apiKey: string, reportKey: 
   return withRetry(async () => {
     const res = await fetchWithTimeout(url.toString(), {
       method: "POST",
-      headers: HEADERS,
+      headers: buildHeaders(apiKey),
     }, LONG_OPERATION_TIMEOUT_MS); // Campaign reports can be large
 
     if (!res.ok) {
@@ -1488,7 +1482,6 @@ export async function fetchLocalFalconCampaignReport(apiKey: string, reportKey: 
  */
 export async function fetchLocalFalconGuardReports(apiKey: string, limit: string, startDate?: string, endDate?: string, status?: string, nextToken?: string, fieldmask?: string) {
   const url = new URL(`${API_BASE}/guard`);
-  url.searchParams.set("api_key", apiKey);
   url.searchParams.set("limit", limit);
 
   if (startDate) url.searchParams.set("start_date", startDate);
@@ -1502,7 +1495,7 @@ export async function fetchLocalFalconGuardReports(apiKey: string, limit: string
   return withRetry(async () => {
     const res = await fetchWithTimeout(url.toString(), {
       method: "POST",
-      headers: HEADERS,
+      headers: buildHeaders(apiKey),
     });
 
     if (!res.ok) {
@@ -1546,7 +1539,6 @@ export async function fetchLocalFalconGuardReports(apiKey: string, limit: string
  */
 export async function fetchLocalFalconGuardReport(apiKey: string, placeId: string, startDate?: string, endDate?: string, fieldmask?: string) {
   const url = new URL(`${API_BASE}/guard/${placeId}`);
-  url.searchParams.set("api_key", apiKey);
   if (startDate) url.searchParams.set("start_date", startDate);
   if (endDate) url.searchParams.set("end_date", endDate);
   if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
@@ -1556,7 +1548,7 @@ export async function fetchLocalFalconGuardReport(apiKey: string, placeId: strin
   return withRetry(async () => {
     const res = await fetchWithTimeout(url.toString(), {
       method: "POST",
-      headers: HEADERS,
+      headers: buildHeaders(apiKey),
     });
 
     if (!res.ok) {
@@ -1646,7 +1638,6 @@ export async function runLocalFalconScan(
     // Wait for rate limiter before making the request
     await rateLimiter.waitForAvailableSlot();
     const form = new FormData();
-    form.append('api_key', apiKey);
     form.append('place_id', placeId);
     form.append('keyword', keyword);
     form.append('lat', lat);
@@ -1675,6 +1666,7 @@ export async function runLocalFalconScan(
         {
           method: 'POST',
           body: form,
+          headers: buildHeaders(apiKey, true),
         },
         SCAN_SUBMIT_TIMEOUT_MS
       );
@@ -1727,7 +1719,6 @@ export async function searchForLocalFalconBusinessLocation(
     // Wait for rate limiter before making the request
     await rateLimiter.waitForAvailableSlot();
     const form = new FormData();
-    form.append('api_key', apiKey);
     form.append('term', term);
     form.append('platform', platform);
     if (proximity) form.append('proximity', proximity);
@@ -1737,6 +1728,7 @@ export async function searchForLocalFalconBusinessLocation(
         {
           method: 'POST',
           body: form,
+          headers: buildHeaders(apiKey, true),
         },
         DEFAULT_TIMEOUT_MS
       );
@@ -1777,7 +1769,6 @@ export async function saveLocalFalconBusinessLocationToAccount(
   try {
     await rateLimiter.waitForAvailableSlot();
     const form = new FormData();
-    form.append('api_key', apiKey);
     form.append('platform', platform);
     form.append('place_id', placeId);
     if (name) form.append('name', name);
@@ -1790,6 +1781,7 @@ export async function saveLocalFalconBusinessLocationToAccount(
         {
           method: 'POST',
           body: form,
+          headers: buildHeaders(apiKey, true),
         },
         DEFAULT_TIMEOUT_MS
       );
@@ -1823,7 +1815,6 @@ export async function fetchLocalFalconAccountInfo(
   try {
     await rateLimiter.waitForAvailableSlot();
     const form = new FormData();
-    form.append('api_key', apiKey);
     if (returnField) form.append('return', returnField);
     if (fieldmask) form.append('fieldmask', fieldmask);
     const response = await withRetry(async () => {
@@ -1832,6 +1823,7 @@ export async function fetchLocalFalconAccountInfo(
         {
           method: 'POST',
           body: form,
+          headers: buildHeaders(apiKey, true),
         },
         DEFAULT_TIMEOUT_MS
       );
@@ -1857,7 +1849,6 @@ export async function addLocationsToFalconGuard(
   try {
     await rateLimiter.waitForAvailableSlot();
     const form = new FormData();
-    form.append('api_key', apiKey);
     form.append('place_id', placeIds);
 
     const response = await withRetry(async () => {
@@ -1866,6 +1857,7 @@ export async function addLocationsToFalconGuard(
         {
           method: 'POST',
           body: form,
+          headers: buildHeaders(apiKey, true),
         },
         DEFAULT_TIMEOUT_MS
       );
@@ -1899,7 +1891,6 @@ export async function pauseFalconGuardProtection(
   try {
     await rateLimiter.waitForAvailableSlot();
     const form = new FormData();
-    form.append('api_key', apiKey);
     if (guardKey) form.append('guard_key', guardKey);
     if (placeId) form.append('place_id', placeId);
 
@@ -1909,6 +1900,7 @@ export async function pauseFalconGuardProtection(
         {
           method: 'POST',
           body: form,
+          headers: buildHeaders(apiKey, true),
         },
         DEFAULT_TIMEOUT_MS
       );
@@ -1942,7 +1934,6 @@ export async function resumeFalconGuardProtection(
   try {
     await rateLimiter.waitForAvailableSlot();
     const form = new FormData();
-    form.append('api_key', apiKey);
     if (guardKey) form.append('guard_key', guardKey);
     if (placeId) form.append('place_id', placeId);
 
@@ -1952,6 +1943,7 @@ export async function resumeFalconGuardProtection(
         {
           method: 'POST',
           body: form,
+          headers: buildHeaders(apiKey, true),
         },
         DEFAULT_TIMEOUT_MS
       );
@@ -1985,7 +1977,6 @@ export async function removeFalconGuardProtection(
   try {
     await rateLimiter.waitForAvailableSlot();
     const form = new FormData();
-    form.append('api_key', apiKey);
     if (guardKey) form.append('guard_key', guardKey);
     if (placeId) form.append('place_id', placeId);
 
@@ -1995,6 +1986,7 @@ export async function removeFalconGuardProtection(
         {
           method: 'POST',
           body: form,
+          headers: buildHeaders(apiKey, true),
         },
         DEFAULT_TIMEOUT_MS
       );
@@ -2041,7 +2033,6 @@ export async function createLocalFalconCampaign(
   try {
     await rateLimiter.waitForAvailableSlot();
     const form = new FormData();
-    form.append('api_key', apiKey);
     form.append('name', params.name);
     form.append('measurement', params.measurement);
     form.append('grid_size', params.gridSize);
@@ -2063,6 +2054,7 @@ export async function createLocalFalconCampaign(
         {
           method: 'POST',
           body: form,
+          headers: buildHeaders(apiKey, true),
         },
         DEFAULT_TIMEOUT_MS
       );
@@ -2094,7 +2086,6 @@ export async function runLocalFalconCampaign(
   try {
     await rateLimiter.waitForAvailableSlot();
     const form = new FormData();
-    form.append('api_key', apiKey);
     form.append('campaign_key', campaignKey);
 
     // Campaign run submission strategy:
@@ -2110,6 +2101,7 @@ export async function runLocalFalconCampaign(
         {
           method: 'POST',
           body: form,
+          headers: buildHeaders(apiKey, true),
         },
         CAMPAIGN_SUBMIT_TIMEOUT_MS
       );
@@ -2152,7 +2144,6 @@ export async function pauseLocalFalconCampaign(
   try {
     await rateLimiter.waitForAvailableSlot();
     const form = new FormData();
-    form.append('api_key', apiKey);
     form.append('campaign_key', campaignKey);
 
     const response = await withRetry(async () => {
@@ -2161,6 +2152,7 @@ export async function pauseLocalFalconCampaign(
         {
           method: 'POST',
           body: form,
+          headers: buildHeaders(apiKey, true),
         },
         DEFAULT_TIMEOUT_MS
       );
@@ -2196,7 +2188,6 @@ export async function resumeLocalFalconCampaign(
   try {
     await rateLimiter.waitForAvailableSlot();
     const form = new FormData();
-    form.append('api_key', apiKey);
     form.append('campaign_key', campaignKey);
     if (startDate) form.append('start_date', startDate);
     if (startTime) form.append('start_time', startTime);
@@ -2207,6 +2198,7 @@ export async function resumeLocalFalconCampaign(
         {
           method: 'POST',
           body: form,
+          headers: buildHeaders(apiKey, true),
         },
         DEFAULT_TIMEOUT_MS
       );
@@ -2238,7 +2230,6 @@ export async function reactivateLocalFalconCampaign(
   try {
     await rateLimiter.waitForAvailableSlot();
     const form = new FormData();
-    form.append('api_key', apiKey);
     form.append('campaign_key', campaignKey);
 
     const response = await withRetry(async () => {
@@ -2247,6 +2238,7 @@ export async function reactivateLocalFalconCampaign(
         {
           method: 'POST',
           body: form,
+          headers: buildHeaders(apiKey, true),
         },
         DEFAULT_TIMEOUT_MS
       );
@@ -2287,7 +2279,6 @@ export async function fetchLocalFalconReviewsAnalysisReports(
   try {
     await rateLimiter.waitForAvailableSlot();
     const form = new FormData();
-    form.append('api_key', apiKey);
     if (reviewsKey) form.append('reviews_key', reviewsKey);
     if (placeId) form.append('place_id', placeId);
     if (frequency) form.append('frequency', frequency);
@@ -2301,6 +2292,7 @@ export async function fetchLocalFalconReviewsAnalysisReports(
         {
           method: 'POST',
           body: form,
+          headers: buildHeaders(apiKey, true),
         },
         DEFAULT_TIMEOUT_MS
       );
@@ -2333,7 +2325,6 @@ export async function fetchLocalFalconReviewsAnalysisReport(
   try {
     await rateLimiter.waitForAvailableSlot();
     const form = new FormData();
-    form.append('api_key', apiKey);
     form.append('report_key', reportKey);
     if (fieldmask) form.append('fieldmask', fieldmask);
 
@@ -2343,6 +2334,7 @@ export async function fetchLocalFalconReviewsAnalysisReport(
         {
           method: 'POST',
           body: form,
+          headers: buildHeaders(apiKey, true),
         },
         DEFAULT_TIMEOUT_MS
       );
@@ -2378,7 +2370,6 @@ export async function searchLocalFalconKnowledgeBase(
   nextToken?: string
 ): Promise<any> {
   const url = new URL(`${API_BASE_V2}/knowledge-base/`);
-  url.searchParams.set("api_key", apiKey);
 
   if (q) url.searchParams.set("q", q);
   if (categoryId) url.searchParams.set("category_id", categoryId);
@@ -2390,7 +2381,7 @@ export async function searchLocalFalconKnowledgeBase(
   return withRetry(async () => {
     const res = await fetchWithTimeout(url.toString(), {
       method: "GET",
-      headers: HEADERS,
+      headers: buildHeaders(apiKey),
     });
 
     if (!res.ok) {
@@ -2413,14 +2404,13 @@ export async function getLocalFalconKnowledgeBaseArticle(
   articleId: string
 ): Promise<any> {
   const url = new URL(`${API_BASE_V2}/knowledge-base/${articleId}`);
-  url.searchParams.set("api_key", apiKey);
 
   await rateLimiter.waitForAvailableSlot();
 
   return withRetry(async () => {
     const res = await fetchWithTimeout(url.toString(), {
       method: "GET",
-      headers: HEADERS,
+      headers: buildHeaders(apiKey),
     });
 
     if (!res.ok) {
