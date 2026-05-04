@@ -4,9 +4,10 @@
 
 This is the **Local Falcon MCP Server** (`@local-falcon/mcp`), a Model Context Protocol server that wraps the [Local Falcon API](https://docs.localfalcon.com). It enables AI agents to run geo-grid rank tracking scans, retrieve reports, manage campaigns, monitor Google Business Profiles, and analyze competitive positioning across Google Maps, Apple Maps, and AI search platforms.
 
-**Package:** `@local-falcon/mcp` (npm)
+**Package:** [`@local-falcon/mcp`](https://www.npmjs.com/package/@local-falcon/mcp) (npm)
+**Version:** 1.0.1
 **License:** MIT
-**Runtime:** Node.js / Bun
+**Runtime:** Node.js 18+
 **Language:** TypeScript (strict mode)
 
 ## Architecture
@@ -20,7 +21,7 @@ oauth/            → OAuth 2.1 authorization server (routes, provider, config, 
 
 ### Key Design Patterns
 
-- **`server.ts`** exports a single `getServer(sessionMapping)` function that creates and returns an `McpServer` instance with all 37 tools registered via `server.tool(name, description, zodSchema, handler)`.
+- **`server.ts`** exports a single `getServer(sessionMapping)` function that creates and returns an `McpServer` instance with all 37 tools registered via `server.tool(name, description, zodSchema, annotations, handler)`. Every tool includes MCP tool annotations (`readOnlyHint`, `destructiveHint`) that signal to AI clients whether a tool reads data or modifies state.
 - **`localfalcon.ts`** contains one exported function per API endpoint. Two call patterns:
   - **URL params (v1):** `new URL(endpoint)` → `url.searchParams.set()` → POST with JSON headers
   - **FormData (v2):** `new FormData()` → `form.append()` → POST with form body
@@ -42,10 +43,10 @@ Started via CLI argument to `index.ts`:
 
 | Mode | Command | Description |
 |---|---|---|
-| `stdio` (default) | `bun run index.ts` or `bun run index.ts stdio` | Standard I/O for local MCP clients |
-| `sse` | `bun run index.ts sse` | Server-Sent Events, OAuth 2.1 protected |
-| `http` | `bun run index.ts http` | Streamable HTTP, OAuth 2.1 protected |
-| `HTTPAndSSE` | `bun run index.ts HTTPAndSSE` | Both HTTP and SSE on same server |
+| `stdio` (default) | `npm run start` or `npm run start:stdio` | Standard I/O for local MCP clients |
+| `sse` | `npm run start:sse` | Server-Sent Events, OAuth 2.1 protected |
+| `http` | `npm run start:http` | Streamable HTTP, OAuth 2.1 protected |
+| `HTTPAndSSE` | `npm run start:HTTPAndSSE` | Both HTTP and SSE on same server |
 
 Remote modes (SSE, HTTP) use OAuth 2.1 with PKCE for authentication. The server implements RFC 8414 (Authorization Server Metadata), RFC 9728 (Protected Resource Metadata), and RFC 7591 (Dynamic Client Registration).
 
@@ -98,6 +99,32 @@ Remote modes (SSE, HTTP) use OAuth 2.1 with PKCE for authentication. The server 
 | `searchLocalFalconKnowledgeBase` | Search the help/docs knowledge base |
 | `getLocalFalconKnowledgeBaseArticle` | Get full content of a knowledge base article |
 
+## Tool Annotations
+
+Every `server.tool()` call includes an MCP tool annotations object that tells AI clients whether the tool is safe to auto-execute or should require user confirmation. These are placed after the Zod input schema and before the handler callback.
+
+### Read-Only (26 tools) — `{ readOnlyHint: true }`
+
+These tools only retrieve data. They never modify state, create resources, or cost credits.
+
+All 20 report list/get tools, plus: `listAllLocalFalconLocations`, `getLocalFalconGoogleBusinessLocations`, `getLocalFalconGrid`, `getLocalFalconRankingAtCoordinate`, `getLocalFalconKeywordAtCoordinate`, `viewLocalFalconAccountInformation`, `searchForLocalFalconBusinessLocation`, `searchLocalFalconKnowledgeBase`, `getLocalFalconKnowledgeBaseArticle`.
+
+### Destructive / Credit-Consuming (3 tools) — `{ destructiveHint: true }`
+
+These tools consume credits (irreversible) or permanently remove resources. AI clients should always confirm with the user before executing.
+
+| Tool | Reason |
+|---|---|
+| `runLocalFalconScan` | Costs credits |
+| `runLocalFalconCampaign` | Costs credits |
+| `removeFalconGuardProtection` | Permanently removes Guard monitoring |
+
+### State-Changing / Non-Destructive (8 tools) — `{ readOnlyHint: false, destructiveHint: false }`
+
+These tools modify state but are reversible and do not consume credits.
+
+`createLocalFalconCampaign`, `pauseLocalFalconCampaign`, `resumeLocalFalconCampaign`, `reactivateLocalFalconCampaign`, `saveLocalFalconBusinessLocationToAccount`, `addLocationsToFalconGuard`, `pauseFalconGuardProtection`, `resumeFalconGuardProtection`.
+
 ## Valid Enum Values
 
 All enum values are validated via Zod schemas in `server.ts`.
@@ -105,7 +132,7 @@ All enum values are validated via Zod schemas in `server.ts`.
 ### Platform
 
 **`runLocalFalconScan`:**
-`google`, `apple`, `gaio`, `chatgpt`, `gemini`, `grok`, `aimode`, `giao`
+`google`, `apple`, `gaio`, `chatgpt`, `gemini`, `grok`, `aimode`
 
 **Filter/list tools (`listLocalFalconScanReports`, `listLocalFalconTrendReports`, `listLocalFalconAutoScans`):**
 `google`, `apple`, `gaio`, `chatgpt`, `gemini`, `grok`
@@ -179,15 +206,31 @@ The Local Falcon API has two base URLs used by `localfalcon.ts`:
 
 Public API documentation: [docs.localfalcon.com](https://docs.localfalcon.com)
 
+## Release & Deployment
+
+| Component | Details |
+|---|---|
+| npm auto-publish | GitHub Action (`.github/workflows/npm-publish.yml`) triggers on GitHub release creation |
+| MCPB packaging | `manifest.json` (v0.3 spec) + `.mcpbignore` + `mcpb pack . local-falcon-mcp.mcpb` |
+| OAuth 2.1 | Working end-to-end for remote transports (SSE, HTTP). RFC 8414 / RFC 9728 / RFC 7591 |
+| SKILL.md | AI client integration skill definition in `skills/` with 3 reference files |
+
+### MCPB Build
+```bash
+npm run build                          # Compile TypeScript to dist/
+mcpb validate manifest.json            # Validate manifest
+mcpb pack . local-falcon-mcp.mcpb      # Create .mcpb bundle
+```
+
 ## Development
 
 ### Prerequisites
-- Node.js 18+ or Bun
+- Node.js 18+
 - TypeScript 5.8+
 
 ### Setup
 ```bash
-npm install        # or: bun install
+npm install
 cp .env.example .env.local
 # Add your LOCAL_FALCON_API_KEY to .env.local
 ```
@@ -244,7 +287,95 @@ npm run docker:run
 | `localfalcon.ts` | API client — fetch functions, rate limiter, retry logic, types |
 | `oauth/` | OAuth 2.1 implementation (authorization, tokens, PKCE, client registration) |
 | `package.json` | Package config, scripts, dependencies |
+| `manifest.json` | MCPB Desktop Extension manifest (v0.3 spec) — tools, icons, user_config |
+| `.mcpbignore` | Exclusion patterns for MCPB bundle creation |
 | `tsconfig.json` | TypeScript compiler configuration |
 | `.env.example` | Environment variable template |
 | `Dockerfile` | Container build configuration |
+| `skills/` | AI skills — MCP tool usage skill and local visibility strategy skill |
+| `.claude-plugin/` | Claude Code plugin manifest (`plugin.json`) |
+| `.mcp.json` | Remote MCP server configuration for Claude Code plugin |
+| `.github/workflows/` | npm auto-publish on GitHub release |
+| `vite.ui.config.ts` | Vite build config for MCP App UI entries |
+| `ui/geogrid-heatmap/` | Geo-grid heatmap MCP App — interactive Google Maps widget |
 | `_spec/` | Internal development specs (gitignored, not published) |
+
+## MCP Apps
+
+The server includes MCP App support via `@modelcontextprotocol/ext-apps`. Apps are interactive HTML widgets embedded in AI clients.
+
+### Geo-Grid Heatmap
+
+An interactive Google Maps widget that visualizes geo-grid scan data with colored rank pins, metrics bar, and clickable detail panels.
+
+| Component | Details |
+|---|---|
+| Source | `ui/geogrid-heatmap/` (index.html, main.ts, styles.css) |
+| Build | `npm run build:ui` → `dist/ui/geogrid-heatmap/index.html` (~230 KB single-file) |
+| Google Maps API Key | Set `GOOGLE_MAPS_API_KEY` env var at build time (GCP project `lf-mcp-apps`) |
+| Resource URI | `ui://reports/geogrid-heatmap` |
+| Linked Tool | `getLocalFalconReport` (via `registerAppTool` with `_meta.ui.resourceUri`) |
+| Data Resource | `localfalcon://reports/{report_key}/data_points` (fetches full grid data for the widget) |
+
+### Build
+
+```bash
+GOOGLE_MAPS_API_KEY=your-key npm run build:ui
+```
+
+The `build` script runs both TypeScript compilation and UI builds.
+
+## ChatGPT MCP Connector Compatibility
+
+### OAuth 2.1 Requirements (ChatGPT-specific)
+
+ChatGPT's MCP connector (`openai-mcp/1.0.0`) has stricter OAuth requirements than Claude's:
+
+| Requirement | Detail | File |
+|---|---|---|
+| **Scopes aligned** | Both `.well-known/oauth-authorization-server` and `.well-known/oauth-protected-resource` must advertise `["api", "offline_access"]` | `index.ts` |
+| **Token response scope** | Token endpoint must return `scope: "api offline_access"` matching the requested scope — mismatches cause re-auth loops | `oauth/routes.ts` |
+| **`refresh_token` grant** | `grant_types_supported` must include `"refresh_token"` | `index.ts` |
+| **Widget domain** | `_meta.ui.domain` required on MCP App resources — without it, ChatGPT loops OAuth on tool calls. Format: `{url-derived}.oaiusercontent.com` | `server.ts` |
+
+### MCP Apps Bridge Differences (ChatGPT vs Claude)
+
+ChatGPT's MCP Apps bridge delivers tool results differently from Claude's:
+
+**Claude:** `ontoolresult` receives `{content: [{type: "text", text: "single-encoded JSON"}]}`
+
+**ChatGPT:** `ontoolresult` receives `params` from `ui/notifications/tool-result` with TWO paths:
+- `content[0].text` — **double-encoded**: JSON string wrapping a `{text: "json"}` envelope
+- `structuredContent.text` — **single-encoded**: clean JSON string (preferred)
+
+**Parsing strategy in `main.ts` (priority order):**
+1. **Tier 0:** `result.structuredContent.text` → `JSON.parse()` (ChatGPT clean path)
+2. **Tier 1:** `result.content[]` array → find `type: "text"` block → `JSON.parse(block.text)` (Claude path)
+3. **Tier 2:** `result.text` as string → `JSON.parse(result.text)` (simple text wrapper)
+4. **Tier 3:** `result.data` or raw `result` (generic fallback)
+5. **Double-encoding unwrapper:** If result has no `report_key` but has `text` string → `JSON.parse(reportData.text)`
+
+### `_meta: null` Workaround (Critical for ChatGPT)
+
+The MCP SDK's `server.resource()` serializes `_meta` as `null` in JSON-RPC responses. ChatGPT's bridge Zod schema requires `_meta` to be an object — `null` fails validation, causing `readServerResource` to time out.
+
+**Fix:** `patchNullMeta()` in `main.ts` — a recursive function that replaces `_meta: null` with `_meta: {}` at any depth. Installed as a monkey-patch on `window.addEventListener` before `new App()`. Safe for Claude — Claude's responses have `_meta` as an object or absent, never `null`.
+
+### Google Maps API Key — ChatGPT Referrer
+
+The Maps JavaScript API key (GCP project `lf-mcp-apps`) must allow ChatGPT's widget sandbox as an HTTP referrer:
+
+| Referrer | Purpose |
+|---|---|
+| `*.oaiusercontent.com/*` | ChatGPT widget sandbox |
+| `*.web-sandbox.oaiusercontent.com/*` | ChatGPT specific sandbox subdomain |
+| `*.claudemcpcontent.com/*` | Claude widget sandbox |
+| `*.localfalcon.com/*` | Production + dev |
+
+### OAuth Browser State Issue
+
+ChatGPT's OAuth dialog enters an infinite React render loop in normal Chrome sessions due to stale React Router state. **Incognito mode works reliably.** This is a ChatGPT frontend bug.
+
+### Error Handling in Tool Responses
+
+Tool handlers never expose raw `error.message` to users — catch blocks log the full error to `console.error` and return a generic user-facing message. This prevents leaking internal API details.

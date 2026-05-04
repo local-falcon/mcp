@@ -9,15 +9,31 @@
 </p>
 
 <p align="center">
-    <a href="https://github.com/local-falcon/mcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  <a href="https://www.npmjs.com/package/@local-falcon/mcp"><img src="https://img.shields.io/npm/v/@local-falcon/mcp.svg" alt="npm version"></a>
+  <a href="https://github.com/local-falcon/mcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg" alt="Node.js"></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.8-blue.svg" alt="TypeScript"></a>
   <a href="https://www.localfalcon.com"><img src="https://img.shields.io/badge/Local%20Falcon-Website-red" alt="Local Falcon"></a>
+  <a href="https://docs.localfalcon.com"><img src="https://img.shields.io/badge/API%20Docs-docs.localfalcon.com-green" alt="API Docs"></a>
 </p>
 
 ---
 
 ## Local SEO and AI Visibility Monitoring MCP Server
 
-An MCP (Model Context Protocol) server for the [Local Falcon platform](https://www.localfalcon.com/), implemented in TypeScript, using the official MCP SDK. This server exposes Local Falcon scanning, tracking and reporting capabilities as MCP tools, enabling integration with agentic AI systems and workflows.
+An MCP (Model Context Protocol) server for the [Local Falcon platform](https://www.localfalcon.com/), implemented in TypeScript, using the official MCP SDK. This server exposes Local Falcon scanning, tracking and reporting capabilities as 37 MCP tools, enabling integration with agentic AI systems and workflows.
+
+---
+
+## Features
+
+- **37 MCP tools** for scanning, reporting, campaign management, competitor analysis, reviews, and Falcon Guard monitoring
+- **Interactive MCP Apps widget** — geo-grid heatmap with Google Maps, colored rank pins, and clickable detail panels
+- **OAuth 2.1** with PKCE, refresh token support, and dynamic client registration
+- **Tool annotations** on all 37 tools — `readOnlyHint`, `destructiveHint`, and `openWorldHint` for safe auto-execution
+- **Multi-platform** — Google Maps, Apple Maps, ChatGPT, Gemini, Grok, Google AI Overviews, AI Mode
+- **ChatGPT MCP connector compatible** — OAuth scope alignment, widget sandbox domain, structured content parsing
+- **HTML sanitizer** for AI scrape content displayed in the heatmap widget
 
 ---
 
@@ -74,7 +90,7 @@ For MCP clients that use `mcp-remote` (all platforms):
 
 ## Running via Remote (SSE — Legacy)
 
-** The /sse endpoint is considered legacy and will be removed in a future version. Use the /mcp endpoint instead.
+**The /sse endpoint is considered legacy and will be removed in a future version. Use the /mcp endpoint instead.**
 
 ```json
 {
@@ -92,6 +108,8 @@ For MCP clients that use `mcp-remote` (all platforms):
 
 ## Running via STDIO
 
+**One-click install:** Download the latest `.mcpb` bundle from [Releases](https://github.com/local-falcon/mcp/releases) and open it in Claude Desktop. For manual installation, follow the steps below.
+
 For local installations, first install the package:
 
 ```bash
@@ -108,7 +126,7 @@ For MacOS/Unix:
       "command": "node",
       "args": ["/Users/YOUR_USERNAME/lf-mcp/node_modules/@local-falcon/mcp/dist/index.js"],
       "env": {
-        "LOCALFALCON_API_KEY": "INSERT_YOUR_API_KEY_HERE"
+        "LOCAL_FALCON_API_KEY": "INSERT_YOUR_API_KEY_HERE"
       }
     }
   }
@@ -123,18 +141,46 @@ For Windows:
       "command": "node",
       "args": ["C:\\Users\\YOUR_USERNAME\\lf-mcp\\node_modules\\@local-falcon\\mcp\\dist\\index.js"],
       "env": {
-        "LOCALFALCON_API_KEY": "INSERT_YOUR_API_KEY_HERE"
+        "LOCAL_FALCON_API_KEY": "INSERT_YOUR_API_KEY_HERE"
       }
     }
   }
 }
 ```
 
-## Tools List
+---
+
+## MCP Apps
+
+The server includes an interactive [MCP Apps](https://modelcontextprotocol.io/specification/2025-03-26/server/utilities/apps) widget that renders inside supported AI clients (Claude, ChatGPT).
+
+### Geo-Grid Heatmap
+
+When you call `getLocalFalconReport`, clients that support MCP Apps will display an interactive geo-grid heatmap widget featuring:
+
+- **Metrics bar** — keyword, business name, grid size, ARP, ATRP, SoLV, scan date
+- **Google Maps** — full interactive map with colored rank pins (green = rank 1, red = rank 9+)
+- **Detail panel** — click any pin to see the full business listing at that grid point with ratings, reviews, categories, and AI scrape content
+- **HTML sanitizer** — AI scrape content is sanitized with an allowlist of safe tags, attributes, and image domains before rendering
+
+The widget is built as a single-file HTML application using Vite and served as an MCP App resource.
+
+---
+
+## Tools (37)
+
+All 37 tools include MCP tool annotations that signal to AI clients whether a tool is safe to auto-execute:
+
+| Annotation | Tools | Behavior |
+|---|---|---|
+| `readOnlyHint: true` | 26 tools | Read-only data retrieval — safe to auto-execute |
+| `destructiveHint: true` | 3 tools | Consumes credits or permanently removes resources — always confirm with user |
+| `readOnlyHint: false, destructiveHint: false` | 8 tools | Modifies state but reversible and free — confirm recommended |
+| `openWorldHint: true` | All 37 tools | Tool data originates from external sources (search engines, AI platforms) accessed via the Local Falcon API. |
 
 ### Scan Reports
 * **listLocalFalconScanReports**: Lists all existing scan reports. Check here first before running new scans to avoid duplicates.
-* **getLocalFalconReport**: Retrieves a specific scan report by report key (e.g., `https://www.localfalcon.com/reports/view/XXXXX`).
+* **getLocalFalconReport**: Retrieves a specific scan report by report key (e.g., `https://www.localfalcon.com/reports/view/XXXXX`). Renders an interactive geo-grid heatmap in MCP Apps-capable clients.
 * **runLocalFalconScan**: Runs a new scan at the specified coordinates to get ranking data for a business.
 
 ### Campaign Management
@@ -188,34 +234,58 @@ For Windows:
 * **getLocalFalconRankingAtCoordinate**: Single-point ranking check at one coordinate.
 * **getLocalFalconKeywordAtCoordinate**: Single-point keyword search at one coordinate.
 
+### Knowledge Base
+* **searchLocalFalconKnowledgeBase**: Searches the Local Falcon Knowledge Base for help articles, how-to guides, and platform documentation.
+* **getLocalFalconKnowledgeBaseArticle**: Retrieves the full content of a specific Knowledge Base article by ID.
+
 ### Account
 * **viewLocalFalconAccountInformation**: Retrieves account info including user, credits, and subscription details.
+
 ---
 
-## For developers
+## Skills
 
-- Build (necessary to run in local MCP host applications):
+This repo includes two AI skills under `skills/`:
 
-  ```bash
-  bun run build
-  ```
+| Skill | Path | Description |
+|---|---|---|
+| **Local Falcon MCP** | `skills/local-falcon-mcp/` | MCP tool usage guidance — helps AI agents use the 37 MCP tools effectively |
+| **Local Visibility** | `skills/local-visibility-skill/` | General AI visibility & local SEO strategy — platform analysis, metrics interpretation, prompt templates |
 
-- Run MCP Inspector:
-  ```bash
-  bun run inspector
-  ```
+---
 
-- Run MCP Server:
+## For Developers
 
-  Run one of the following:
+> **Note:** End users only need [Node.js](https://nodejs.org/) (LTS) and npm to install and run this server. The instructions below are for contributors and developers working on the source code.
 
-  ```bash
-  bun run start
-  bun run start:sse
-  bun run start:stdio
-  ```
+### Prerequisites
 
-  Note: if sse is not specified, the server will default to stdio.
+- [Node.js](https://nodejs.org/) 18+ (LTS recommended)
+- npm (included with Node.js)
+
+### Build
+
+```bash
+npm install
+npm run build
+```
+
+The build compiles TypeScript to `dist/` and builds the MCP Apps UI widget to `dist/ui/`.
+
+### Run MCP Inspector
+
+```bash
+npm run inspector
+```
+
+### Run MCP Server
+
+```bash
+npm run start             # STDIO mode (default)
+npm run start:sse         # SSE mode with OAuth
+npm run start:http        # HTTP mode with OAuth
+npm run start:HTTPAndSSE  # Both SSE and HTTP
+```
 
 
 ---
@@ -228,6 +298,7 @@ MIT
 ---
 
 ## Acknowledgments
-- [Local Falcon API](https://www.localfalcon.com/api/)
+- [Local Falcon API Documentation](https://docs.localfalcon.com)
 - [Model Context Protocol (MCP)](https://github.com/modelcontextprotocol)
-- [Bun](https://bun.sh/)
+- [@modelcontextprotocol/sdk](https://www.npmjs.com/package/@modelcontextprotocol/sdk) (Anthropic MCP SDK)
+- [@modelcontextprotocol/ext-apps](https://www.npmjs.com/package/@modelcontextprotocol/ext-apps) (MCP Apps SDK)

@@ -17,6 +17,12 @@ const REGISTRATION_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
+// OpenAI's platform scanner uses this redirect URI during app review and tool
+// scanning without going through Dynamic Client Registration first.
+const ALLOWLISTED_REDIRECT_URIS = new Set([
+  "https://platform.openai.com/apps-manage/oauth",
+]);
+
 interface RegisteredEntry {
   expiresAt: number;
 }
@@ -51,6 +57,10 @@ export function registerRedirectUris(uris: string[]): void {
  *   and the registration must not have expired.
  */
 export function isRedirectUriAllowed(uri: string): boolean {
+  if (ALLOWLISTED_REDIRECT_URIS.has(uri)) {
+    return true;
+  }
+
   try {
     const parsed = new URL(uri);
     if (LOOPBACK_HOSTS.has(parsed.hostname)) {

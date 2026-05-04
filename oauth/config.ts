@@ -8,7 +8,7 @@
 export const OAUTH_CONFIG = {
   // Client credentials (hardcoded)
   clientId: "74e0d6e848652234efed.localfalconapps.com",
-  clientSecret: "71fdc6383c274334095fec457fb2085d73451a79fd030e460c69a6f3db00af0b",
+  clientSecret: process.env.OAUTH_CLIENT_SECRET || '',
 
   // OAuth endpoints
   authorizationUrl: "https://www.localfalcon.com/oauth-v2/authorize",

@@ -1,21 +1,42 @@
 {
   "name": "@local-falcon/mcp",
-  "version": "0.1.30",
+  "version": "1.4.1",
   "description": "An MCP server for the Local Falcon API.",
   "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/local-falcon/mcp"
+  },
+  "homepage": "https://www.localfalcon.com",
+  "bugs": {
+    "url": "https://github.com/local-falcon/mcp/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "local-falcon",
+    "ai-seo",
+    "ai-search-tracking",
+    "local-seo",
+    "seo",
+    "rank-tracking",
+    "google-business-profile",
+    "ai-visibility"
+  ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "bun test",
+    "build:ui": "UI_ENTRY=geogrid-heatmap vite build --config vite.ui.config.ts",
     "start": "bun run index.ts",
     "start:sse": "bun run index.ts sse",
     "start:stdio": "bun run index.ts stdio",
     "start:http": "bun run index.ts http",
     "start:HTTPAndSSE": "bun run index.ts HTTPAndSSE",
-    "build": "npx rimraf dist && tsc --noCheck",
+    "build": "npx rimraf dist && NODE_OPTIONS=--max-old-space-size=4096 tsc --noCheck && npm run build:ui",
     "inspector": "npx @modelcontextprotocol/inspector bun start",
     "docker:build": "docker build -t local-falcon-mcp .",
     "docker:run": "docker run -it --rm --env-file .env --name local-falcon-mcp local-falcon-mcp"
   },
-  "author": "",
+  "author": "Local Falcon <account@localfalcon.com> (https://www.localfalcon.com)",
   "license": "MIT",
   "type": "module",
   "dependencies": {
@@ -24,14 +45,19 @@
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
-    "express-rate-limit": "^8.2.1",
+    "express-rate-limit": "^8.2.2",
     "node-fetch": "^3.3.2",
     "uuid": "^11.1.0",
-    "zod": "^3.25.0"
+    "zod": "^3.25.0",
+    "@modelcontextprotocol/ext-apps": "^1.2.2",
+    "marked": "^17.0.4",
+    "vite": "^8.0.0",
+    "vite-plugin-singlefile": "^2.3.2"
   },
   "devDependencies": {
     "@types/cors": "^2.8.18",
     "@types/express": "^5.0.1",
+    "@types/marked": "^6.0.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
   }

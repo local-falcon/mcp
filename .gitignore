@@ -139,4 +139,11 @@ dist
 
 .DS_Store
 _spec/
+test.ts
 nul
+mcpb-packaging-brief.md
+*.mcpb
+
+# Diagnostic scratch work — not for commit
+scratch/
+briefs/

@@ -93,7 +93,6 @@ export async function exchangeCodeForToken(
     grant_type: OAUTH_CONFIG.grantType,
     client_id: OAUTH_CONFIG.clientId,
     client_secret: OAUTH_CONFIG.clientSecret ? "[SET]" : "[MISSING]",
-    body: body.toString(),
   });
 
   const response = await fetch(OAUTH_CONFIG.tokenUrl, {
@@ -113,7 +112,6 @@ export async function exchangeCodeForToken(
     status: response.status,
     statusText: response.statusText,
     contentType: response.headers.get("content-type"),
-    body: responseText.substring(0, 500), // Log first 500 chars
   });
 
   // Try to parse as JSON

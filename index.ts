@@ -3,12 +3,13 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import dotenv from "dotenv";
 import express, { Application, Request, Response, RequestHandler } from "express";
 import cors from "cors";
+import rateLimit from "express-rate-limit";
 import { v4 as uuidv4 } from "uuid";
 import { getServer } from "./server.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { InMemoryEventStore } from "@modelcontextprotocol/sdk/examples/shared/inMemoryEventStore.js";
-import { setupOAuthRoutes, revokeToken, createTokenVerifier, registerRedirectUris } from "./oauth/index.js";
+import { setupOAuthRoutes, createTokenVerifier, registerRedirectUris } from "./oauth/index.js";
 import { fetchLocalFalconAccountInfo } from "./localfalcon.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 
@@ -30,10 +31,15 @@ interface SessionData {
 }
 
 // Minimum session age before revocation (prevents revoking during OAuth setup)
-const MIN_SESSION_AGE_FOR_REVOCATION_MS = 60000; // 60 seconds
+// Note: Token revocation on session disconnect was removed because Anthropic's
+// connector proxy routinely drops and reconnects SSE/HTTP transports while
+// reusing the same Bearer token. Revocation now only happens via POST /oauth/revoke.
 
-// Session inactivity timeout - revoke tokens for sessions inactive longer than this
-const SESSION_INACTIVITY_TIMEOUT_MS = 10 * 24 * 60 * 60 * 1000; // 10 days
+// Session inactivity timeout - revoke tokens for sessions inactive longer than this.
+// 8 hours — was 10 days, but the server OOM-cycles every ~50h because the inactivity
+// checker never fires before the leak accumulates. Bearer-token auto-recovery handles
+// reconnection for clients that come back after this window — see attemptSessionRecovery.
+const SESSION_INACTIVITY_TIMEOUT_MS = 8 * 60 * 60 * 1000;
 
 // How often to check for inactive sessions
 const INACTIVITY_CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
@@ -66,6 +72,23 @@ class AutoRecoveryRateLimiter {
 
 const autoRecoveryLimiter = new AutoRecoveryRateLimiter();
 
+// HTTP rate limiter for MCP endpoints — protects against abuse.
+// 120 requests per minute per IP is intentionally generous to never block legitimate usage.
+const mcpRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    jsonrpc: "2.0",
+    error: {
+      code: -32000,
+      message: "Rate limit exceeded. Please wait before retrying.",
+    },
+    id: null,
+  },
+});
+
 /**
  * Validate an API key against the Local Falcon API.
  * Returns true if the key is valid (account endpoint succeeds), false otherwise.
@@ -77,6 +100,102 @@ async function validateApiKey(apiKey: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Attempt to auto-recover a dead session using a valid Bearer token.
+ * Shared by both POST (mcpHandler) and GET (mcpGetHandler) handlers.
+ *
+ * Returns the new transport on success, or null if recovery failed
+ * (in which case an error response has already been sent).
+ */
+async function attemptSessionRecovery(
+  req: Request,
+  res: Response,
+  sessionManager: SessionManager
+): Promise<StreamableHTTPServerTransport | null> {
+  if (!req.auth) return null;
+
+  const apiKey = req.auth.token;
+  const apiKeyPrefix = apiKey.substring(0, 10) + '...';
+
+  // Rate-limit auto-recovery per API key
+  if (!autoRecoveryLimiter.isAllowed(apiKey)) {
+    console.warn(`[Session] Auto-recovery rate limit exceeded for apiKey: "${apiKeyPrefix}"`);
+    res.status(429).json({
+      jsonrpc: '2.0',
+      error: {
+        code: -32000,
+        message: 'Too many session recovery attempts. Please wait before retrying.',
+      },
+      id: null,
+    });
+    return null;
+  }
+
+  // Validate the API key against the Local Falcon API.
+  const isValid = await validateApiKey(apiKey);
+  if (!isValid) {
+    console.warn(`[Session] Auto-recovery failed: invalid API key "${apiKeyPrefix}"`);
+    res.status(401).json({
+      jsonrpc: '2.0',
+      error: {
+        code: -32000,
+        message: 'Unauthorized: API key validation failed',
+      },
+      id: null,
+    });
+    return null;
+  }
+
+  // Create a new session — identical to the normal initialize flow
+  const newSessionId = uuidv4();
+  const eventStore = new InMemoryEventStore();
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: () => newSessionId,
+    enableJsonResponse: true,
+    eventStore,
+  });
+
+  transport.onclose = () => {
+    const sid = transport.sessionId;
+    console.log(`[Transport] HTTP transport onclose triggered, sessionId: ${sid || 'undefined'}`);
+    if (sid && sessionManager.getTransport(sid)) {
+      console.log(`[Transport] HTTP transport closed for session ${sid}, removing from session manager`);
+      sessionManager.remove(sid);
+    } else {
+      console.log(`[Transport] HTTP transport onclose: session ${sid} not found in manager (already removed or not yet added)`);
+    }
+  };
+
+  // Connect transport to MCP server
+  const server = getServer(sessionManager.getSessionMap());
+  await server.connect(transport);
+
+  // Directly mark the transport as initialized and assign the session ID.
+  // Normally this happens when the transport processes an initialize JSON-RPC
+  // request, but we need to skip that because the client sent a tools/call (or
+  // similar), not an initialize. Accessing _webStandardTransport is necessary
+  // because the Node wrapper only exposes sessionId as a read-only getter.
+  const webTransport = (transport as any)._webStandardTransport;
+  webTransport.sessionId = newSessionId;
+  webTransport._initialized = true;
+
+  // Register the session in the manager — same as onsessioninitialized would do
+  sessionManager.add(newSessionId, { apiKey }, transport);
+
+  console.warn(`[Session] Auto-recovered session for apiKey: "${apiKeyPrefix}" → new session: ${newSessionId}`);
+
+  // Set the new session ID in the response header so the client can use it going forward
+  res.setHeader('mcp-session-id', newSessionId);
+
+  // Patch the original request headers so the transport's session validation passes.
+  req.headers['mcp-session-id'] = newSessionId;
+  if (!req.headers['mcp-protocol-version']) {
+    req.headers['mcp-protocol-version'] = '2025-03-26';
+  }
+
+  return transport;
 }
 
 type Transport = SSEServerTransport | StreamableHTTPServerTransport;
@@ -117,23 +236,16 @@ class SessionManager {
       ageMs: Date.now() - session.createdAt,
     });
 
+    // NOTE: We intentionally do NOT revoke the OAuth token on session disconnect.
+    // Anthropic's connector proxy routinely drops and re-establishes SSE/HTTP
+    // connections while reusing the same Bearer token. Revoking the token here
+    // would kill the API key on Local Falcon's side, causing the next reconnect
+    // to fail and forcing unnecessary re-authentication.
+    // Tokens are revoked only via:
+    //   1. Explicit POST /oauth/revoke (user-initiated disconnect)
+    //   2. Natural 24-hour expiration
     if (session.apiKey) {
-      const sessionAge = Date.now() - session.createdAt;
-      // Only revoke if session was active long enough (not during OAuth setup)
-      if (sessionAge >= MIN_SESSION_AGE_FOR_REVOCATION_MS) {
-        console.log(`[Session] Revoking token for disconnected session ${sessionId} (age: ${Math.round(sessionAge / 1000)}s)`);
-        revokeToken(session.apiKey)
-          .then(() => {
-            console.log(`[Session] Token revocation call completed for session ${sessionId}`);
-          })
-          .catch((err) => {
-            console.error(`[Session] Failed to revoke token for session ${sessionId}:`, err);
-          });
-      } else {
-        console.log(`[Session] Skipping revocation for new session ${sessionId} (age: ${Math.round(sessionAge / 1000)}s, threshold: ${MIN_SESSION_AGE_FOR_REVOCATION_MS}ms)`);
-      }
-    } else {
-      console.log(`[Session] No apiKey for session ${sessionId} - skipping revocation`);
+      console.log(`[Session] Session ${sessionId} disconnected (age: ${Math.round((Date.now() - session.createdAt) / 1000)}s) — token preserved for reconnect`);
     }
 
     this.sessions.delete(sessionId);
@@ -202,24 +314,11 @@ class SessionManager {
     this.stopInactivityChecker();
     console.log("Cleaning up sessions...");
 
-    // Revoke all OAuth tokens
-    const revocationPromises: Promise<void>[] = [];
-    for (const [sessionId, session] of this.sessions) {
-      if (session.apiKey) {
-        console.log(`[Session] Revoking token for session ${sessionId}`);
-        revocationPromises.push(
-          revokeToken(session.apiKey).catch((err) => {
-            console.error(`[Session] Failed to revoke token for session ${sessionId}:`, err);
-          })
-        );
-      }
-    }
-
-    // Wait for all revocations to complete (with timeout)
-    await Promise.race([
-      Promise.all(revocationPromises),
-      new Promise(resolve => setTimeout(resolve, 5000)) // 5 second timeout
-    ]);
+    // NOTE: We intentionally do NOT revoke OAuth tokens during server shutdown.
+    // Render redeploys cause the server to restart, but Anthropic's proxy will
+    // reconnect with the same Bearer token. Revoking tokens here would break
+    // all active sessions after every deploy. Tokens expire naturally (24h)
+    // and can be explicitly revoked via POST /oauth/revoke.
 
     // Close all transports
     for (const [sessionId, transport] of this.transports) {
@@ -241,13 +340,46 @@ const tokenVerifier = createTokenVerifier();
 // Base Application Setup
 const createBaseApp = (sessionManager: SessionManager): Application => {
   const app = express();
+  // Trust exactly one proxy hop (Render's edge). Required for express-rate-limit
+  // to read the real client IP from X-Forwarded-For without throwing
+  // ERR_ERL_UNEXPECTED_X_FORWARDED_FOR.
+  app.set('trust proxy', 1);
   app.use(express.json());
   app.use(express.urlencoded({ extended: true })); // Required for OAuth token requests
+  // CORS: Wildcard origin is intentional. The MCP widget iframe runs from
+  // unpredictable sandbox origins (e.g. web-sandbox.oaiusercontent.com for
+  // OpenAI, claudemcpcontent.com for Anthropic) that cannot be reliably
+  // allowlisted. All sensitive endpoints require Bearer token authentication
+  // regardless of origin, so the wildcard does not create a security risk.
   app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization', 'mcp-session-id', 'last-event-id'],
     origin: "*",
     exposedHeaders: ['mcp-session-id', 'WWW-Authenticate'],
   }));
+
+  // HTTP rate limiting for auth endpoints — stricter than MCP endpoints.
+  const authRateLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 20, // 20 requests per minute per IP
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      error: "rate_limit_exceeded",
+      error_description: "Too many requests. Please wait before retrying.",
+    },
+  });
+
+  // Apply auth rate limiter to auth-related endpoints
+  app.use("/oauth/authorize", authRateLimiter);
+  app.use("/oauth/token", authRateLimiter);
+  app.use("/register", authRateLimiter);
+  app.use("/oauth/revoke", authRateLimiter);
+
+  // OpenAI domain verification token
+  app.get("/.well-known/openai-apps-challenge", (_req: Request, res: Response): void => {
+    res.set("Content-Type", "text/plain");
+    res.status(200).send("Qwq9UUOPu2HyUuzn_O5BqcB-vEX_O12G2JvAQbsDQ9w");
+  });
 
   // Health check endpoints
   app.get("/ping", (_req: Request, res: Response): void => {
@@ -280,7 +412,8 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
       registration_endpoint: `${baseUrl}/register`,
       revocation_endpoint: `${baseUrl}/oauth/revoke`,
       response_types_supported: ["code"],
-      grant_types_supported: ["authorization_code"],
+      grant_types_supported: ["authorization_code", "refresh_token"],
+      scopes_supported: ["api", "offline_access"],
       code_challenge_methods_supported: ["S256"],
       token_endpoint_auth_methods_supported: ["none"],
       revocation_endpoint_auth_methods_supported: ["none"],
@@ -303,7 +436,7 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
       resource: baseUrl,
       authorization_servers: [baseUrl],
       bearer_methods_supported: ["header"],
-      scopes_supported: ["api"],
+      scopes_supported: ["api", "offline_access"],
     });
   };
   app.get("/.well-known/oauth-protected-resource", protectedResourceMetadata);
@@ -326,10 +459,10 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
       ...clientMetadata,
       // Override with our server-assigned credentials
       client_id: "74e0d6e848652234efed.localfalconapps.com",
-      client_secret: "71fdc6383c274334095fec457fb2085d73451a79fd030e460c69a6f3db00af0b",
+      client_secret: process.env.OAUTH_CLIENT_SECRET || '',
       client_name: clientMetadata.client_name || "LocalFalcon MCP",
       logo_uri: "https://www.localfalcon.com/uploads/identity/logos/471387_local-falcon-logo.png",
-      grant_types: ["authorization_code"],
+      grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       token_endpoint_auth_method: "none",
     });
@@ -377,6 +510,15 @@ const bearerAuthMiddleware: RequestHandler = (async (req: Request, res: Response
     const errCode = error?.code || "invalid_token";
     const errMsg = error?.message || "Unauthorized";
     const status = error?.status || 401;
+
+    // Transient errors (503) should NOT trigger re-authentication.
+    // Return Retry-After so the client knows to retry the same request,
+    // not start a new OAuth flow.
+    if (status === 503) {
+      res.set("Retry-After", "5");
+      res.status(503).json({ error: errCode, error_description: errMsg });
+      return;
+    }
 
     // Build WWW-Authenticate header with dynamic resource_metadata from request host
     const protocol = req.headers["x-forwarded-proto"] || req.protocol;
@@ -461,8 +603,8 @@ const setupSSERoutes = (app: Application, sessionManager: SessionManager): void 
     }
   };
 
-  app.get("/sse", bearerAuthMiddleware, sseHandler);
-  app.post("/sse/messages", sseMessagesHandler);
+  app.get("/sse", mcpRateLimiter, bearerAuthMiddleware, sseHandler);
+  app.post("/sse/messages", mcpRateLimiter, sseMessagesHandler);
 };
 
 // HTTP Transport Handlers
@@ -530,87 +672,9 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
         // Auto-recovery: request has a valid Bearer token but invalid/missing session ID.
         // This handles clients that lost their session (e.g. server restart, timeout) but
         // still have a valid API key. We create a new session transparently.
-        const apiKey = req.auth.token;
-        const apiKeyPrefix = apiKey.substring(0, 10) + '...';
-
-        // Rate-limit auto-recovery per API key
-        if (!autoRecoveryLimiter.isAllowed(apiKey)) {
-          console.warn(`[Session] Auto-recovery rate limit exceeded for apiKey: "${apiKeyPrefix}"`);
-          res.status(429).json({
-            jsonrpc: '2.0',
-            error: {
-              code: -32000,
-              message: 'Too many session recovery attempts. Please wait before retrying.',
-            },
-            id: null,
-          });
-          return;
-        }
-
-        // Validate the API key against the Local Falcon API.
-        // The bearer auth middleware already verified the token format and cache,
-        // but we do a fresh validation to ensure the key is still active.
-        const isValid = await validateApiKey(apiKey);
-        if (!isValid) {
-          console.warn(`[Session] Auto-recovery failed: invalid API key "${apiKeyPrefix}"`);
-          res.status(401).json({
-            jsonrpc: '2.0',
-            error: {
-              code: -32000,
-              message: 'Unauthorized: API key validation failed',
-            },
-            id: null,
-          });
-          return;
-        }
-
-        // Create a new session — identical to the normal initialize flow
-        const newSessionId = uuidv4();
-        const eventStore = new InMemoryEventStore();
-        transport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: () => newSessionId,
-          enableJsonResponse: true,
-          eventStore,
-        });
-
-        transport.onclose = () => {
-          const sid = transport.sessionId;
-          console.log(`[Transport] HTTP transport onclose triggered, sessionId: ${sid || 'undefined'}`);
-          if (sid && sessionManager.getTransport(sid)) {
-            console.log(`[Transport] HTTP transport closed for session ${sid}, removing from session manager`);
-            sessionManager.remove(sid);
-          } else {
-            console.log(`[Transport] HTTP transport onclose: session ${sid} not found in manager (already removed or not yet added)`);
-          }
-        };
-
-        // Connect transport to MCP server
-        const server = getServer(sessionManager.getSessionMap());
-        await server.connect(transport);
-
-        // Directly mark the transport as initialized and assign the session ID.
-        // Normally this happens when the transport processes an initialize JSON-RPC
-        // request, but we need to skip that because the client sent a tools/call (or
-        // similar), not an initialize. Accessing _webStandardTransport is necessary
-        // because the Node wrapper only exposes sessionId as a read-only getter.
-        const webTransport = (transport as any)._webStandardTransport;
-        webTransport.sessionId = newSessionId;
-        webTransport._initialized = true;
-
-        // Register the session in the manager — same as onsessioninitialized would do
-        sessionManager.add(newSessionId, { apiKey }, transport);
-
-        console.warn(`[Session] Auto-recovered session for apiKey: "${apiKeyPrefix}" → new session: ${newSessionId}`);
-
-        // Set the new session ID in the response header so the client can use it going forward
-        res.setHeader('mcp-session-id', newSessionId);
-
-        // Patch the original request headers so the transport's session validation passes.
-        // The transport checks mcp-session-id and mcp-protocol-version on non-init requests.
-        req.headers['mcp-session-id'] = newSessionId;
-        if (!req.headers['mcp-protocol-version']) {
-          req.headers['mcp-protocol-version'] = '2025-03-26';
-        }
+        const recovered = await attemptSessionRecovery(req, res, sessionManager);
+        if (!recovered) return; // Error response already sent by attemptSessionRecovery
+        transport = recovered;
 
       } else {
         console.error('Invalid HTTP request: No valid session ID or initialization request');
@@ -651,42 +715,57 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
     
     try {
       const sessionId = req.headers['mcp-session-id'] as string | undefined;
-      if (!sessionId || !sessionManager.getTransport(sessionId)) {
+      let transport: StreamableHTTPServerTransport | undefined;
+
+      if (sessionId && sessionManager.getTransport(sessionId)) {
+        // Existing session — reuse transport
+        sessionManager.updateActivity(sessionId);
+        transport = sessionManager.getTransport(sessionId) as StreamableHTTPServerTransport;
+      } else if (req.auth) {
+        // Session expired/missing but client has a valid Bearer token — attempt recovery
+        console.log(`[Session] GET handler: session "${sessionId}" not found, attempting auto-recovery`);
+        const recovered = await attemptSessionRecovery(req, res, sessionManager);
+        if (!recovered) return; // Error response already sent
+        transport = recovered;
+      } else {
+        // No valid session and no Bearer token — session is gone
         console.log(`Invalid session ID in HTTP GET request: ${sessionId}`);
-        res.status(400).send('Invalid or missing session ID');
+        res.status(410).json({
+          error: 'session_expired',
+          message: 'Session has expired. Please reconnect.',
+        });
         return;
       }
-      
+
+      const activeSessionId = transport.sessionId || sessionId || 'unknown';
+
       const lastEventId = req.headers['last-event-id'] as string | undefined;
       if (lastEventId) {
         console.log(`HTTP Client reconnecting with Last-Event-ID: ${lastEventId}`);
       } else {
-        console.log(`Establishing new HTTP SSE stream for session ${sessionId}`);
+        console.log(`Establishing new HTTP SSE stream for session ${activeSessionId}`);
       }
-      
-      const transport = sessionManager.getTransport(sessionId);
-      
+
       res.on('close', () => {
-        console.log(`[Transport] HTTP SSE connection closed for session ${sessionId}`);
-        // When the SSE stream closes, the client has disconnected
-        // Remove the session which will trigger token revocation
-        if (sessionManager.getSession(sessionId)) {
-          console.log(`[Transport] Client disconnected via SSE close, removing session ${sessionId}`);
-          sessionManager.remove(sessionId);
-          // Also close the transport to free resources and trigger transport.onclose
-          if (transport) {
-            (transport as StreamableHTTPServerTransport).close().catch((err) => {
-              console.error(`[Transport] Failed to close transport after SSE disconnect for session ${sessionId}:`, err);
-            });
-          }
-        }
+        console.log(`[Transport] HTTP SSE stream closed for session ${activeSessionId}`);
+        // NOTE: We intentionally do NOT remove the session or close the transport here.
+        // Anthropic's connector proxy routinely drops and re-establishes SSE streams
+        // (typically every ~5 seconds) while reusing the same session ID and Bearer token.
+        // Destroying the session on SSE close would:
+        //   1. Kill any in-flight POST requests (tools/call) that haven't responded yet
+        //   2. Prevent the proxy from reconnecting the SSE stream with the same session ID
+        //   3. Force auto-recovery for every subsequent request, adding latency
+        // The session will be cleaned up by:
+        //   - Explicit DELETE /mcp request (client-initiated termination)
+        //   - The inactivity checker (10-day timeout)
+        //   - Server shutdown (SIGTERM/SIGINT)
       });
-      
-      console.log(`Starting HTTP SSE transport.handleRequest for session ${sessionId}...`);
+
+      console.log(`Starting HTTP SSE transport.handleRequest for session ${activeSessionId}...`);
       const startTime = Date.now();
-      await (transport as StreamableHTTPServerTransport).handleRequest(req, res);
+      await transport.handleRequest(req, res);
       const duration = Date.now() - startTime;
-      console.log(`HTTP SSE stream setup completed in ${duration}ms for session: ${sessionId}`);
+      console.log(`HTTP SSE stream setup completed in ${duration}ms for session: ${activeSessionId}`);
     } catch (error) {
       console.error('Error handling HTTP GET request:', error);
       if (!res.headersSent) {
@@ -749,13 +828,30 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
     return bearerAuthMiddleware(req, res, next);
   };
 
+  // Root GET handler — returns 200 with server info for health checks and scanners.
+  // Only intercepts requests WITHOUT the mcp-session-id header; requests WITH
+  // the header fall through to the MCP SSE handler below.
+  app.get('/', (req: Request, res: Response, next: Function) => {
+    if (req.headers['mcp-session-id']) {
+      return next();
+    }
+    res.status(200).json({
+      name: "Local Falcon MCP Server",
+      status: "ok",
+      mcp_endpoint: "/mcp",
+      health: "/healthz",
+      documentation: "https://localfalcon.com/mcp",
+    });
+  });
+
   // Mount on both /mcp and / so clients can connect to either path.
   // Root path mounting ensures OAuth discovery works when the server URL has no path.
-  app.post('/mcp', conditionalBearerAuth, mcpHandler);
+  app.post('/mcp', mcpRateLimiter, conditionalBearerAuth, mcpHandler);
   app.get('/mcp', mcpGetHandler);
   app.delete('/mcp', mcpDeleteHandler);
 
-  app.post('/', conditionalBearerAuth, mcpHandler);
+  app.post('/', mcpRateLimiter, conditionalBearerAuth, mcpHandler);
+  // Note: GET / without mcp-session-id is handled above; this catches MCP SSE streams.
   app.get('/', mcpGetHandler);
   app.delete('/', mcpDeleteHandler);
 };
@@ -793,7 +889,7 @@ const startUnifiedServer = (app: Application, sessionManager: SessionManager, mo
       console.log(`  - HTTP: POST|GET|DELETE /mcp and /`);
     }
     console.log(`  - Health: GET /ping, GET /healthz`);
-    console.log(`  - Session inactivity timeout: ${SESSION_INACTIVITY_TIMEOUT_MS / 1000 / 60 / 60 / 24} days`);
+    console.log(`  - Session inactivity timeout: ${SESSION_INACTIVITY_TIMEOUT_MS / 1000 / 60 / 60} hours`);
   });
 
   process.on("SIGINT", async () => {

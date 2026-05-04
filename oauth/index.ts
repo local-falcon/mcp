@@ -9,6 +9,7 @@
  * - Bearer-only token transport
  * - Resource indicators (RFC 8707)
  * - Token revocation (RFC 7009)
+ * - Refresh token support for seamless token renewal
  */
 
 // Configuration
@@ -31,7 +32,6 @@ export {
   generateSecureState,
   generateAuthorizationUrl,
   exchangeCodeForToken,
-  refreshAccessToken,
   revokeToken,
   OAuthError,
 } from "./oauthClient.js";
@@ -41,6 +41,9 @@ export { createTokenVerifier, clearAuthCache } from "./provider.js";
 
 // Client registration store (redirect URI validation)
 export { registerRedirectUris, isRedirectUriAllowed } from "./clientStore.js";
+
+// Refresh token management
+export { revokeRefreshTokensForApiKey } from "./routes.js";
 
 // Express routes
 export { setupOAuthRoutes } from "./routes.js";
