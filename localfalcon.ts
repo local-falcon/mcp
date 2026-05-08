@@ -2074,6 +2074,90 @@ export async function createLocalFalconCampaign(
 }
 
 /**
+ * Updates an existing campaign in Local Falcon.
+ * The fields required depend on the value of the `action` parameter.
+ * A campaign cannot be modified while it is currently running.
+ * @param {string} apiKey - Your Local Falcon API key
+ * @param {object} params - Update parameters
+ * @returns {Promise<any>} API response
+ */
+export async function updateLocalFalconCampaign(
+  apiKey: string,
+  params: {
+    campaignKey: string;
+    action: 'update-settings' | 'add-location' | 'modify-location' | 'remove-location' | 'add-keyword' | 'update-keyword' | 'remove-keyword';
+    placeId?: string;
+    keyword?: string;
+    name?: string;
+    gridSize?: string;
+    radius?: string;
+    measurement?: 'mi' | 'km';
+    platforms?: string;
+    keywordType?: 'traditional' | 'ai' | 'both';
+    aiAnalysis?: boolean;
+    date?: string;
+    time?: string;
+    frequency?: 'one-time' | 'daily' | 'weekly' | 'biweekly' | 'monthly';
+    notify?: boolean;
+    recipients?: string;
+    emailName?: string;
+    emailReplyTo?: string;
+    emailSubject?: string;
+    emailBody?: string;
+    emailSendAi?: boolean;
+  }
+): Promise<any> {
+  try {
+    await rateLimiter.waitForAvailableSlot();
+    const form = new FormData();
+    form.append('campaign_key', params.campaignKey);
+    form.append('action', params.action);
+    if (params.placeId) form.append('place_id', params.placeId);
+    if (params.keyword) form.append('keyword', params.keyword);
+    if (params.name) form.append('name', params.name);
+    if (params.gridSize) form.append('size', params.gridSize);
+    if (params.radius) form.append('radius', params.radius);
+    if (params.measurement) form.append('measurement', params.measurement);
+    if (params.platforms) form.append('platforms', params.platforms);
+    if (params.keywordType) form.append('keyword_type', params.keywordType);
+    if (params.aiAnalysis !== undefined) form.append('ai_analysis', params.aiAnalysis ? '1' : '0');
+    if (params.date) form.append('date', params.date);
+    if (params.time) form.append('time', params.time);
+    if (params.frequency) form.append('frequency', params.frequency);
+    if (params.notify !== undefined) form.append('notify', params.notify ? '1' : '0');
+    if (params.recipients) form.append('recipients', params.recipients);
+    if (params.emailName) form.append('email_name', params.emailName);
+    if (params.emailReplyTo) form.append('email_replyto', params.emailReplyTo);
+    if (params.emailSubject) form.append('email_subject', params.emailSubject);
+    if (params.emailBody) form.append('email_body', params.emailBody);
+    if (params.emailSendAi !== undefined) form.append('email_send_ai', params.emailSendAi ? '1' : '0');
+
+    const response = await withRetry(async () => {
+      return await fetchWithTimeout(
+        `${API_BASE_V2}/campaigns/update`,
+        {
+          method: 'POST',
+          body: form,
+          headers: buildHeaders(apiKey, true),
+        },
+        DEFAULT_TIMEOUT_MS
+      );
+    });
+
+    const data = await safeParseJson(response);
+
+    if (!response.ok) {
+      throw parseApiError(response.status, data);
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error updating campaign:', error);
+    throw error;
+  }
+}
+
+/**
  * Manually triggers a campaign to run immediately.
  * @param {string} apiKey - Your Local Falcon API key
  * @param {string} campaignKey - The key of the campaign to run

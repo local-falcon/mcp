@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "local-falcon-mcp",
   "display_name": "Local Falcon",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "Monitor and improve visibility across AI search platforms (ChatGPT, Gemini, Grok, Google AI Overviews, AI Mode) and in local search (Google Maps, Apple Maps) with 37 tools for AI visibility tracking, geo-grid rank analysis, competitor intelligence, campaign management, and Google Business Profile monitoring.",
   "long_description": "An MCP server for the Local Falcon AI Visibility and local SEO platform. Connect Claude to your Local Falcon account to track how businesses appear across AI search results and traditional map platforms.\n\nCapabilities include running geo-grid scans that check visibility from dozens of surrounding coordinates simultaneously, retrieving scan reports with AI-powered analysis, tracking visibility trends over time, managing scheduled campaigns across multiple locations and keywords, monitoring Google Business Profiles for unwanted changes with Falcon Guard, analyzing reviews with sentiment and topic breakdowns, and researching competitors to identify strategic opportunities.\n\nSupported platforms: Google Maps, Apple Maps, Google AI Overviews, Google AI Mode, ChatGPT, Gemini, and Grok.",
   "author": {
@@ -56,6 +56,7 @@
     { "name": "listLocalFalconCampaignReports", "description": "Lists campaign reports for scheduled, recurring scans across multiple locations and/or keywords." },
     { "name": "getLocalFalconCampaignReport", "description": "Retrieves a specific campaign report with aggregated ARP, ATRP, SoLV metrics, individual scan results, and scheduling info." },
     { "name": "createLocalFalconCampaign", "description": "Creates a new campaign with scheduled recurring scans for one or multiple locations with one or multiple keywords." },
+    { "name": "updateLocalFalconCampaign", "description": "Edits an existing campaign — update settings, or add/modify/remove campaign locations or keywords (action-driven)." },
     { "name": "runLocalFalconCampaign", "description": "Manually triggers a campaign to run immediately. Costs credits." },
     { "name": "pauseLocalFalconCampaign", "description": "Pauses a campaign to stop it from running on its scheduled frequency." },
     { "name": "resumeLocalFalconCampaign", "description": "Resumes a campaign from a deactivated or paused status." },

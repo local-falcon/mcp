@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { fetchLocalFalconAutoScans, fetchLocalFalconFullGridSearch, fetchLocalFalconGoogleBusinessLocations, fetchLocalFalconGrid, fetchLocalFalconKeywordAtCoordinate, fetchLocalFalconKeywordReport, fetchLocalFalconKeywordReports, fetchLocalFalconLocationReport, fetchLocalFalconLocationReports, fetchAllLocalFalconLocations, fetchLocalFalconRankingAtCoordinate, fetchLocalFalconReport, fetchLocalFalconReports, fetchLocalFalconTrendReport, fetchLocalFalconTrendReports, fetchLocalFalconCompetitorReports, fetchLocalFalconCompetitorReport, fetchLocalFalconCampaignReports, fetchLocalFalconCampaignReport, fetchLocalFalconGuardReports, fetchLocalFalconGuardReport, runLocalFalconScan, searchForLocalFalconBusinessLocation, fetchLocalFalconAccountInfo, saveLocalFalconBusinessLocationToAccount, addLocationsToFalconGuard, pauseFalconGuardProtection, resumeFalconGuardProtection, removeFalconGuardProtection, createLocalFalconCampaign, runLocalFalconCampaign, pauseLocalFalconCampaign, resumeLocalFalconCampaign, reactivateLocalFalconCampaign, fetchLocalFalconReviewsAnalysisReports, fetchLocalFalconReviewsAnalysisReport, searchLocalFalconKnowledgeBase, getLocalFalconKnowledgeBaseArticle } from "./localfalcon.js";
+import { fetchLocalFalconAutoScans, fetchLocalFalconFullGridSearch, fetchLocalFalconGoogleBusinessLocations, fetchLocalFalconGrid, fetchLocalFalconKeywordAtCoordinate, fetchLocalFalconKeywordReport, fetchLocalFalconKeywordReports, fetchLocalFalconLocationReport, fetchLocalFalconLocationReports, fetchAllLocalFalconLocations, fetchLocalFalconRankingAtCoordinate, fetchLocalFalconReport, fetchLocalFalconReports, fetchLocalFalconTrendReport, fetchLocalFalconTrendReports, fetchLocalFalconCompetitorReports, fetchLocalFalconCompetitorReport, fetchLocalFalconCampaignReports, fetchLocalFalconCampaignReport, fetchLocalFalconGuardReports, fetchLocalFalconGuardReport, runLocalFalconScan, searchForLocalFalconBusinessLocation, fetchLocalFalconAccountInfo, saveLocalFalconBusinessLocationToAccount, addLocationsToFalconGuard, pauseFalconGuardProtection, resumeFalconGuardProtection, removeFalconGuardProtection, createLocalFalconCampaign, updateLocalFalconCampaign, runLocalFalconCampaign, pauseLocalFalconCampaign, resumeLocalFalconCampaign, reactivateLocalFalconCampaign, fetchLocalFalconReviewsAnalysisReports, fetchLocalFalconReviewsAnalysisReport, searchLocalFalconKnowledgeBase, getLocalFalconKnowledgeBaseArticle } from "./localfalcon.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { registerAppResource, registerAppTool } from "@modelcontextprotocol/ext-apps/server";
@@ -595,6 +595,85 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
         emailRecipients: handleNullOrUndefined(emailRecipients) || undefined,
         emailSubject: handleNullOrUndefined(emailSubject) || undefined,
         emailBody: handleNullOrUndefined(emailBody) || undefined,
+      });
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    },
+  );
+
+  // Update an existing Campaign
+  server.tool(
+    "updateLocalFalconCampaign",
+    "Edits an existing campaign in Local Falcon. The required additional fields depend on the action: 'update-settings' modifies campaign-wide settings (name, schedule, frequency, notifications, AI analysis); 'add-location'/'modify-location'/'remove-location' require placeId; 'add-keyword'/'update-keyword'/'remove-keyword' require keyword. Use listLocalFalconCampaignReports to find the campaign_key. NOTE: A campaign cannot be modified while it is currently running — wait until the run finishes before calling this tool. For email-text fields under update-settings, pass the literal string '|empty|' to clear an existing value.",
+    {
+      campaignKey: z.string().describe("The key of the campaign you wish to edit."),
+      action: z.enum([
+        'update-settings',
+        'add-location',
+        'modify-location',
+        'remove-location',
+        'add-keyword',
+        'update-keyword',
+        'remove-keyword',
+      ]).describe("The edit action to perform on the campaign. Determines which other fields are required: 'update-settings' (no required extras); 'add-location'/'modify-location'/'remove-location' (require placeId); 'add-keyword'/'update-keyword'/'remove-keyword' (require keyword)."),
+      placeId: z.string().nullish().describe("Google Place ID(s), comma-separated for multiple. REQUIRED for 'add-location', 'modify-location', and 'remove-location'. Optional for 'add-keyword'/'update-keyword' to scope keyword(s) to specific location(s) already in the campaign."),
+      keyword: z.string().nullish().describe("Keyword(s), comma-separated for multiple. REQUIRED for 'add-keyword', 'update-keyword', and 'remove-keyword'."),
+      name: z.string().nullish().describe("Updated name for the campaign. Used with 'update-settings'."),
+      gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15', '17', '19', '21']).nullish().describe("Grid size for the campaign or location. Used with 'update-settings', 'add-location', or 'modify-location'."),
+      radius: z.coerce.number().min(0.1).max(100).nullish().describe("Grid radius from center point to outermost point (0.1 to 100). Used with 'update-settings', 'add-location', or 'modify-location'."),
+      measurement: z.enum(['mi', 'km']).nullish().describe("Measurement unit of the radius. Used with 'update-settings', 'add-location', or 'modify-location'."),
+      platforms: z.string().nullish().describe("Platforms to enable for the location. Comma-separated for multiple. Valid values: google, gaio, gemini, aimode, chatgpt, grok. Used with 'add-location' or 'modify-location'."),
+      keywordType: z.enum(['traditional', 'ai', 'both']).nullish().describe("Type of keyword(s). Used with 'update-settings', 'add-keyword', or 'update-keyword'."),
+      aiAnalysis: z.boolean().nullish().describe("Whether campaign scans should include AI analysis. Used with 'update-settings'."),
+      date: z.string().nullish().describe("Next run date for the campaign. Format: MM/DD/YYYY. Used with 'update-settings'. Must be provided together with time."),
+      time: z.string().nullish().describe("Next run time. Format: friendly time like '9:00 AM'. Used with 'update-settings'. Must be provided together with date."),
+      frequency: z.enum(['one-time', 'daily', 'weekly', 'biweekly', 'monthly']).nullish().describe("Updated run frequency for the campaign. Used with 'update-settings'."),
+      notify: z.boolean().nullish().describe("Whether email notifications should be enabled for the campaign. Used with 'update-settings'."),
+      recipients: z.string().nullish().describe("Recipients of email notifications. Supports multiple email addresses separated by commas. Used with 'update-settings'."),
+      emailName: z.string().nullish().describe("From-name used on email notifications. Pass '|empty|' to clear the value. Used with 'update-settings'."),
+      emailReplyTo: z.string().nullish().describe("Reply-to address used on email notifications. Pass '|empty|' to clear the value. Used with 'update-settings'."),
+      emailSubject: z.string().nullish().describe("Subject line used on email notifications. Pass '|empty|' to clear the value. Used with 'update-settings'."),
+      emailBody: z.string().nullish().describe("Body content used on email notifications. Pass '|empty|' to clear the value. Used with 'update-settings'."),
+      emailSendAi: z.boolean().nullish().describe("Whether AI analysis should be included in email notifications. Used with 'update-settings'."),
+    },
+    { title: "Update Campaign", readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    async ({ campaignKey, action, placeId, keyword, name, gridSize, radius, measurement, platforms, keywordType, aiAnalysis, date, time, frequency, notify, recipients, emailName, emailReplyTo, emailSubject, emailBody, emailSendAi }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) {
+        return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      }
+      const locationActions = new Set(['add-location', 'modify-location', 'remove-location']);
+      const keywordActions = new Set(['add-keyword', 'update-keyword', 'remove-keyword']);
+      if (locationActions.has(action) && !placeId) {
+        return { content: [{ type: "text", text: `placeId is required when action is '${action}'.` }] };
+      }
+      if (keywordActions.has(action) && !keyword) {
+        return { content: [{ type: "text", text: `keyword is required when action is '${action}'.` }] };
+      }
+      if ((date && !time) || (time && !date)) {
+        return { content: [{ type: "text", text: "date and time must be provided together." }] };
+      }
+      const resp = await updateLocalFalconCampaign(apiKey, {
+        campaignKey,
+        action,
+        placeId: handleNullOrUndefined(placeId) || undefined,
+        keyword: handleNullOrUndefined(keyword) || undefined,
+        name: handleNullOrUndefined(name) || undefined,
+        gridSize: handleNullOrUndefined(gridSize) || undefined,
+        radius: radius != null ? radius.toString() : undefined,
+        measurement: measurement ?? undefined,
+        platforms: handleNullOrUndefined(platforms) || undefined,
+        keywordType: keywordType ?? undefined,
+        aiAnalysis: aiAnalysis ?? undefined,
+        date: handleNullOrUndefined(date) || undefined,
+        time: handleNullOrUndefined(time) || undefined,
+        frequency: frequency ?? undefined,
+        notify: notify ?? undefined,
+        recipients: handleNullOrUndefined(recipients) || undefined,
+        emailName: handleNullOrUndefined(emailName) || undefined,
+        emailReplyTo: handleNullOrUndefined(emailReplyTo) || undefined,
+        emailSubject: handleNullOrUndefined(emailSubject) || undefined,
+        emailBody: handleNullOrUndefined(emailBody) || undefined,
+        emailSendAi: emailSendAi ?? undefined,
       });
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     },
