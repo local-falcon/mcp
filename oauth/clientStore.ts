@@ -21,6 +21,7 @@ const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 // scanning without going through Dynamic Client Registration first.
 const ALLOWLISTED_REDIRECT_URIS = new Set([
   "https://platform.openai.com/apps-manage/oauth",
+  "https://chatgpt.com/connector_platform_oauth_redirect",
 ]);
 
 interface RegisteredEntry {
