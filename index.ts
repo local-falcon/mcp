@@ -844,10 +844,26 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
     });
   });
 
+  // Sessionless GET /mcp — returns 200 with server info when no mcp-session-id header.
+  // A 410 to a sessionless request is semantically wrong: nothing is "expired"
+  // because nothing was started. Requests WITH the header fall through to
+  // mcpGetHandler, which keeps the 410 for invalid sessions per MCP spec.
+  const sessionlessMcpInfoHandler: RequestHandler = (req, res, next) => {
+    if (req.headers['mcp-session-id']) {
+      return next();
+    }
+    res.status(200).json({
+      name: "Local Falcon MCP Server",
+      status: "ok",
+      message: "MCP endpoint active. Session required - connect via MCP client.",
+      documentation: "https://localfalcon.com/mcp",
+    });
+  };
+
   // Mount on both /mcp and / so clients can connect to either path.
   // Root path mounting ensures OAuth discovery works when the server URL has no path.
   app.post('/mcp', mcpRateLimiter, conditionalBearerAuth, mcpHandler);
-  app.get('/mcp', mcpGetHandler);
+  app.get('/mcp', sessionlessMcpInfoHandler, mcpGetHandler);
   app.delete('/mcp', mcpDeleteHandler);
 
   app.post('/', mcpRateLimiter, conditionalBearerAuth, mcpHandler);
