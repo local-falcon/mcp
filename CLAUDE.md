@@ -5,7 +5,7 @@
 This is the **Local Falcon MCP Server** (`@local-falcon/mcp`), a Model Context Protocol server that wraps the [Local Falcon API](https://docs.localfalcon.com). It enables AI agents to run geo-grid rank tracking scans, retrieve reports, manage campaigns, monitor Google Business Profiles, and analyze competitive positioning across Google Maps, Apple Maps, and AI search platforms.
 
 **Package:** [`@local-falcon/mcp`](https://www.npmjs.com/package/@local-falcon/mcp) (npm)
-**Version:** 1.4.4
+**Version:** 1.4.5
 **License:** MIT
 **Runtime:** Node.js 18+
 **Language:** TypeScript (strict mode)
