@@ -213,7 +213,7 @@ async function handleAuthorize(req: Request, res: Response): Promise<void> {
     // Loopback URIs (localhost/127.0.0.1/[::1]) are always allowed per RFC 8252.
     // Non-loopback URIs must be registered via POST /register.
     if (clientRedirectUri && !isRedirectUriAllowed(clientRedirectUri)) {
-      console.error(`[OAuth] Disallowed redirect_uri: ${clientRedirectUri}`);
+      console.error(`[OAuth] Disallowed redirect_uri: "${clientRedirectUri}" (length=${clientRedirectUri.length}, codePoints=${[...clientRedirectUri].map(c => c.codePointAt(0)!.toString(16)).slice(-10).join(",")})`);
       res.status(400).json({
         error: "invalid_request",
         error_description: "The redirect_uri is not allowed. Non-loopback URIs must be registered via POST /register.",
