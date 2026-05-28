@@ -51,14 +51,33 @@ export function registerRedirectUris(uris: string[]): void {
 }
 
 /**
+ * Strip a single trailing slash from a URI (unless the path is just "/").
+ * Used to normalize allowlist comparisons so both
+ * "https://example.com/path" and "https://example.com/path/" match.
+ */
+function normalizeTrailingSlash(uri: string): string {
+  if (uri.length > 1 && uri.endsWith("/")) {
+    return uri.slice(0, -1);
+  }
+  return uri;
+}
+
+const normalizedAllowlist = new Set(
+  [...ALLOWLISTED_REDIRECT_URIS].map(normalizeTrailingSlash)
+);
+
+/**
  * Check whether a redirect URI is allowed.
  *
+ * - Allowlisted URIs are matched after stripping a trailing slash from
+ *   both sides, since OAuth clients inconsistently include one.
  * - Loopback URIs are always allowed (RFC 8252 Section 7.3).
  * - Non-loopback URIs must have been registered via POST /register
  *   and the registration must not have expired.
  */
 export function isRedirectUriAllowed(uri: string): boolean {
-  if (ALLOWLISTED_REDIRECT_URIS.has(uri)) {
+  const normalized = normalizeTrailingSlash(uri);
+  if (normalizedAllowlist.has(normalized)) {
     return true;
   }
 
