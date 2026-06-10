@@ -5,7 +5,7 @@
 This is the **Local Falcon MCP Server** (`@local-falcon/mcp`), a Model Context Protocol server that wraps the [Local Falcon API](https://docs.localfalcon.com). It enables AI agents to run geo-grid rank tracking scans, retrieve reports, manage campaigns, monitor Google Business Profiles, and analyze competitive positioning across Google Maps, Apple Maps, and AI search platforms.
 
 **Package:** [`@local-falcon/mcp`](https://www.npmjs.com/package/@local-falcon/mcp) (npm)
-**Version:** 1.4.5
+**Version:** 1.4.7
 **License:** MIT
 **Runtime:** Node.js 18+
 **Language:** TypeScript (strict mode)
@@ -14,14 +14,14 @@ This is the **Local Falcon MCP Server** (`@local-falcon/mcp`), a Model Context P
 
 ```
 index.ts          → Entry point. Transport selection (STDIO, SSE, HTTP), session management, OAuth 2.1
-server.ts         → MCP tool registrations. Exports getServer() which creates McpServer with 37 tools
+server.ts         → MCP tool registrations. Exports getServer() which creates McpServer with 38 tools
 localfalcon.ts    → API client layer. All fetch functions, rate limiting, retry logic, timeout handling
 oauth/            → OAuth 2.1 authorization server (routes, provider, config, state/client stores)
 ```
 
 ### Key Design Patterns
 
-- **`server.ts`** exports a single `getServer(sessionMapping)` function that creates and returns an `McpServer` instance with all 37 tools registered via `server.tool(name, description, zodSchema, annotations, handler)`. Every tool includes MCP tool annotations (`readOnlyHint`, `destructiveHint`) that signal to AI clients whether a tool reads data or modifies state.
+- **`server.ts`** exports a single `getServer(sessionMapping)` function that creates and returns an `McpServer` instance with all 38 tools registered via `server.tool(name, description, zodSchema, annotations, handler)`. Every tool includes MCP tool annotations (`readOnlyHint`, `destructiveHint`) that signal to AI clients whether a tool reads data or modifies state.
 - **`localfalcon.ts`** contains one exported function per API endpoint. Two call patterns:
   - **URL params (v1):** `new URL(endpoint)` → `url.searchParams.set()` → POST with JSON headers
   - **FormData (v2):** `new FormData()` → `form.append()` → POST with form body
@@ -77,12 +77,13 @@ Remote modes (SSE, HTTP) use OAuth 2.1 with PKCE for authentication. The server 
 | `listLocalFalconAutoScans` | List individually scheduled auto-scans. Filter by placeId, keyword, gridSize, frequency, status, platform |
 | `viewLocalFalconAccountInformation` | Get account info (user, credits, subscription). Optional returnField filter |
 
-### Actions (17 tools, no fieldmask)
+### Actions (18 tools, no fieldmask)
 
 | Tool | Description |
 |---|---|
 | `runLocalFalconScan` | Run a new geo-grid scan (costs credits) |
 | `createLocalFalconCampaign` | Create a scheduled campaign |
+| `updateLocalFalconCampaign` | Edit a campaign — settings, locations, or keywords (action-driven) |
 | `runLocalFalconCampaign` | Manually trigger a campaign run (costs credits) |
 | `pauseLocalFalconCampaign` | Pause a campaign schedule |
 | `resumeLocalFalconCampaign` | Resume a paused/deactivated campaign |
@@ -123,7 +124,7 @@ These tools consume credits (irreversible) or permanently remove resources. AI c
 
 These tools modify state but are reversible and do not consume credits.
 
-`createLocalFalconCampaign`, `pauseLocalFalconCampaign`, `resumeLocalFalconCampaign`, `reactivateLocalFalconCampaign`, `saveLocalFalconBusinessLocationToAccount`, `addLocationsToFalconGuard`, `pauseFalconGuardProtection`, `resumeFalconGuardProtection`.
+`createLocalFalconCampaign`, `updateLocalFalconCampaign`, `pauseLocalFalconCampaign`, `resumeLocalFalconCampaign`, `reactivateLocalFalconCampaign`, `saveLocalFalconBusinessLocationToAccount`, `addLocationsToFalconGuard`, `pauseFalconGuardProtection`, `resumeFalconGuardProtection`.
 
 ## Valid Enum Values
 
@@ -202,7 +203,7 @@ Parameters use **camelCase** in the Zod schemas (server.ts) and are converted to
 The Local Falcon API has two base URLs used by `localfalcon.ts`:
 
 - **v1** (`https://api.localfalcon.com/v1`): Reports, trend reports, keyword reports, location reports, competitor reports, campaign list/detail, guard list/detail, grid, result, search, places, reviews, knowledge base
-- **v2** (`https://api.localfalcon.com/v2`): Run scan, locations search/add, guard add/pause/resume/delete, campaigns create/run/pause/resume/reactivate, account, knowledge base
+- **v2** (`https://api.localfalcon.com/v2`): Run scan, locations search/add, guard add/pause/resume/delete, campaigns create/update/run/pause/resume/reactivate, account, knowledge base
 
 Public API documentation: [docs.localfalcon.com](https://docs.localfalcon.com)
 
