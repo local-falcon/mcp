@@ -733,6 +733,81 @@ export async function fetchAllLocalFalconLocations(apiKey: string, query?: strin
 }
 
 /**
+ * Fetches all location groups from the Local Falcon API.
+ * Groups may be nested: a child group carries a `parent` object identifying
+ * its container; top-level groups have type `parent`.
+ * @param {string} apiKey - Your Local Falcon API key
+ * @param {string} limit - Maximum number of results to return
+ * @param {string} [query] - Optional search query (matches group key or name)
+ * @param {string} [nextToken] - Optional pagination token from a prior response
+ * @param {string} [fieldmask] - Optional comma-separated list of fields to return
+ * @returns {Promise<any>} API response
+ */
+export async function fetchLocalFalconLocationGroups(apiKey: string, limit: string, query?: string, nextToken?: string, fieldmask?: string) {
+  const url = new URL(`${API_BASE}/location-groups`);
+  url.searchParams.set("limit", limit);
+
+  if (query) url.searchParams.set("query", query);
+  if (nextToken) url.searchParams.set("next_token", nextToken);
+  // Auto-prefix fieldmask with groups.* wildcard syntax for the list endpoint
+  if (fieldmask) url.searchParams.set("fieldmask", prefixFieldmaskForList(fieldmask, 'groups'));
+
+  await rateLimiter.waitForAvailableSlot();
+
+  return withRetry(async () => {
+    const res = await fetchWithTimeout(url.toString(), {
+      method: "POST",
+      headers: buildHeaders(apiKey),
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw parseApiError(res.status, errorText);
+    }
+
+    const data = await safeParseJson(res);
+    const unwrapped = unwrapWithWarnings(data);
+
+    // When fieldmask is used, the API returns the standard structure with filtered fields
+    if (fieldmask) {
+      if (unwrapped?.groups) {
+        return {
+          ...unwrapped,
+          groups: unwrapped.groups.slice(0, parseInt(limit) || unwrapped.groups.length)
+        };
+      }
+      return unwrapped;
+    }
+
+    // Validate response
+    if (!unwrapped || !unwrapped.groups) {
+      throw new Error('Invalid response format from Local Falcon API');
+    }
+
+    const limitNum = parseInt(limit) || unwrapped.groups.length;
+
+    const out: any = {
+      next_token: unwrapped.next_token,
+      groups: unwrapped.groups.slice(0, limitNum).map((group: any) => {
+        const g: any = {
+          key: group.key,
+          name: group.name,
+          type: group.type,
+          location_count: group.location_count,
+          place_ids: group.place_ids,
+          date_created: group.date_created,
+        };
+        // `parent` is present only for nested (child) groups
+        if (group.parent) g.parent = group.parent;
+        return g;
+      }),
+    };
+    if (unwrapped._warnings) out._warnings = unwrapped._warnings;
+    return out;
+  });
+}
+
+/**
  * Fetches a location report from the Local Falcon API.
  * @param {string} apiKey - Your Local Falcon API key
  * @param {string} reportKey - The report key

@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { fetchLocalFalconAutoScans, fetchLocalFalconFullGridSearch, fetchLocalFalconGoogleBusinessLocations, fetchLocalFalconGrid, fetchLocalFalconKeywordAtCoordinate, fetchLocalFalconKeywordReport, fetchLocalFalconKeywordReports, fetchLocalFalconLocationReport, fetchLocalFalconLocationReports, fetchAllLocalFalconLocations, fetchLocalFalconRankingAtCoordinate, fetchLocalFalconReport, fetchLocalFalconReports, fetchLocalFalconTrendReport, fetchLocalFalconTrendReports, fetchLocalFalconCompetitorReports, fetchLocalFalconCompetitorReport, fetchLocalFalconCampaignReports, fetchLocalFalconCampaignReport, fetchLocalFalconGuardReports, fetchLocalFalconGuardReport, runLocalFalconScan, searchForLocalFalconBusinessLocation, fetchLocalFalconAccountInfo, saveLocalFalconBusinessLocationToAccount, addLocationsToFalconGuard, pauseFalconGuardProtection, resumeFalconGuardProtection, removeFalconGuardProtection, createLocalFalconCampaign, updateLocalFalconCampaign, runLocalFalconCampaign, pauseLocalFalconCampaign, resumeLocalFalconCampaign, reactivateLocalFalconCampaign, fetchLocalFalconReviewsAnalysisReports, fetchLocalFalconReviewsAnalysisReport, searchLocalFalconKnowledgeBase, getLocalFalconKnowledgeBaseArticle } from "./localfalcon.js";
+import { fetchLocalFalconAutoScans, fetchLocalFalconFullGridSearch, fetchLocalFalconGoogleBusinessLocations, fetchLocalFalconGrid, fetchLocalFalconKeywordAtCoordinate, fetchLocalFalconKeywordReport, fetchLocalFalconKeywordReports, fetchLocalFalconLocationReport, fetchLocalFalconLocationReports, fetchAllLocalFalconLocations, fetchLocalFalconLocationGroups, fetchLocalFalconRankingAtCoordinate, fetchLocalFalconReport, fetchLocalFalconReports, fetchLocalFalconTrendReport, fetchLocalFalconTrendReports, fetchLocalFalconCompetitorReports, fetchLocalFalconCompetitorReport, fetchLocalFalconCampaignReports, fetchLocalFalconCampaignReport, fetchLocalFalconGuardReports, fetchLocalFalconGuardReport, runLocalFalconScan, searchForLocalFalconBusinessLocation, fetchLocalFalconAccountInfo, saveLocalFalconBusinessLocationToAccount, addLocationsToFalconGuard, pauseFalconGuardProtection, resumeFalconGuardProtection, removeFalconGuardProtection, createLocalFalconCampaign, updateLocalFalconCampaign, runLocalFalconCampaign, pauseLocalFalconCampaign, resumeLocalFalconCampaign, reactivateLocalFalconCampaign, fetchLocalFalconReviewsAnalysisReports, fetchLocalFalconReviewsAnalysisReport, searchLocalFalconKnowledgeBase, getLocalFalconKnowledgeBaseArticle } from "./localfalcon.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { registerAppResource, registerAppTool } from "@modelcontextprotocol/ext-apps/server";
@@ -453,6 +453,27 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
       const resp = await fetchAllLocalFalconLocations(apiKey, handleNullOrUndefined(query));
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
+
+  // Get list of Location Groups
+  server.tool(
+    "listLocalFalconLocationGroups",
+    "Lists all location groups in the Local Falcon account, including the number of locations and the Place IDs contained in each group. Groups may be nested: a group with type 'child' includes a 'parent' object identifying its containing group by key and name, while top-level groups have type 'parent'. Use this to discover how saved locations are organized into groups (e.g. by region or brand) and to pull the Place IDs belonging to a group.",
+    {
+      query: z.string().optional().describe("Search query. Matches against the group key or name."),
+      nextToken: z.string().optional().describe("Pagination token for additional results, provided by a prior response when more results exist."),
+      fieldmask: z.string().optional().describe("Comma-separated list of fields to return from each group (e.g., 'name,place_ids'). Available fields: key, name, type, parent, location_count, place_ids, date_created. Omit to return all fields."),
+    },
+    { title: "List Location Groups", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    async ({ query, nextToken, fieldmask }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      const limit = DEFAULT_LIMIT;
+      if (!apiKey) {
+        return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      }
+      const resp = await fetchLocalFalconLocationGroups(apiKey, limit, handleNullOrUndefined(query), handleNullOrUndefined(nextToken), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );

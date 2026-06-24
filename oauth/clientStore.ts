@@ -1,28 +1,51 @@
 /**
  * In-memory store for registered OAuth client redirect URIs.
  *
- * Validates redirect_uri in authorization requests against values
- * registered via Dynamic Client Registration (RFC 7591), enforcing
- * OAuth 2.1's exact redirect URI matching requirement.
+ * This server is an OAuth *proxy*: at /oauth/authorize it redirects the
+ * browser to LocalFalcon using its OWN fixed redirect_uri
+ * (https://<host>/oauth/callback). The client's redirect_uri is only
+ * stashed in state and reflected back to the client at the end of the
+ * flow. Combined with mandatory PKCE (S256) and CSRF state validation,
+ * the open-redirect risk is limited to "where do we hand the final code
+ * back to" — so redirect_uri validation only needs to confirm the URI
+ * belongs to a trusted MCP client platform, not match an exact string.
  *
- * Loopback redirect URIs (localhost, 127.0.0.1, [::1]) are always
- * allowed per RFC 8252 Section 7.3 (OAuth for Native Apps), since
- * MCP clients typically start a local HTTP server to receive callbacks.
+ * Accordingly, a redirect_uri is allowed when:
+ * - It is a loopback URI (localhost/127.0.0.1/[::1]) per RFC 8252 §7.3,
+ *   since locally-installed MCP clients spin up an ephemeral callback
+ *   server, OR
+ * - It is an https: URI whose host is (or is a subdomain of) a trusted
+ *   MCP client platform domain (ChatGPT, OpenAI, Anthropic/Claude, our
+ *   own domain), OR
+ * - It was registered via Dynamic Client Registration (POST /register)
+ *   and the registration has not expired (fallback for clients on hosts
+ *   we don't explicitly trust).
  *
- * Non-loopback URIs must be registered via POST /register first.
- * Entries expire after 30 minutes to prevent unbounded growth.
+ * Host-suffix matching replaces the previous exact-URL allowlist, which
+ * broke whenever OpenAI's review pipeline used a new path/query/host
+ * variant, and which depended on the in-memory DCR map below — a map
+ * that is wiped on redeploy and is NOT shared across instances, so a
+ * POST /register on one replica would not satisfy a GET /authorize on
+ * another. Trusted-host matching needs no shared state.
  */
 
 const REGISTRATION_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
-// OpenAI's platform scanner uses this redirect URI during app review and tool
-// scanning without going through Dynamic Client Registration first.
-const ALLOWLISTED_REDIRECT_URIS = new Set([
-  "https://platform.openai.com/apps-manage/oauth",
-  "https://chatgpt.com/connector_platform_oauth_redirect",
-]);
+// Trusted MCP client platform domains. A redirect_uri served over https
+// whose hostname equals one of these or is a subdomain of one is allowed
+// without prior Dynamic Client Registration. This covers OpenAI's app
+// review/scanner pipeline (which does not perform DCR first) and ChatGPT's
+// connector callback, regardless of the exact path/query they use.
+const TRUSTED_REDIRECT_DOMAINS = [
+  "chatgpt.com",
+  "openai.com",
+  "anthropic.com",
+  "claude.ai",
+  "claude.com",
+  "localfalcon.com",
+];
 
 interface RegisteredEntry {
   expiresAt: number;
@@ -51,39 +74,32 @@ export function registerRedirectUris(uris: string[]): void {
 }
 
 /**
- * Strip a single trailing slash from a URI (unless the path is just "/").
- * Used to normalize allowlist comparisons so both
- * "https://example.com/path" and "https://example.com/path/" match.
+ * Whether a hostname is, or is a subdomain of, a trusted redirect domain.
+ * "chatgpt.com" and "auth.chatgpt.com" match "chatgpt.com"; "evilchatgpt.com"
+ * does not (the boundary check requires a literal "." before the domain).
  */
-function normalizeTrailingSlash(uri: string): string {
-  if (uri.length > 1 && uri.endsWith("/")) {
-    return uri.slice(0, -1);
-  }
-  return uri;
+function isTrustedHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return TRUSTED_REDIRECT_DOMAINS.some(
+    (domain) => host === domain || host.endsWith(`.${domain}`)
+  );
 }
-
-const normalizedAllowlist = new Set(
-  [...ALLOWLISTED_REDIRECT_URIS].map(normalizeTrailingSlash)
-);
 
 /**
  * Check whether a redirect URI is allowed.
  *
- * - Allowlisted URIs are matched after stripping a trailing slash from
- *   both sides, since OAuth clients inconsistently include one.
- * - Loopback URIs are always allowed (RFC 8252 Section 7.3).
- * - Non-loopback URIs must have been registered via POST /register
- *   and the registration must not have expired.
+ * - Loopback URIs are always allowed (RFC 8252 §7.3).
+ * - https: URIs on a trusted MCP client platform host are allowed.
+ * - Otherwise, the URI must have been registered via POST /register and
+ *   the registration must not have expired.
  */
 export function isRedirectUriAllowed(uri: string): boolean {
-  const normalized = normalizeTrailingSlash(uri);
-  if (normalizedAllowlist.has(normalized)) {
-    return true;
-  }
-
   try {
     const parsed = new URL(uri);
     if (LOOPBACK_HOSTS.has(parsed.hostname)) {
+      return true;
+    }
+    if (parsed.protocol === "https:" && isTrustedHost(parsed.hostname)) {
       return true;
     }
   } catch {
