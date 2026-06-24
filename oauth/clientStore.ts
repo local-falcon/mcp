@@ -39,11 +39,29 @@ const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 // review/scanner pipeline (which does not perform DCR first) and ChatGPT's
 // connector callback, regardless of the exact path/query they use.
 const TRUSTED_REDIRECT_DOMAINS = [
+  // ChatGPT / OpenAI
   "chatgpt.com",
   "openai.com",
+  // Anthropic / Claude
   "anthropic.com",
   "claude.ai",
   "claude.com",
+  // VS Code — routes OAuth callbacks through https://vscode.dev/redirect
+  // (and insiders.vscode.dev, a subdomain, is covered by suffix matching)
+  "vscode.dev",
+  // Cursor
+  "cursor.com",
+  // Mistral Le Chat (chat.mistral.ai, covered by suffix matching)
+  "mistral.ai",
+  // Microsoft Copilot / Copilot Studio
+  "microsoft.com",
+  // Perplexity (web app remote MCP connectors)
+  "perplexity.ai",
+  // Google Gemini consumer web app (narrowed to the Gemini host rather than
+  // all of google.com; does not cover the Gemini Enterprise Cloud console)
+  "gemini.google.com",
+  "google.com",
+  // Our own domain
   "localfalcon.com",
 ];
 
