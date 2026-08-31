@@ -1,6 +1,6 @@
 {
   "name": "@local-falcon/mcp",
-  "version": "1.4.8",
+  "version": "1.4.9",
   "description": "An MCP server for the Local Falcon API.",
   "main": "index.js",
   "repository": {
