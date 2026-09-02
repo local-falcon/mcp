@@ -20,7 +20,7 @@ import {
   OAuthError,
 } from "./oauthClient.js";
 import { clearAuthCache } from "./provider.js";
-import { isRedirectUriAllowed } from "./clientStore.js";
+import { checkRedirectUri } from "./clientStore.js";
 import { fetchLocalFalconAccountInfo } from "../localfalcon.js";
 
 // ── Refresh Token Store ──────────────────────────────────────────────
@@ -78,6 +78,23 @@ export function revokeRefreshTokensForApiKey(apiKey: string): void {
 }
 
 /**
+ * Whether an authorization code (or error) may still be delivered to a redirect
+ * URI taken out of the state store.
+ *
+ * Re-validating at delivery time — not just at /oauth/authorize — keeps the
+ * policy anchored to the moment the code leaves our control, so a state entry
+ * that was poisoned, or stored before a policy tightening, cannot be used to
+ * forward a code to a destination the current policy forbids.
+ */
+function isDeliverableRedirect(uri: string): boolean {
+  const decision = checkRedirectUri(uri);
+  if (!decision.allowed) {
+    console.error(`[OAuth] Refusing to deliver to redirect_uri (${decision.reason}): "${uri}"`);
+  }
+  return decision.allowed;
+}
+
+/**
  * Build the full redirect URI based on the incoming request
  */
 function getRedirectUri(req: Request): string {
@@ -86,44 +103,118 @@ function getRedirectUri(req: Request): string {
   return `${protocol}://${host}${OAUTH_CONFIG.callbackPath}`;
 }
 
+// ── HTML rendering helpers ───────────────────────────────────────────────
+//
+// The callback pages embed values that come straight off the query string
+// (error, error_description, code), so every interpolation site must be
+// escaped for the context it lands in. Getting this wrong here is directly
+// exploitable: /oauth/callback renders the error branch WITHOUT requiring a
+// valid state, so anyone can drive those values with a crafted link.
+
+/** Escape for HTML text and quoted-attribute contexts. */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * Serialize a value for embedding inside an inline <script> block.
+ *
+ * JSON.stringify alone is NOT sufficient: it happily emits a literal
+ * "</script>" inside a string, which terminates the script element early and
+ * turns the rest of the payload into markup. Escaping < > & to \uXXXX keeps
+ * the output a valid JS literal that cannot close the element or start a
+ * comment. U+2028/U+2029 are escaped too — they are valid in JSON but are
+ * literal line terminators in JS string context.
+ */
+function jsonForScript(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
+
+/**
+ * Send one of the OAuth HTML pages with a per-response CSP nonce.
+ *
+ * Defence in depth for the escaping above: with `script-src 'nonce-…'` the only
+ * script the browser will run is the one we emitted carrying this exact nonce,
+ * so an injected <script> — or an onerror= handler, which no nonce can carry —
+ * is inert even if an escaping bug slips back in. `Referrer-Policy: no-referrer`
+ * keeps the authorization code in the URL from leaking to third parties via the
+ * Referer header once the page navigates onward.
+ */
+function sendAuthPage(res: Response, status: number, build: (nonce: string) => string): void {
+  const nonce = crypto.randomBytes(16).toString("base64");
+  res
+    .status(status)
+    .set(
+      "Content-Security-Policy",
+      `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`
+    )
+    .set("X-Content-Type-Options", "nosniff")
+    .set("Referrer-Policy", "no-referrer")
+    .type("html")
+    .send(build(nonce));
+}
+
 /**
  * Generate callback page that sends auth code/error to MCP client via postMessage
  */
-function generateCallbackPage(code: string | null, error: string | null, errorDescription: string | null): string {
-  const message = code
-    ? JSON.stringify({ code })
-    : JSON.stringify({ error: error || "unknown_error", error_description: errorDescription || "Unknown error" });
+function generateCallbackPage(
+  code: string | null,
+  error: string | null,
+  errorDescription: string | null,
+  nonce: string
+): string {
+  const payload = code
+    ? { code }
+    : { error: error || "unknown_error", error_description: errorDescription || "Unknown error" };
+
+  const heading = code ? "Authorization Successful" : "Authorization Failed";
+  const accent = code ? "#22c55e" : "#ef4444";
+  const glyph = code ? "&#10003;" : "&#10007;";
+  const detail = code ? "Completing authentication…" : errorDescription || "An error occurred";
+  const fallbackStatus = code
+    ? "Authorization code received. You may close this window."
+    : "Please close this window and try again.";
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${code ? "Authorization Successful" : "Authorization Failed"} - LocalFalcon MCP</title>
+  <title>${heading} - LocalFalcon MCP</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; background: #f5f5f5; }
     .container { background: white; border-radius: 8px; padding: 40px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; }
-    h1 { color: ${code ? "#22c55e" : "#ef4444"}; margin-bottom: 20px; }
-    .icon { font-size: 64px; color: ${code ? "#22c55e" : "#ef4444"}; margin-bottom: 10px; }
+    h1 { color: ${accent}; margin-bottom: 20px; }
+    .icon { font-size: 64px; color: ${accent}; margin-bottom: 10px; }
     .instructions { color: #666; line-height: 1.6; }
   </style>
 </head>
 <body>
   <div class="container">
-    <div class="icon">${code ? "&#10003;" : "&#10007;"}</div>
-    <h1>${code ? "Authorization Successful" : "Authorization Failed"}</h1>
-    <p class="instructions">${code ? "Completing authentication..." : (errorDescription || "An error occurred")}</p>
+    <div class="icon">${glyph}</div>
+    <h1>${heading}</h1>
+    <p class="instructions">${escapeHtml(detail)}</p>
     <p class="instructions" id="status">This window will close automatically.</p>
   </div>
-  <script>
+  <script nonce="${nonce}">
     (function() {
-      var message = ${message};
+      var message = ${jsonForScript(payload)};
       // Send to opener via postMessage
       if (window.opener) {
         window.opener.postMessage(message, '*');
         setTimeout(function() { window.close(); }, 1000);
       } else {
-        document.getElementById('status').textContent = ${code ? "'Authorization code received. You may close this window.'" : "'Please close this window and try again.'"};
+        document.getElementById('status').textContent = ${jsonForScript(fallbackStatus)};
       }
     })();
   </script>
@@ -137,10 +228,13 @@ function generateCallbackPage(code: string | null, error: string | null, errorDe
  * callback URL. Uses <meta http-equiv="refresh"> so it works even without JS,
  * with a JS redirect as a faster path and a clickable link as the final fallback.
  */
-function generateSuccessPage(redirectUrl: string): string {
-  // Escape for safe embedding in HTML attribute and JS string contexts
-  const safeUrl = redirectUrl.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
-  const jsUrl = redirectUrl.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+function generateSuccessPage(redirectUrl: string, nonce: string): string {
+  // Attribute context: full HTML escaping. Script context: a JSON literal via
+  // jsonForScript rather than hand-rolled quote escaping, so there is no way to
+  // break out of the string. The URL itself is already constrained to https or
+  // loopback by checkRedirectUri (see oauth/clientStore.ts), which is what keeps
+  // a javascript: URL out of the href below.
+  const safeUrl = escapeHtml(redirectUrl);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -165,8 +259,8 @@ function generateSuccessPage(redirectUrl: string): string {
     <p class="instructions">Completing authentication&hellip;</p>
     <p class="instructions">If you are not redirected automatically, <a href="${safeUrl}">click here</a>.</p>
   </div>
-  <script>
-    setTimeout(function() { window.location.href = '${jsUrl}'; }, 1000);
+  <script nonce="${nonce}">
+    setTimeout(function() { window.location.href = ${jsonForScript(redirectUrl)}; }, 1000);
   </script>
 </body>
 </html>`;
@@ -209,20 +303,42 @@ async function handleAuthorize(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // OAuth 2.1: Redirect URI validation.
-    // Loopback URIs (localhost/127.0.0.1/[::1]) are always allowed per RFC 8252.
-    // Non-loopback URIs must be registered via POST /register.
-    if (clientRedirectUri && !isRedirectUriAllowed(clientRedirectUri)) {
-      console.error(`[OAuth] Disallowed redirect_uri: "${clientRedirectUri}" (length=${clientRedirectUri.length}, codePoints=${[...clientRedirectUri].map(c => c.codePointAt(0)!.toString(16)).slice(-10).join(",")})`);
-      res.status(400).json({
-        error: "invalid_request",
-        error_description: "The redirect_uri is not allowed. Non-loopback URIs must be registered via POST /register.",
-      });
-      return;
+    // OAuth 2.1: Redirect URI validation. This is the control that decides who
+    // may receive a user's authorization code — see oauth/clientStore.ts for why
+    // it cannot be delegated to unauthenticated Dynamic Client Registration.
+    if (clientRedirectUri) {
+      const decision = checkRedirectUri(clientRedirectUri);
+      if (!decision.allowed) {
+        console.error(
+          `[OAuth] Rejected redirect_uri (${decision.reason}): "${clientRedirectUri}"`
+        );
+        res.status(400).json({
+          error: "invalid_request",
+          error_description:
+            "The redirect_uri is not permitted. It must be a loopback URI or an https URI " +
+            "on a supported MCP client platform.",
+        });
+        return;
+      }
     }
 
     // Use client's state or generate our own
     const state = clientState || generateSecureState();
+
+    // The state key is client-supplied, so an existing entry may belong to a
+    // different in-flight authorization. Refusing to repoint a live state at a
+    // new destination prevents an attacker who can guess a victim's state value
+    // from redirecting that victim's code elsewhere. An identical retry (same
+    // destination, e.g. the user reloading the authorize URL) is still fine.
+    const existing = stateStore.get(state);
+    if (existing && existing.clientRedirectUri !== clientRedirectUri) {
+      console.error("[OAuth] Refusing to overwrite in-flight state with a different redirect_uri");
+      res.status(400).json({
+        error: "invalid_request",
+        error_description: "The state parameter is already in use. Please retry with a new state.",
+      });
+      return;
+    }
 
     // Store state for CSRF validation, including client's redirect URI and resource
     stateStore.set(state, {
@@ -267,7 +383,7 @@ async function handleCallback(req: Request, res: Response): Promise<void> {
     // Check if we have a stored state with client redirect URI for error redirect
     if (state) {
       const storedState = stateStore.get(state as string);
-      if (storedState?.clientRedirectUri) {
+      if (storedState?.clientRedirectUri && isDeliverableRedirect(storedState.clientRedirectUri)) {
         const errorRedirectUrl = new URL(storedState.clientRedirectUri);
         errorRedirectUrl.searchParams.set("error", error?.toString() || "authorization_error");
         if (error_description) {
@@ -280,10 +396,11 @@ async function handleCallback(req: Request, res: Response): Promise<void> {
       }
     }
 
-    res.status(400).send(generateCallbackPage(
+    sendAuthPage(res, 400, (nonce) => generateCallbackPage(
       null,
       error?.toString() || "authorization_error",
-      error_description?.toString() || "Authorization failed"
+      error_description?.toString() || "Authorization failed",
+      nonce
     ));
     return;
   }
@@ -291,10 +408,11 @@ async function handleCallback(req: Request, res: Response): Promise<void> {
   // Validate required parameters
   if (!code || !state) {
     console.error("[OAuth] Missing code or state parameter");
-    res.status(400).send(generateCallbackPage(
+    sendAuthPage(res, 400, (nonce) => generateCallbackPage(
       null,
       "invalid_request",
-      "Missing required parameters"
+      "Missing required parameters",
+      nonce
     ));
     return;
   }
@@ -303,10 +421,11 @@ async function handleCallback(req: Request, res: Response): Promise<void> {
   const storedState = stateStore.validate(state as string);
   if (!storedState) {
     console.error("[OAuth] Invalid or expired state parameter");
-    res.status(400).send(generateCallbackPage(
+    sendAuthPage(res, 400, (nonce) => generateCallbackPage(
       null,
       "invalid_state",
-      "The authorization request has expired or is invalid. Please try again."
+      "The authorization request has expired or is invalid. Please try again.",
+      nonce
     ));
     return;
   }
@@ -315,18 +434,32 @@ async function handleCallback(req: Request, res: Response): Promise<void> {
 
   // If client provided a redirect URI, show a brief success page then redirect
   // to the client with the authorization code and state.
+  //
+  // The URI was already validated at /oauth/authorize; it is re-checked here
+  // because this is the point where the code actually leaves our control. That
+  // makes the policy enforced at the delivery point rather than only at the
+  // entry point, so a poisoned or stale state entry still cannot exfiltrate.
   if (storedState.clientRedirectUri) {
+    if (!isDeliverableRedirect(storedState.clientRedirectUri)) {
+      sendAuthPage(res, 400, (nonce) => generateCallbackPage(
+        null,
+        "invalid_request",
+        "The redirect_uri associated with this authorization request is not permitted.",
+        nonce
+      ));
+      return;
+    }
     const redirectUrl = new URL(storedState.clientRedirectUri);
     redirectUrl.searchParams.set("code", code as string);
     redirectUrl.searchParams.set("state", state as string);
     console.log(`[OAuth] Showing success page, will redirect to: ${redirectUrl.toString()}`);
-    res.status(200).send(generateSuccessPage(redirectUrl.toString()));
+    sendAuthPage(res, 200, (nonce) => generateSuccessPage(redirectUrl.toString(), nonce));
     return;
   }
 
   // Fallback: Return the authorization code via postMessage for browser-based clients
   console.log("[OAuth] No client redirect_uri, using postMessage fallback");
-  res.status(200).send(generateCallbackPage(code as string, null, null));
+  sendAuthPage(res, 200, (nonce) => generateCallbackPage(code as string, null, null, nonce));
 }
 
 

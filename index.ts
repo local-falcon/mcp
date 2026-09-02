@@ -9,7 +9,7 @@ import { getServer } from "./server.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { InMemoryEventStore } from "@modelcontextprotocol/sdk/examples/shared/inMemoryEventStore.js";
-import { setupOAuthRoutes, createTokenVerifier, registerRedirectUris } from "./oauth/index.js";
+import { setupOAuthRoutes, createTokenVerifier, checkRedirectUri } from "./oauth/index.js";
 import { fetchLocalFalconAccountInfo } from "./localfalcon.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 
@@ -443,23 +443,79 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
   app.get("/.well-known/oauth-protected-resource/*path", protectedResourceMetadata);
 
   // Dynamic Client Registration (RFC 7591)
-  // Echoes back the client's metadata merged with our pre-configured credentials.
+  // Echoes back the client's metadata merged with our server-assigned client_id.
   // The MCP SDK client expects redirect_uris from its request to be reflected.
+  //
+  // SECURITY: This endpoint issues NO client_secret, and must never return one.
+  // /register is unauthenticated by design (RFC 7591 open registration), so any
+  // value in this response body is world-readable to anyone who can reach the
+  // server. Clients registered here are OAuth 2.1 *public* clients that
+  // authenticate with PKCE only — hence token_endpoint_auth_method: "none" and,
+  // per RFC 7591 §3.2.1, no client_secret / client_secret_expires_at fields.
+  // Our own POST /oauth/token never validates a client_secret either, so no
+  // client needs one.
+  //
+  // OAUTH_CLIENT_SECRET is a *server-side* credential used solely to authenticate
+  // this server to localfalcon.com's token/revocation endpoints (see
+  // oauth/oauthClient.ts). It must never be echoed to a client.
   app.post("/register", (req: Request, res: Response): void => {
-    const clientMetadata = req.body || {};
+    const clientMetadata =
+      req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
 
-    // Store registered redirect URIs for exact-match validation in /oauth/authorize
-    const redirectUris: string[] = clientMetadata.redirect_uris || [];
-    if (redirectUris.length > 0) {
-      registerRedirectUris(redirectUris);
+    // Registration does NOT grant redirect URI trust — see oauth/clientStore.ts.
+    // The authoritative check runs at /oauth/authorize and again at
+    // /oauth/callback. What we do here is fail fast on URIs that could never be
+    // a legitimate redirect target, so a misconfigured client gets a clear
+    // RFC 7591 `invalid_redirect_uri` instead of a confusing failure mid-flow.
+    //
+    // Only structurally dangerous URIs are rejected (bad scheme, fragment,
+    // embedded credentials). An otherwise well-formed https URI on a host we
+    // don't currently trust is accepted here and logged: registration is used
+    // for platform onboarding, and refusing it outright would break clients
+    // whose callback host we simply haven't allowlisted yet.
+    const redirectUris: string[] = Array.isArray(clientMetadata.redirect_uris)
+      ? clientMetadata.redirect_uris.filter((u: unknown): u is string => typeof u === "string")
+      : [];
+
+    for (const uri of redirectUris) {
+      const decision = checkRedirectUri(uri);
+      if (decision.allowed) continue;
+
+      if (decision.reason === "host-not-trusted") {
+        console.warn(
+          `[OAuth] Registered redirect_uri is on an untrusted host and will be ` +
+            `rejected at /oauth/authorize: "${uri}". Add its domain to ` +
+            `ADDITIONAL_TRUSTED_REDIRECT_DOMAINS if this client is legitimate.`
+        );
+        continue;
+      }
+
+      console.error(`[OAuth] Rejecting registration (${decision.reason}): "${uri}"`);
+      res.status(400).json({
+        error: "invalid_redirect_uri",
+        error_description:
+          "One or more redirect_uris are not acceptable. Each must be a loopback URI or an " +
+          "https URI, with no fragment and no embedded credentials.",
+      });
+      return;
     }
+
+    // Strip credential-bearing fields from the echoed metadata so a
+    // client-supplied value can never be reflected back as if we had issued it.
+    const {
+      client_secret: _ignoredClientSecret,
+      client_secret_expires_at: _ignoredClientSecretExpiresAt,
+      registration_access_token: _ignoredRegistrationAccessToken,
+      registration_client_uri: _ignoredRegistrationClientUri,
+      ...safeClientMetadata
+    } = clientMetadata as Record<string, unknown>;
 
     res.status(201).json({
       // Echo client's metadata so the SDK's Zod parse succeeds
-      ...clientMetadata,
-      // Override with our server-assigned credentials
+      ...safeClientMetadata,
+      // Override with our server-assigned values
       client_id: "74e0d6e848652234efed.localfalconapps.com",
-      client_secret: process.env.OAUTH_CLIENT_SECRET || '',
+      client_id_issued_at: Math.floor(Date.now() / 1000),
       client_name: clientMetadata.client_name || "LocalFalcon MCP",
       logo_uri: "https://www.localfalcon.com/uploads/identity/logos/471387_local-falcon-logo.png",
       grant_types: ["authorization_code", "refresh_token"],

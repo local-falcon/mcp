@@ -39,8 +39,9 @@ export {
 // Token verifier for SDK's requireBearerAuth middleware
 export { createTokenVerifier, clearAuthCache } from "./provider.js";
 
-// Client registration store (redirect URI validation)
-export { registerRedirectUris, isRedirectUriAllowed } from "./clientStore.js";
+// Redirect URI trust policy
+export { checkRedirectUri } from "./clientStore.js";
+export type { RedirectUriDecision } from "./clientStore.js";
 
 // Refresh token management
 export { revokeRefreshTokensForApiKey } from "./routes.js";
