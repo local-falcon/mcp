@@ -21,6 +21,7 @@ import {
 } from "./oauthClient.js";
 import { clearAuthCache } from "./provider.js";
 import { checkRedirectUri } from "./clientStore.js";
+import { resolveBaseUrl } from "./baseUrl.js";
 import { fetchLocalFalconAccountInfo } from "../localfalcon.js";
 
 // ── Refresh Token Store ──────────────────────────────────────────────
@@ -95,12 +96,16 @@ function isDeliverableRedirect(uri: string): boolean {
 }
 
 /**
- * Build the full redirect URI based on the incoming request
+ * Build our own callback URL — the redirect_uri this server registers with
+ * LocalFalcon at /authorize and replays at token exchange.
+ *
+ * Uses resolveBaseUrl() rather than the raw X-Forwarded-Host so a client cannot
+ * steer the upstream redirect_uri. Note the value must match between the
+ * authorize and token steps, and must be registered upstream, so every host in
+ * ALLOWED_HOSTS needs its /oauth/callback registered with LocalFalcon too.
  */
 function getRedirectUri(req: Request): string {
-  const protocol = req.headers["x-forwarded-proto"] || req.protocol;
-  const host = req.headers["x-forwarded-host"] || req.get("host");
-  return `${protocol}://${host}${OAUTH_CONFIG.callbackPath}`;
+  return `${resolveBaseUrl(req)}${OAUTH_CONFIG.callbackPath}`;
 }
 
 // ── HTML rendering helpers ───────────────────────────────────────────────

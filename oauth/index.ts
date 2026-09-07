@@ -41,6 +41,9 @@ export { createTokenVerifier, clearAuthCache } from "./provider.js";
 
 // Redirect URI trust policy
 export { checkRedirectUri } from "./clientStore.js";
+
+// Trusted resolution of this server's own public base URL
+export { resolveBaseUrl, hasCanonicalBaseUrl, resetBaseUrlCache } from "./baseUrl.js";
 export type { RedirectUriDecision } from "./clientStore.js";
 
 // Refresh token management

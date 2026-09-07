@@ -10,10 +10,10 @@ export const OAUTH_CONFIG = {
   clientId: "74e0d6e848652234efed.localfalconapps.com",
   clientSecret: process.env.OAUTH_CLIENT_SECRET || '',
 
-  // OAuth endpoints
-  authorizationUrl: "https://www.localfalcon.com/oauth-v2/authorize",
-  tokenUrl: "https://www.localfalcon.com/oauth-v2/token",
-  revocationUrl: "https://www.localfalcon.com/oauth-v2/revoke",
+  // OAuth endpoints — the login host is app.localfalcon.com, not www.
+  authorizationUrl: "https://app.localfalcon.com/oauth-v2/authorize",
+  tokenUrl: "https://app.localfalcon.com/oauth-v2/token",
+  revocationUrl: "https://app.localfalcon.com/oauth-v2/revoke",
 
   // OAuth settings
   scopes: ["api"],
