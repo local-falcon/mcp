@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import dotenv from "dotenv";
@@ -9,7 +10,13 @@ import { getServer } from "./server.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { InMemoryEventStore } from "@modelcontextprotocol/sdk/examples/shared/inMemoryEventStore.js";
-import { setupOAuthRoutes, createTokenVerifier, registerRedirectUris } from "./oauth/index.js";
+import {
+  setupOAuthRoutes,
+  createTokenVerifier,
+  checkRedirectUri,
+  resolveBaseUrl,
+  hasCanonicalBaseUrl,
+} from "./oauth/index.js";
 import { fetchLocalFalconAccountInfo } from "./localfalcon.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 
@@ -395,16 +402,21 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
     });
   });
 
-  // Helper to get base URL respecting proxy headers
-  const getBaseUrl = (req: Request): string => {
-    const protocol = req.headers["x-forwarded-proto"] || req.protocol;
-    const host = req.headers["x-forwarded-host"] || req.get("host");
-    return `${protocol}://${host}`;
+  // Discovery metadata must not be cacheable by a shared cache: the base URL
+  // can legitimately differ per trusted host, and an intermediary retaining one
+  // client's copy for another is the amplification path that made
+  // X-Forwarded-Host poisoning a cross-user issue rather than a self-inflicted
+  // one. Express otherwise sets an ETag on these JSON responses with no
+  // Cache-Control and no Vary.
+  const noStore = (res: Response): void => {
+    res.set("Cache-Control", "no-store");
+    res.set("Vary", "X-Forwarded-Host, X-Forwarded-Proto, Host");
   };
 
   // OAuth 2.1 Authorization Server Metadata (RFC 8414)
   const oauthMetadata = (_req: Request, res: Response): void => {
-    const baseUrl = getBaseUrl(_req);
+    const baseUrl = resolveBaseUrl(_req);
+    noStore(res);
     res.status(200).json({
       issuer: baseUrl,
       authorization_endpoint: `${baseUrl}/oauth/authorize`,
@@ -431,7 +443,8 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
   // OAuth 2.1 Protected Resource Metadata (RFC 9728)
   // The wildcard variant handles path-aware discovery (e.g. /.well-known/oauth-protected-resource/mcp)
   const protectedResourceMetadata = (_req: Request, res: Response): void => {
-    const baseUrl = getBaseUrl(_req);
+    const baseUrl = resolveBaseUrl(_req);
+    noStore(res);
     res.status(200).json({
       resource: baseUrl,
       authorization_servers: [baseUrl],
@@ -443,23 +456,79 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
   app.get("/.well-known/oauth-protected-resource/*path", protectedResourceMetadata);
 
   // Dynamic Client Registration (RFC 7591)
-  // Echoes back the client's metadata merged with our pre-configured credentials.
+  // Echoes back the client's metadata merged with our server-assigned client_id.
   // The MCP SDK client expects redirect_uris from its request to be reflected.
+  //
+  // SECURITY: This endpoint issues NO client_secret, and must never return one.
+  // /register is unauthenticated by design (RFC 7591 open registration), so any
+  // value in this response body is world-readable to anyone who can reach the
+  // server. Clients registered here are OAuth 2.1 *public* clients that
+  // authenticate with PKCE only — hence token_endpoint_auth_method: "none" and,
+  // per RFC 7591 §3.2.1, no client_secret / client_secret_expires_at fields.
+  // Our own POST /oauth/token never validates a client_secret either, so no
+  // client needs one.
+  //
+  // OAUTH_CLIENT_SECRET is a *server-side* credential used solely to authenticate
+  // this server to localfalcon.com's token/revocation endpoints (see
+  // oauth/oauthClient.ts). It must never be echoed to a client.
   app.post("/register", (req: Request, res: Response): void => {
-    const clientMetadata = req.body || {};
+    const clientMetadata =
+      req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
 
-    // Store registered redirect URIs for exact-match validation in /oauth/authorize
-    const redirectUris: string[] = clientMetadata.redirect_uris || [];
-    if (redirectUris.length > 0) {
-      registerRedirectUris(redirectUris);
+    // Registration does NOT grant redirect URI trust — see oauth/clientStore.ts.
+    // The authoritative check runs at /oauth/authorize and again at
+    // /oauth/callback. What we do here is fail fast on URIs that could never be
+    // a legitimate redirect target, so a misconfigured client gets a clear
+    // RFC 7591 `invalid_redirect_uri` instead of a confusing failure mid-flow.
+    //
+    // Only structurally dangerous URIs are rejected (bad scheme, fragment,
+    // embedded credentials). An otherwise well-formed https URI on a host we
+    // don't currently trust is accepted here and logged: registration is used
+    // for platform onboarding, and refusing it outright would break clients
+    // whose callback host we simply haven't allowlisted yet.
+    const redirectUris: string[] = Array.isArray(clientMetadata.redirect_uris)
+      ? clientMetadata.redirect_uris.filter((u: unknown): u is string => typeof u === "string")
+      : [];
+
+    for (const uri of redirectUris) {
+      const decision = checkRedirectUri(uri);
+      if (decision.allowed) continue;
+
+      if (decision.reason === "host-not-trusted") {
+        console.warn(
+          `[OAuth] Registered redirect_uri is on an untrusted host and will be ` +
+            `rejected at /oauth/authorize: "${uri}". Add its domain to ` +
+            `ADDITIONAL_TRUSTED_REDIRECT_DOMAINS if this client is legitimate.`
+        );
+        continue;
+      }
+
+      console.error(`[OAuth] Rejecting registration (${decision.reason}): "${uri}"`);
+      res.status(400).json({
+        error: "invalid_redirect_uri",
+        error_description:
+          "One or more redirect_uris are not acceptable. Each must be a loopback URI or an " +
+          "https URI, with no fragment and no embedded credentials.",
+      });
+      return;
     }
+
+    // Strip credential-bearing fields from the echoed metadata so a
+    // client-supplied value can never be reflected back as if we had issued it.
+    const {
+      client_secret: _ignoredClientSecret,
+      client_secret_expires_at: _ignoredClientSecretExpiresAt,
+      registration_access_token: _ignoredRegistrationAccessToken,
+      registration_client_uri: _ignoredRegistrationClientUri,
+      ...safeClientMetadata
+    } = clientMetadata as Record<string, unknown>;
 
     res.status(201).json({
       // Echo client's metadata so the SDK's Zod parse succeeds
-      ...clientMetadata,
-      // Override with our server-assigned credentials
+      ...safeClientMetadata,
+      // Override with our server-assigned values
       client_id: "74e0d6e848652234efed.localfalconapps.com",
-      client_secret: process.env.OAUTH_CLIENT_SECRET || '',
+      client_id_issued_at: Math.floor(Date.now() / 1000),
       client_name: clientMetadata.client_name || "LocalFalcon MCP",
       logo_uri: "https://www.localfalcon.com/uploads/identity/logos/471387_local-falcon-logo.png",
       grant_types: ["authorization_code", "refresh_token"],
@@ -520,10 +589,10 @@ const bearerAuthMiddleware: RequestHandler = (async (req: Request, res: Response
       return;
     }
 
-    // Build WWW-Authenticate header with dynamic resource_metadata from request host
-    const protocol = req.headers["x-forwarded-proto"] || req.protocol;
-    const host = req.headers["x-forwarded-host"] || req.get("host");
-    const resourceMetadataUrl = `${protocol}://${host}/.well-known/oauth-protected-resource`;
+    // Build WWW-Authenticate with a resource_metadata pointer the client can
+    // trust. resolveBaseUrl() refuses to echo an untrusted X-Forwarded-Host, so
+    // this cannot be pointed at an attacker-controlled discovery document.
+    const resourceMetadataUrl = `${resolveBaseUrl(req)}/.well-known/oauth-protected-resource`;
 
     let wwwAuth = `Bearer error="${errCode}", error_description="${errMsg}", scope="api"`;
     wwwAuth += `, resource_metadata="${resourceMetadataUrl}"`;
@@ -603,8 +672,74 @@ const setupSSERoutes = (app: Application, sessionManager: SessionManager): void 
     }
   };
 
+  // /sse/messages was previously unauthenticated: possession of the session ID
+  // — which the SSE transport carries in a query string, and which therefore
+  // lands in proxy and CDN access logs — was sufficient to drive the session.
+  // It now requires a Bearer token that owns the named session.
   app.get("/sse", mcpRateLimiter, bearerAuthMiddleware, sseHandler);
-  app.post("/sse/messages", mcpRateLimiter, sseMessagesHandler);
+  app.post(
+    "/sse/messages",
+    mcpRateLimiter,
+    bearerAuthMiddleware,
+    requireSessionOwnership(sessionManager),
+    sseMessagesHandler
+  );
+};
+
+/**
+ * Constant-time comparison of two secrets via their SHA-256 digests.
+ *
+ * Digests keep the inputs a fixed length, which timingSafeEqual requires, and
+ * avoid leaking length information about the stored key.
+ */
+const secretsMatch = (a: string, b: string): boolean => {
+  const ha = crypto.createHash("sha256").update(a).digest();
+  const hb = crypto.createHash("sha256").update(b).digest();
+  return crypto.timingSafeEqual(ha, hb);
+};
+
+/**
+ * Bind an established session to the credential that created it.
+ *
+ * Bearer auth alone proves the caller holds *a* valid API key; it does not prove
+ * the session they name is theirs. Without this check, any authenticated caller
+ * who learned another user's session ID could drive that session — and session
+ * IDs are not secrets in practice: they are written to stdout on nearly every
+ * request, returned in a CORS-exposed `mcp-session-id` response header, and for
+ * the SSE transport travel in a query string that lands in proxy access logs.
+ *
+ * Ordering matters: this must run *after* bearerAuthMiddleware so req.auth is
+ * populated.
+ *
+ * Requests naming no session (initialize) or an unknown session (auto-recovery)
+ * pass through — both paths establish ownership themselves.
+ */
+const requireSessionOwnership = (sessionManager: SessionManager): RequestHandler => {
+  return (req: Request, res: Response, next): void => {
+    const sessionId =
+      (req.headers["mcp-session-id"] as string | undefined) ??
+      (typeof req.query.sessionId === "string" ? req.query.sessionId : undefined);
+
+    if (!sessionId) return next();
+
+    const session = sessionManager.getSession(sessionId);
+    if (!session) return next();
+
+    const token = req.auth?.token;
+    if (!token || !secretsMatch(session.apiKey, token)) {
+      console.warn(
+        `[Session] Rejecting request for session ${sessionId}: bearer token does not own this session`
+      );
+      res.status(403).json({
+        jsonrpc: "2.0",
+        error: { code: -32000, message: "Forbidden: session does not belong to this credential" },
+        id: null,
+      });
+      return;
+    }
+
+    return next();
+  };
 };
 
 // HTTP Transport Handlers
@@ -815,18 +950,6 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
     }
   };
 
-  // Bearer auth is required only for initialization requests (no existing session).
-  // Subsequent requests with a valid mcp-session-id skip auth since the session
-  // was already authenticated at creation time.
-  const conditionalBearerAuth: RequestHandler = (req, res, next) => {
-    const sessionId = req.headers['mcp-session-id'] as string | undefined;
-    if (sessionId && sessionManager.getTransport(sessionId)) {
-      // Existing session — already authenticated
-      return next();
-    }
-    // New request (initialization) — require Bearer token
-    return bearerAuthMiddleware(req, res, next);
-  };
 
   // Root GET handler — returns 200 with server info for health checks and scanners.
   // Only intercepts requests WITHOUT the mcp-session-id header; requests WITH
@@ -862,14 +985,24 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
 
   // Mount on both /mcp and / so clients can connect to either path.
   // Root path mounting ensures OAuth discovery works when the server URL has no path.
-  app.post('/mcp', mcpRateLimiter, conditionalBearerAuth, mcpHandler);
-  app.get('/mcp', sessionlessMcpInfoHandler, mcpGetHandler);
-  app.delete('/mcp', mcpDeleteHandler);
+  // Bearer auth is required on EVERY session-bearing request, and the session
+  // must belong to the presented credential. Previously only the initialize
+  // request was authenticated and possession of the session ID alone authorized
+  // everything after it, including credit-spending tools.
+  //
+  // The sessionless info handlers stay in front of the auth chain so health
+  // checks and scanners hitting GET / or GET /mcp without a session still get
+  // a 200 rather than a 401.
+  const owns = requireSessionOwnership(sessionManager);
 
-  app.post('/', mcpRateLimiter, conditionalBearerAuth, mcpHandler);
+  app.post('/mcp', mcpRateLimiter, bearerAuthMiddleware, owns, mcpHandler);
+  app.get('/mcp', sessionlessMcpInfoHandler, mcpRateLimiter, bearerAuthMiddleware, owns, mcpGetHandler);
+  app.delete('/mcp', mcpRateLimiter, bearerAuthMiddleware, owns, mcpDeleteHandler);
+
+  app.post('/', mcpRateLimiter, bearerAuthMiddleware, owns, mcpHandler);
   // Note: GET / without mcp-session-id is handled above; this catches MCP SSE streams.
-  app.get('/', mcpGetHandler);
-  app.delete('/', mcpDeleteHandler);
+  app.get('/', mcpRateLimiter, bearerAuthMiddleware, owns, mcpGetHandler);
+  app.delete('/', mcpRateLimiter, bearerAuthMiddleware, owns, mcpDeleteHandler);
 };
 
 // Unified Server Creation
@@ -893,6 +1026,15 @@ const createUnifiedServer = (sessionManager: SessionManager, modes: string[]): A
 const startUnifiedServer = (app: Application, sessionManager: SessionManager, modes: string[]): void => {
   const port = parseInt(process.env.PORT ?? "8000", 10);
   sessionManager.startInactivityChecker();
+
+  if (!hasCanonicalBaseUrl()) {
+    console.warn(
+      "[BaseUrl] WARNING: PUBLIC_BASE_URL is not set. OAuth discovery metadata " +
+        "will be derived from request headers, which lets a client influence the " +
+        "advertised issuer and endpoints via X-Forwarded-Host. Set PUBLIC_BASE_URL " +
+        "to this server's public origin (e.g. https://mcp.localfalcon.com)."
+    );
+  }
 
   const server = app.listen(port, () => {
     console.log(`Unified MCP server listening on port ${port}`);
