@@ -269,14 +269,39 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
   );
 
   // ── MCP Apps: Geo-Grid Heatmap ─────────────────────────────────────────────
-  // Resolve the built HTML file (handles both source dev and compiled dist paths)
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
-  const geogridHtmlPath = path.resolve(__dirname, "dist/ui/geogrid-heatmap/index.html");
+
+  // The built single-file widget always lives at <packageRoot>/dist/ui/..., but
+  // __dirname depends on how the server was started: it is the package root when
+  // running from source (bun/ts-node) and dist/ when running the compiled build.
+  // The previous single hardcoded "dist/ui/..." only worked from source — from
+  // dist/ it resolved to dist/dist/ui/... and the resource read failed with
+  // ENOENT, which broke the widget for every compiled deployment (npm install,
+  // the MCPB bundle, and the Docker image).
+  //
+  // Both candidates point at a dist/ui location on purpose: never fall back to
+  // ui/geogrid-heatmap/index.html, which is the unbuilt Vite template and would
+  // silently serve a broken widget referencing ./main.ts.
+  const GEOGRID_HTML_CANDIDATES = [
+    "dist/ui/geogrid-heatmap/index.html",
+    "../dist/ui/geogrid-heatmap/index.html",
+  ];
+
+  const resolveGeogridHtml = (): string => {
+    for (const candidate of GEOGRID_HTML_CANDIDATES) {
+      const resolved = path.resolve(__dirname, candidate);
+      if (fs.existsSync(resolved)) return resolved;
+    }
+    throw new Error(
+      `Geo-grid widget HTML not found (looked for ${GEOGRID_HTML_CANDIDATES.join(", ")} ` +
+        `relative to ${__dirname}). Run "npm run build:ui".`
+    );
+  };
 
   // Register the geo-grid heatmap as an MCP App resource
   registerAppResource(server, "Geo-Grid Heatmap", "ui://reports/geogrid-heatmap", {}, async () => {
-    const html = fs.readFileSync(geogridHtmlPath, "utf-8");
+    const html = fs.readFileSync(resolveGeogridHtml(), "utf-8");
     return {
       contents: [{
         uri: "ui://reports/geogrid-heatmap",
