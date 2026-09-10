@@ -4,7 +4,16 @@ import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { fetchLocalFalconAutoScans, fetchLocalFalconFullGridSearch, fetchLocalFalconGoogleBusinessLocations, fetchLocalFalconGrid, fetchLocalFalconKeywordAtCoordinate, fetchLocalFalconKeywordReport, fetchLocalFalconKeywordReports, fetchLocalFalconLocationReport, fetchLocalFalconLocationReports, fetchAllLocalFalconLocations, fetchLocalFalconLocationGroups, fetchLocalFalconRankingAtCoordinate, fetchLocalFalconReport, fetchLocalFalconReports, fetchLocalFalconTrendReport, fetchLocalFalconTrendReports, fetchLocalFalconCompetitorReports, fetchLocalFalconCompetitorReport, fetchLocalFalconCampaignReports, fetchLocalFalconCampaignReport, fetchLocalFalconGuardReports, fetchLocalFalconGuardReport, runLocalFalconScan, searchForLocalFalconBusinessLocation, fetchLocalFalconAccountInfo, saveLocalFalconBusinessLocationToAccount, addLocationsToFalconGuard, pauseFalconGuardProtection, resumeFalconGuardProtection, removeFalconGuardProtection, createLocalFalconCampaign, updateLocalFalconCampaign, runLocalFalconCampaign, pauseLocalFalconCampaign, resumeLocalFalconCampaign, reactivateLocalFalconCampaign, fetchLocalFalconReviewsAnalysisReports, fetchLocalFalconReviewsAnalysisReport, searchLocalFalconKnowledgeBase, getLocalFalconKnowledgeBaseArticle } from "./localfalcon.js";
+import { fetchLocalFalconAutoScans, fetchLocalFalconFullGridSearch, fetchLocalFalconGoogleBusinessLocations, fetchLocalFalconGrid, fetchLocalFalconKeywordAtCoordinate, fetchLocalFalconKeywordReport, fetchLocalFalconKeywordReports, fetchLocalFalconLocationReport, fetchLocalFalconLocationReports, fetchAllLocalFalconLocations, fetchLocalFalconLocationGroups, fetchLocalFalconRankingAtCoordinate, fetchLocalFalconReport, fetchLocalFalconReports, fetchLocalFalconTrendReport, fetchLocalFalconTrendReports, fetchLocalFalconCompetitorReports, fetchLocalFalconCompetitorReport, fetchLocalFalconCampaignReports, fetchLocalFalconCampaignReport, fetchLocalFalconGuardReports, fetchLocalFalconGuardReport, runLocalFalconScan, searchForLocalFalconBusinessLocation, fetchLocalFalconAccountInfo, saveLocalFalconBusinessLocationToAccount, addLocationsToFalconGuard, pauseFalconGuardProtection, resumeFalconGuardProtection, removeFalconGuardProtection, createLocalFalconCampaign, updateLocalFalconCampaign, runLocalFalconCampaign, pauseLocalFalconCampaign, resumeLocalFalconCampaign, reactivateLocalFalconCampaign, fetchLocalFalconReviewsAnalysisReports, fetchLocalFalconReviewsAnalysisReport, searchLocalFalconKnowledgeBase, getLocalFalconKnowledgeBaseArticle,
+  getGbpLocation, getGbpGoogleUpdated, getGbpVerification, getGbpAttributes, listGbpServices,
+  getGbpMetrics, listGbpPosts, listGbpMedia, listGbpCustomerMedia, listGbpReviews, listGbpLinks,
+  listGbpCategories, listGbpChains, listGbpAttributeMetadata, listGbpActionTypes,
+  createGbpPost, updateGbpPost, deleteGbpPost,
+  createGbpMedia, updateGbpMedia, deleteGbpMedia,
+  replyToGbpReviews, deleteGbpReviewReply,
+  createGbpLink, updateGbpLink, deleteGbpLink,
+  addGbpServices, removeGbpServices, replaceGbpServices,
+  updateGbpLocation, updateGbpHours, updateGbpStatus, updateGbpAttributes } from "./localfalcon.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { registerAppResource, registerAppTool } from "@modelcontextprotocol/ext-apps/server";
@@ -1398,6 +1407,567 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
       // Strip any non-numeric prefix (e.g. "KB70" -> "70")
       const cleanId = articleId.replace(/^[^0-9]+/, '');
       const resp = await getLocalFalconKnowledgeBaseArticle(apiKey, cleanId);
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
+
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Manage Google Business Profile — reads
+  // ══════════════════════════════════════════════════════════════════════════
+  // These act on the LIVE Google profile, not Local Falcon report data, and
+  // only work for locations connected to a Google account. Use
+  // listAllLocalFalconLocations with gbpLinked to find eligible place_ids.
+
+  const GBP_PLACE_ID = "Place ID of a Google-connected location. Only works for locations linked to a Google account in your Local Falcon account.";
+
+  server.tool(
+    "getLocalFalconGbpProfile",
+    "Retrieves the live Google Business Profile for a connected location as Local Falcon holds it: name, address, phone, categories, hours, website and open status. Reads from Google at request time, so it reflects the profile right now rather than the last scan. NOTE: this endpoint returns Google's own resource, so its field names are camelCase, unlike the snake_case used by other Local Falcon endpoints. Only works for OAuth-connected locations.",
+    { placeId: z.string().describe(GBP_PLACE_ID) },
+    { title: "Get GBP Profile", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    async ({ placeId }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      const resp = await getGbpLocation(apiKey, placeId);
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "getLocalFalconGbpGoogleUpdates",
+    "Retrieves Google's own pending version of a business profile, for comparing against the current profile to spot Google-suggested edits that have not been applied. Use this to detect unwanted or automatic Google changes. Returns camelCase field names (Google's resource, passed through unchanged).",
+    {
+      placeId: z.string().describe(GBP_PLACE_ID),
+      fieldsMask: z.string().nullish().describe("Comma-separated Google field names to compare (e.g. 'title,phoneNumbers,regularHours'). Omit to compare the default set."),
+    },
+    { title: "Get GBP Google Updates", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    async ({ placeId, fieldsMask }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      const resp = await getGbpGoogleUpdated(apiKey, placeId, handleNullOrUndefined(fieldsMask));
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "getLocalFalconGbpVerificationStatus",
+    "Retrieves the Google verification state of a connected business profile. Unverified or suspended profiles rank poorly or not at all, so check this first when a location has unexpectedly high ARP or has disappeared from results.",
+    { placeId: z.string().describe(GBP_PLACE_ID) },
+    { title: "Get GBP Verification Status", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    async ({ placeId }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      const resp = await getGbpVerification(apiKey, placeId);
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "getLocalFalconGbpAttributes",
+    "Retrieves the attributes currently set on a connected business profile (e.g. wheelchair accessible, outdoor seating, women-owned). Use getLocalFalconGbpAvailableAttributes to see which attributes the profile's category permits before changing them.",
+    { placeId: z.string().describe(GBP_PLACE_ID) },
+    { title: "Get GBP Attributes", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    async ({ placeId }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      const resp = await getGbpAttributes(apiKey, placeId);
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "listLocalFalconGbpServices",
+    "Lists the services listed on a connected business profile, with descriptions and prices. Services influence which queries a profile surfaces for, so review these when diagnosing weak keyword coverage.",
+    { placeId: z.string().describe(GBP_PLACE_ID) },
+    { title: "List GBP Services", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    async ({ placeId }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      const resp = await listGbpServices(apiKey, placeId);
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "getLocalFalconGbpPerformanceMetrics",
+    "Retrieves Google's own performance metrics for a connected profile: impressions, calls, website clicks, direction requests and similar, per day. This is Google-reported engagement data, distinct from Local Falcon scan rankings (ARP/ATRP/SoLV) — use it to connect visibility changes to real customer actions.",
+    {
+      placeId: z.string().describe(GBP_PLACE_ID),
+      metrics: z.string().nullish().describe("Comma-separated metric names to return. Omit for every available metric."),
+      startDate: z.string().nullish().describe("First day to report, YYYY-MM-DD."),
+      endDate: z.string().nullish().describe("Last day to report, YYYY-MM-DD."),
+    },
+    { title: "Get GBP Performance Metrics", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    async ({ placeId, metrics, startDate, endDate }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      const resp = await getGbpMetrics(apiKey, placeId, handleNullOrUndefined(metrics), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate));
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "listLocalFalconGbpPosts",
+    "Lists Google Business Profile posts (updates, events, offers, alerts) for a connected location. Pass postId to fetch a single post.",
+    {
+      placeId: z.string().describe(GBP_PLACE_ID),
+      postId: z.string().nullish().describe("Retrieve one post instead of a list."),
+      limit: z.number().int().min(1).max(100).nullish().describe("Results per page, 1-100. Omit for the API default."),
+      nextToken: z.string().nullish().describe("Page token from a previous response."),
+    },
+    { title: "List GBP Posts", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    async ({ placeId, postId, limit, nextToken }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      const resp = await listGbpPosts(apiKey, placeId, handleNullOrUndefined(postId), limit ?? undefined, handleNullOrUndefined(nextToken));
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "listLocalFalconGbpMedia",
+    "Lists photos and videos the business has uploaded to its connected Google Business Profile. Filter by category (e.g. INTERIOR, EXTERIOR, LOGO, COVER) or pass mediaId for a single item. For photos uploaded by customers, use listLocalFalconGbpCustomerMedia instead.",
+    {
+      placeId: z.string().describe(GBP_PLACE_ID),
+      mediaId: z.string().nullish().describe("Retrieve one media item instead of a list."),
+      category: z.string().nullish().describe("Filter by category, e.g. INTERIOR, EXTERIOR, LOGO, COVER, FOOD_AND_DRINK."),
+      limit: z.number().int().min(1).max(100).nullish().describe("Results per page, 1-100. Omit for the API default."),
+      nextToken: z.string().nullish().describe("Page token from a previous response."),
+    },
+    { title: "List GBP Media", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    async ({ placeId, mediaId, category, limit, nextToken }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      const resp = await listGbpMedia(apiKey, placeId, handleNullOrUndefined(mediaId), handleNullOrUndefined(category), limit ?? undefined, handleNullOrUndefined(nextToken));
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "listLocalFalconGbpCustomerMedia",
+    "Lists photos and videos uploaded by CUSTOMERS to a connected Google Business Profile, as opposed to the owner's own uploads. Customer media cannot be deleted through the API — only reported to Google directly.",
+    {
+      placeId: z.string().describe(GBP_PLACE_ID),
+      mediaId: z.string().nullish().describe("Retrieve one item instead of a list."),
+      limit: z.number().int().min(1).max(100).nullish().describe("Results per page, 1-100. Omit for the API default."),
+      nextToken: z.string().nullish().describe("Page token from a previous response."),
+    },
+    { title: "List GBP Customer Media", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    async ({ placeId, mediaId, limit, nextToken }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      const resp = await listGbpCustomerMedia(apiKey, placeId, handleNullOrUndefined(mediaId), limit ?? undefined, handleNullOrUndefined(nextToken));
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "listLocalFalconGbpReviews",
+    "Lists Google reviews for one or more connected locations, including any owner replies. Set unanswered to true to find reviews still needing a response, or filter by star rating. Distinct from the Reviews Analysis report tools, which return Local Falcon's AI analysis rather than the live review list.",
+    {
+      placeId: z.string().describe(GBP_PLACE_ID + " Up to 10 comma-separated Place IDs may be supplied."),
+      reviewId: z.string().nullish().describe("Retrieve a single review by ID. When supplied, all other filters and pagination are ignored."),
+      limit: z.number().int().min(1).max(100).nullish().describe("Reviews to retrieve per location."),
+      unanswered: z.boolean().nullish().describe("Only return reviews that do not yet have a reply."),
+      rating: z.string().nullish().describe("Comma-separated star ratings to include, 1-5. For example '1,2' returns only one and two star reviews."),
+      nextToken: z.string().nullish().describe("Page token from a previous response."),
+    },
+    { title: "List GBP Reviews", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    async ({ placeId, reviewId, limit, unanswered, rating, nextToken }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      const resp = await listGbpReviews(apiKey, placeId, handleNullOrUndefined(reviewId), limit ?? undefined, unanswered ?? undefined, handleNullOrUndefined(rating), handleNullOrUndefined(nextToken));
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "listLocalFalconGbpActionLinks",
+    "Lists the action links (booking, ordering, appointment buttons) on a connected business profile. Use getLocalFalconGbpAvailableActionTypes to see which link types the profile supports.",
+    {
+      placeId: z.string().describe(GBP_PLACE_ID),
+      linkId: z.string().nullish().describe("Retrieve one link instead of a list."),
+      limit: z.number().int().min(1).max(100).nullish().describe("Results per page, 1-100. Omit for the API default."),
+      nextToken: z.string().nullish().describe("Page token from a previous response."),
+    },
+    { title: "List GBP Action Links", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    async ({ placeId, linkId, limit, nextToken }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      const resp = await listGbpLinks(apiKey, placeId, handleNullOrUndefined(linkId), limit ?? undefined, handleNullOrUndefined(nextToken));
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "searchLocalFalconGbpCategories",
+    "Searches Google's business category taxonomy, returning the gcid: identifiers needed when changing a profile's primary or additional categories. Primary category is one of the strongest local ranking factors, so verify the exact gcid here before calling updateLocalFalconGbpProfile.",
+    {
+      placeId: z.string().describe(GBP_PLACE_ID + " Determines which Google account the lookup runs against."),
+      query: z.string().nullish().describe("Text to search categories for, e.g. 'plumber'."),
+      regionCode: z.string().nullish().describe("Two-letter country code. Defaults to the location's country."),
+      language: z.string().nullish().describe("Language code. Defaults to 'en'."),
+      names: z.string().nullish().describe("Comma-separated category names to look up directly, e.g. 'gcid:plumber'."),
+      limit: z.number().int().min(1).max(100).nullish().describe("Results per page, 1-100."),
+      nextToken: z.string().nullish().describe("Page token from a previous response."),
+    },
+    { title: "Search GBP Categories", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    async ({ placeId, query, regionCode, language, names, limit, nextToken }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      const resp = await listGbpCategories(apiKey, placeId, handleNullOrUndefined(query), handleNullOrUndefined(regionCode), handleNullOrUndefined(language), handleNullOrUndefined(names), limit ?? undefined, handleNullOrUndefined(nextToken));
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "searchLocalFalconGbpChains",
+    "Searches Google's business chain directory (e.g. franchise brands) for the chain identifier used when associating a profile with a chain.",
+    {
+      placeId: z.string().describe(GBP_PLACE_ID + " Determines which Google account the lookup runs against."),
+      query: z.string().nullish().describe("Chain name to search for."),
+      chainId: z.string().nullish().describe("Retrieve a single chain instead of searching."),
+      limit: z.number().int().min(1).max(100).nullish().describe("Results per page, 1-100."),
+    },
+    { title: "Search GBP Chains", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    async ({ placeId, query, chainId, limit }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      const resp = await listGbpChains(apiKey, placeId, handleNullOrUndefined(query), handleNullOrUndefined(chainId), limit ?? undefined);
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "getLocalFalconGbpAvailableAttributes",
+    "Lists the attributes Google permits for a business category, with their expected value types. Call this before updateLocalFalconGbpProfile with action 'attributes' — setting an attribute the category does not support will be rejected by Google.",
+    {
+      placeId: z.string().describe(GBP_PLACE_ID + " Determines which Google account the lookup runs against."),
+      category: z.string().nullish().describe("Category name including prefix, e.g. 'gcid:plumber'. Omit to use the profile's own category."),
+      regionCode: z.string().nullish().describe("Two-letter country code. Defaults to the location's country."),
+      language: z.string().nullish().describe("Language code. Defaults to 'en'."),
+      showAll: z.boolean().nullish().describe("Return every attribute rather than only those valid for the category."),
+      limit: z.number().int().min(1).max(100).nullish().describe("Results per page, 1-100."),
+      nextToken: z.string().nullish().describe("Page token from a previous response."),
+    },
+    { title: "Get GBP Available Attributes", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    async ({ placeId, category, regionCode, language, showAll, limit, nextToken }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      const resp = await listGbpAttributeMetadata(apiKey, placeId, handleNullOrUndefined(category), handleNullOrUndefined(regionCode), handleNullOrUndefined(language), showAll ?? undefined, limit ?? undefined, handleNullOrUndefined(nextToken));
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "getLocalFalconGbpAvailableActionTypes",
+    "Lists the action link types (e.g. APPOINTMENT, FOOD_ORDERING, DINING_RESERVATION) available for a connected profile. Use the returned type when adding a link via manageLocalFalconGbpActionLinks.",
+    {
+      placeId: z.string().describe(GBP_PLACE_ID + " Determines which Google account the lookup runs against."),
+      language: z.string().nullish().describe("Language code. Defaults to 'en'."),
+      limit: z.number().int().min(1).max(100).nullish().describe("Results per page, 1-100."),
+      nextToken: z.string().nullish().describe("Page token from a previous response."),
+    },
+    { title: "Get GBP Available Action Types", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    async ({ placeId, language, limit, nextToken }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      const resp = await listGbpActionTypes(apiKey, placeId, handleNullOrUndefined(language), limit ?? undefined, handleNullOrUndefined(nextToken));
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
+
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Manage Google Business Profile — writes (action-driven)
+  // ══════════════════════════════════════════════════════════════════════════
+  // Mutations are grouped one tool per resource with an `action` discriminator,
+  // to keep the tool list manageable. Because each group can delete, all are
+  // annotated destructiveHint: true so clients confirm before executing —
+  // create/update through these tools is itself reversible, but the annotation
+  // is per-tool and must reflect the most dangerous action available.
+  //
+  // The API requires a literal confirmation token on its destructive calls
+  // (DELETE_POST, REPLACE_SERVICES, ...). That is supplied by the client layer
+  // rather than asked of the model, so a delete cannot be half-specified.
+
+  server.tool(
+    "manageLocalFalconGbpPosts",
+    "Creates, updates or deletes a post on a connected Google Business Profile. WRITES LIVE TO GOOGLE — always confirm with the user first. action='create' needs summary (and event/offer when topicType is EVENT/OFFER); action='update' needs postId; action='delete' needs postId and permanently removes the post. Use listLocalFalconGbpPosts to find postId values.",
+    {
+      action: z.enum(["create", "update", "delete"]).describe("Operation to perform."),
+      placeId: z.string().describe(GBP_PLACE_ID),
+      postId: z.string().nullish().describe("The post to act on. Required for 'update' and 'delete'."),
+      summary: z.string().max(1500).nullish().describe("Post text, up to 1500 characters."),
+      topicType: z.enum(["STANDARD", "EVENT", "OFFER", "ALERT"]).nullish().describe("Post type, 'create' only. Defaults to STANDARD. EVENT requires event; OFFER requires offer."),
+      callToAction: z.object({
+        action_type: z.string().describe("Button type, e.g. BOOK, ORDER, LEARN_MORE, SIGN_UP, CALL."),
+        url: z.string().nullish().describe("Destination URL. Not used for CALL."),
+      }).nullish().describe("Optional button on the post."),
+      media: z.array(z.object({
+        media_format: z.enum(["PHOTO", "VIDEO"]).describe("Media type."),
+        source_url: z.string().describe("Public URL Google can fetch the file from."),
+      })).nullish().describe("Media items. On 'update' this replaces every existing media item on the post."),
+      event: z.record(z.any()).nullish().describe("Event details (title and schedule). Required when topicType is EVENT."),
+      offer: z.record(z.any()).nullish().describe("Offer details (coupon code, terms, redeem URL). Required when topicType is OFFER."),
+      language: z.string().nullish().describe("Language code, 'create' only. Defaults to 'en'."),
+      replace: z.string().nullish().describe("Comma-separated field names to write wholesale rather than merge, 'update' only."),
+    },
+    { title: "Manage GBP Posts", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+    async ({ action, placeId, postId, summary, topicType, callToAction, media, event, offer, language, replace }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      if ((action === "update" || action === "delete") && !postId) {
+        return { content: [{ type: "text", text: `postId is required for action '${action}'. Use listLocalFalconGbpPosts to find it.` }] };
+      }
+      let resp;
+      if (action === "create") {
+        resp = await createGbpPost(apiKey, placeId, {
+          summary: summary ?? undefined,
+          topicType: topicType ?? undefined,
+          callToAction: callToAction ?? undefined,
+          media: media ?? undefined,
+          event: event ?? undefined,
+          offer: offer ?? undefined,
+          language: language ?? undefined,
+        });
+      } else if (action === "update") {
+        resp = await updateGbpPost(apiKey, placeId, postId as string, {
+          summary: summary ?? undefined,
+          callToAction: callToAction ?? undefined,
+          media: media ?? undefined,
+          event: event ?? undefined,
+          offer: offer ?? undefined,
+          replace: replace ?? undefined,
+        });
+      } else {
+        resp = await deleteGbpPost(apiKey, placeId, postId as string);
+      }
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "manageLocalFalconGbpMedia",
+    "Adds, recategorises or deletes owner media on a connected Google Business Profile. WRITES LIVE TO GOOGLE — always confirm with the user first. action='create' needs mediaFormat, sourceUrl and category; action='update' needs mediaId and category (and cannot set COVER or PROFILE); action='delete' needs mediaId and permanently removes the item. Customer-uploaded media cannot be modified — see listLocalFalconGbpCustomerMedia.",
+    {
+      action: z.enum(["create", "update", "delete"]).describe("Operation to perform."),
+      placeId: z.string().describe(GBP_PLACE_ID),
+      mediaId: z.string().nullish().describe("The media item to act on. Required for 'update' and 'delete'."),
+      mediaFormat: z.enum(["PHOTO", "VIDEO"]).nullish().describe("Media type. Required for 'create'."),
+      sourceUrl: z.string().nullish().describe("Public URL Google can fetch the file from. Required for 'create'."),
+      category: z.string().nullish().describe("Category, e.g. INTERIOR, EXTERIOR, LOGO, COVER, FOOD_AND_DRINK. Required for 'create' and 'update'. COVER and PROFILE are not valid for 'update'."),
+      description: z.string().nullish().describe("Optional description, 'create' only. Cannot be changed afterwards."),
+    },
+    { title: "Manage GBP Media", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+    async ({ action, placeId, mediaId, mediaFormat, sourceUrl, category, description }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      if ((action === "update" || action === "delete") && !mediaId) {
+        return { content: [{ type: "text", text: `mediaId is required for action '${action}'. Use listLocalFalconGbpMedia to find it.` }] };
+      }
+      let resp;
+      if (action === "create") {
+        if (!mediaFormat || !sourceUrl || !category) {
+          return { content: [{ type: "text", text: "mediaFormat, sourceUrl and category are all required for action 'create'." }] };
+        }
+        resp = await createGbpMedia(apiKey, placeId, mediaFormat, sourceUrl, category, handleNullOrUndefined(description));
+      } else if (action === "update") {
+        if (!category) {
+          return { content: [{ type: "text", text: "category is required for action 'update'." }] };
+        }
+        resp = await updateGbpMedia(apiKey, placeId, mediaId as string, category);
+      } else {
+        resp = await deleteGbpMedia(apiKey, placeId, mediaId as string);
+      }
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "manageLocalFalconGbpReviewReplies",
+    "Publishes or deletes owner replies to Google reviews on connected locations. WRITES LIVE TO GOOGLE and replies are publicly visible — always confirm the exact wording with the user first. action='reply' either replies to one review (reviewId + reply) or to up to 50 at once (replies array); action='delete' removes an existing reply from reviewId. Use listLocalFalconGbpReviews with unanswered=true to find reviews needing a response.",
+    {
+      action: z.enum(["reply", "delete"]).describe("Operation to perform."),
+      placeId: z.string().nullish().describe(GBP_PLACE_ID + " Required unless using the batch 'replies' array."),
+      reviewId: z.string().nullish().describe("The review to act on. Required unless using the batch 'replies' array."),
+      reply: z.string().nullish().describe("Reply text to publish, for action 'reply'."),
+      replies: z.array(z.object({
+        place_id: z.string().describe("Place ID of the connected location."),
+        review_id: z.string().describe("Review to reply to."),
+        reply: z.string().describe("Reply text."),
+      })).max(50).nullish().describe("Batch of up to 50 replies, used instead of placeId/reviewId/reply."),
+    },
+    { title: "Manage GBP Review Replies", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+    async ({ action, placeId, reviewId, reply, replies }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      let resp;
+      if (action === "reply") {
+        const batch = replies ?? undefined;
+        if (!batch && !(placeId && reviewId && reply)) {
+          return { content: [{ type: "text", text: "Provide either the 'replies' batch array, or all of placeId, reviewId and reply." }] };
+        }
+        resp = await replyToGbpReviews(apiKey, {
+          placeId: placeId ?? undefined,
+          reviewId: reviewId ?? undefined,
+          reply: reply ?? undefined,
+          replies: batch,
+        });
+      } else {
+        if (!placeId || !reviewId) {
+          return { content: [{ type: "text", text: "placeId and reviewId are both required for action 'delete'." }] };
+        }
+        resp = await deleteGbpReviewReply(apiKey, placeId, reviewId);
+      }
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "manageLocalFalconGbpActionLinks",
+    "Adds, updates or removes action links (booking, ordering, appointment buttons) on a connected Google Business Profile. WRITES LIVE TO GOOGLE — always confirm with the user first. action='create' needs actionType; action='update' and action='delete' need linkId. Call getLocalFalconGbpAvailableActionTypes first to get a valid actionType, and listLocalFalconGbpActionLinks for linkId values.",
+    {
+      action: z.enum(["create", "update", "delete"]).describe("Operation to perform."),
+      placeId: z.string().describe(GBP_PLACE_ID),
+      linkId: z.string().nullish().describe("The link to act on. Required for 'update' and 'delete'."),
+      actionType: z.string().nullish().describe("Action type, e.g. APPOINTMENT or FOOD_ORDERING. Required for 'create'. Use getLocalFalconGbpAvailableActionTypes to list valid values."),
+      uri: z.string().nullish().describe("Destination URL for the button."),
+      isPreferred: z.boolean().nullish().describe("Whether this is the preferred link for its type."),
+    },
+    { title: "Manage GBP Action Links", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+    async ({ action, placeId, linkId, actionType, uri, isPreferred }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      if ((action === "update" || action === "delete") && !linkId) {
+        return { content: [{ type: "text", text: `linkId is required for action '${action}'. Use listLocalFalconGbpActionLinks to find it.` }] };
+      }
+      let resp;
+      if (action === "create") {
+        if (!actionType) {
+          return { content: [{ type: "text", text: "actionType is required for action 'create'. Use getLocalFalconGbpAvailableActionTypes to list valid values." }] };
+        }
+        resp = await createGbpLink(apiKey, placeId, actionType, handleNullOrUndefined(uri), isPreferred ?? undefined);
+      } else if (action === "update") {
+        resp = await updateGbpLink(apiKey, placeId, linkId as string, handleNullOrUndefined(uri), isPreferred ?? undefined);
+      } else {
+        resp = await deleteGbpLink(apiKey, placeId, linkId as string);
+      }
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "manageLocalFalconGbpServices",
+    "Adds, removes or wholesale-replaces the services on a connected Google Business Profile. WRITES LIVE TO GOOGLE — always confirm with the user first. action='add' appends services; action='remove' deletes the named services; action='replace' overwrites the ENTIRE service list, so anything omitted is removed — read listLocalFalconGbpServices first and only use 'replace' when the user explicitly wants a full rewrite.",
+    {
+      action: z.enum(["add", "remove", "replace"]).describe("Operation to perform. 'replace' overwrites the whole list."),
+      placeId: z.string().describe(GBP_PLACE_ID),
+      services: z.array(z.object({
+        name: z.string().nullish().describe("Free-text service name. Provide this or service_type_id."),
+        service_type_id: z.string().nullish().describe("Google service type ID. Provide this or name."),
+        description: z.string().nullish().describe("Optional service description."),
+        price: z.record(z.any()).nullish().describe("Optional price object."),
+      })).nullish().describe("Services for 'add' and 'replace'. For 'replace' this must be the complete desired list."),
+      names: z.array(z.string()).nullish().describe("Service names to remove, for action 'remove'."),
+    },
+    { title: "Manage GBP Services", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+    async ({ action, placeId, services, names }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      let resp;
+      if (action === "remove") {
+        if (!names || names.length === 0) {
+          return { content: [{ type: "text", text: "names must list at least one service for action 'remove'." }] };
+        }
+        resp = await removeGbpServices(apiKey, placeId, names);
+      } else {
+        if (!services || services.length === 0) {
+          return { content: [{ type: "text", text: `services must list at least one service for action '${action}'.` }] };
+        }
+        const payload = services.map((svc) => ({
+          name: svc.name ?? undefined,
+          service_type_id: svc.service_type_id ?? undefined,
+          description: svc.description ?? undefined,
+          price: svc.price ?? undefined,
+        }));
+        resp = action === "add"
+          ? await addGbpServices(apiKey, placeId, payload)
+          : await replaceGbpServices(apiKey, placeId, payload);
+      }
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "updateLocalFalconGbpProfile",
+    "Updates the core details of a connected Google Business Profile. WRITES LIVE TO GOOGLE — always confirm with the user first. action='details' edits fields such as title, phone, website or categories (verify category gcid values with searchLocalFalconGbpCategories); action='hours' sets regular or special opening hours; action='status' sets OPEN, CLOSED_TEMPORARILY or CLOSED_PERMANENTLY; action='attributes' sets profile attributes (check permitted ones with getLocalFalconGbpAvailableAttributes). CLOSED_PERMANENTLY is effectively irreversible on Google — never set it without explicit user instruction.",
+    {
+      action: z.enum(["details", "hours", "status", "attributes"]).describe("Which part of the profile to update."),
+      placeId: z.string().describe(GBP_PLACE_ID),
+      updates: z.record(z.any()).nullish().describe("For action 'details': fields to update, keyed by Google field name (e.g. title, phoneNumbers, websiteUri, categories)."),
+      regular: z.array(z.object({
+        open_day: z.string().describe("Day the period opens, e.g. MONDAY."),
+        open_time: z.string().describe("Opening time, HH:MM 24-hour."),
+        close_day: z.string().describe("Day the period closes, e.g. MONDAY."),
+        close_time: z.string().describe("Closing time, HH:MM 24-hour."),
+      })).nullish().describe("For action 'hours': regular weekly opening periods."),
+      special: z.array(z.record(z.any())).nullish().describe("For action 'hours': special/holiday hour periods, each keyed by date."),
+      status: z.enum(["OPEN", "CLOSED_TEMPORARILY", "CLOSED_PERMANENTLY"]).nullish().describe("For action 'status'. CLOSED_PERMANENTLY is effectively irreversible."),
+      openingDate: z.string().nullish().describe("For action 'status': optional opening date, YYYY-MM-DD."),
+      attributes: z.array(z.object({
+        name: z.string().describe("Attribute name, e.g. has_wifi."),
+        values: z.array(z.any()).nullish().describe("Values to set."),
+        set_values: z.array(z.any()).nullish().describe("Values to enable."),
+        unset_values: z.array(z.any()).nullish().describe("Values to disable."),
+        uris: z.array(z.string()).nullish().describe("URL values, for URL-typed attributes."),
+      })).nullish().describe("For action 'attributes': attributes to set."),
+      clear: z.string().nullish().describe("Comma-separated field names to clear. For 'hours' use 'regular' and/or 'special'."),
+      replace: z.string().nullish().describe("Comma-separated field names to write wholesale rather than merge. For 'hours' use 'regular' and/or 'special'."),
+    },
+    { title: "Update GBP Profile", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+    async ({ action, placeId, updates, regular, special, status, openingDate, attributes, clear, replace }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      let resp;
+      if (action === "details") {
+        if (!updates && !clear && !replace) {
+          return { content: [{ type: "text", text: "Provide 'updates', 'clear' or 'replace' for action 'details'." }] };
+        }
+        resp = await updateGbpLocation(apiKey, placeId, {
+          updates: updates ?? undefined,
+          clear: clear ?? undefined,
+          replace: replace ?? undefined,
+        });
+      } else if (action === "hours") {
+        if (!regular && !special && !clear) {
+          return { content: [{ type: "text", text: "Provide 'regular', 'special' or 'clear' for action 'hours'." }] };
+        }
+        resp = await updateGbpHours(apiKey, placeId, {
+          regular: regular ?? undefined,
+          special: special ?? undefined,
+          clear: clear ?? undefined,
+          replace: replace ?? undefined,
+        });
+      } else if (action === "status") {
+        if (!status) {
+          return { content: [{ type: "text", text: "status is required for action 'status'." }] };
+        }
+        resp = await updateGbpStatus(apiKey, placeId, status, handleNullOrUndefined(openingDate));
+      } else {
+        if (!attributes || attributes.length === 0) {
+          return { content: [{ type: "text", text: "attributes must list at least one attribute for action 'attributes'. Use getLocalFalconGbpAvailableAttributes to see permitted ones." }] };
+        }
+        const payload = attributes.map((attr) => ({
+          name: attr.name,
+          values: attr.values ?? undefined,
+          set_values: attr.set_values ?? undefined,
+          unset_values: attr.unset_values ?? undefined,
+          uris: attr.uris ?? undefined,
+        }));
+        resp = await updateGbpAttributes(apiKey, placeId, payload);
+      }
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );

@@ -14,14 +14,14 @@ This is the **Local Falcon MCP Server** (`@local-falcon/mcp`), a Model Context P
 
 ```
 index.ts          → Entry point. Transport selection (STDIO, SSE, HTTP), session management, OAuth 2.1
-server.ts         → MCP tool registrations. Exports getServer() which creates McpServer with 38 tools
+server.ts         → MCP tool registrations. Exports getServer() which creates McpServer with 60 tools
 localfalcon.ts    → API client layer. All fetch functions, rate limiting, retry logic, timeout handling
 oauth/            → OAuth 2.1 authorization server (routes, provider, config, state/client stores)
 ```
 
 ### Key Design Patterns
 
-- **`server.ts`** exports a single `getServer(sessionMapping)` function that creates and returns an `McpServer` instance with all 38 tools registered via `server.tool(name, description, zodSchema, annotations, handler)`. Every tool includes MCP tool annotations (`readOnlyHint`, `destructiveHint`) that signal to AI clients whether a tool reads data or modifies state.
+- **`server.ts`** exports a single `getServer(sessionMapping)` function that creates and returns an `McpServer` instance with all 60 tools registered via `server.tool(name, description, zodSchema, annotations, handler)`. Every tool includes MCP tool annotations (`readOnlyHint`, `destructiveHint`) that signal to AI clients whether a tool reads data or modifies state.
 - **`localfalcon.ts`** contains one exported function per API endpoint. Two call patterns:
   - **URL params (v1):** `new URL(endpoint)` → `url.searchParams.set()` → POST with JSON headers
   - **FormData (v2):** `new FormData()` → `form.append()` → POST with form body
@@ -100,17 +100,69 @@ Remote modes (SSE, HTTP) use OAuth 2.1 with PKCE for authentication. The server 
 | `searchLocalFalconKnowledgeBase` | Search the help/docs knowledge base |
 | `getLocalFalconKnowledgeBaseArticle` | Get full content of a knowledge base article |
 
+### Manage Google Business Profile (21 tools, no fieldmask)
+
+Act on the **live** Google profile behind a connected location, not on Local Falcon
+report data. All are keyed on `place_id` and require the location to be linked to a
+Google account (`POST /v1/locations/` with `gbp_linked`). Endpoints live under
+`API_BASE_V2/gbp/*`.
+
+Reads (15) — `{ readOnlyHint: true }`:
+
+| Tool | Endpoint |
+|---|---|
+| `getLocalFalconGbpProfile` | `gbp/location` |
+| `getLocalFalconGbpGoogleUpdates` | `gbp/google-updated` |
+| `getLocalFalconGbpVerificationStatus` | `gbp/verification` |
+| `getLocalFalconGbpAttributes` | `gbp/attributes` |
+| `listLocalFalconGbpServices` | `gbp/services` |
+| `getLocalFalconGbpPerformanceMetrics` | `gbp/metrics` |
+| `listLocalFalconGbpPosts` | `gbp/posts` |
+| `listLocalFalconGbpMedia` | `gbp/media` |
+| `listLocalFalconGbpCustomerMedia` | `gbp/customer-media` |
+| `listLocalFalconGbpReviews` | `gbp/reviews` |
+| `listLocalFalconGbpActionLinks` | `gbp/links` |
+| `searchLocalFalconGbpCategories` | `gbp/categories` |
+| `searchLocalFalconGbpChains` | `gbp/chains` |
+| `getLocalFalconGbpAvailableAttributes` | `gbp/attribute-metadata` |
+| `getLocalFalconGbpAvailableActionTypes` | `gbp/action-types` |
+
+Writes (6) — action-driven, all `{ destructiveHint: true }` because each group can delete:
+
+| Tool | `action` values | Endpoints |
+|---|---|---|
+| `manageLocalFalconGbpPosts` | create, update, delete | `gbp/create-post`, `gbp/update-post`, `gbp/delete-post` |
+| `manageLocalFalconGbpMedia` | create, update, delete | `gbp/create-media`, `gbp/update-media`, `gbp/delete-media` |
+| `manageLocalFalconGbpReviewReplies` | reply, delete | `gbp/reply-review`, `gbp/delete-review-reply` |
+| `manageLocalFalconGbpActionLinks` | create, update, delete | `gbp/create-link`, `gbp/update-link`, `gbp/delete-link` |
+| `manageLocalFalconGbpServices` | add, remove, replace | `gbp/add-services`, `gbp/remove-services`, `gbp/replace-services` |
+| `updateLocalFalconGbpProfile` | details, hours, status, attributes | `gbp/update-location`, `gbp/update-hours`, `gbp/update-status`, `gbp/update-attributes` |
+
+**Wire format.** These endpoints take nested values as PHP bracket fields
+(`attributes[0][name]`, `call_to_action[action_type]`, `names[0]`). `appendFormValue()`
+in `localfalcon.ts` flattens objects and arrays into that shape, so tool schemas accept
+ordinary objects/arrays and callers never build bracket keys by hand.
+
+**Confirmation tokens.** The API requires literal tokens on destructive calls
+(`DELETE_POST`, `DELETE_MEDIA`, `DELETE_LINK`, `DELETE_REPLY`, `REPLACE_SERVICES`,
+`SET_ATTRIBUTES`, and `CLOSED_PERMANENTLY` for status). The client layer supplies these,
+so a destructive call cannot be half-specified by the model.
+
+**camelCase exception.** `getLocalFalconGbpProfile` and `getLocalFalconGbpGoogleUpdates`
+return Google's own resource unchanged, so their response fields are camelCase. Every
+other GBP endpoint returns snake_case.
+
 ## Tool Annotations
 
 Every `server.tool()` call includes an MCP tool annotations object that tells AI clients whether the tool is safe to auto-execute or should require user confirmation. These are placed after the Zod input schema and before the handler callback.
 
-### Read-Only (26 tools) — `{ readOnlyHint: true }`
+### Read-Only (41 tools) — `{ readOnlyHint: true }`
 
 These tools only retrieve data. They never modify state, create resources, or cost credits.
 
 All 20 report list/get tools, plus: `listAllLocalFalconLocations`, `getLocalFalconGoogleBusinessLocations`, `getLocalFalconGrid`, `getLocalFalconRankingAtCoordinate`, `getLocalFalconKeywordAtCoordinate`, `viewLocalFalconAccountInformation`, `searchForLocalFalconBusinessLocation`, `searchLocalFalconKnowledgeBase`, `getLocalFalconKnowledgeBaseArticle`.
 
-### Destructive / Credit-Consuming (3 tools) — `{ destructiveHint: true }`
+### Destructive / Credit-Consuming (9 tools) — `{ destructiveHint: true }`
 
 These tools consume credits (irreversible) or permanently remove resources. AI clients should always confirm with the user before executing.
 
@@ -119,6 +171,12 @@ These tools consume credits (irreversible) or permanently remove resources. AI c
 | `runLocalFalconScan` | Costs credits |
 | `runLocalFalconCampaign` | Costs credits |
 | `removeFalconGuardProtection` | Permanently removes Guard monitoring |
+| `manageLocalFalconGbpPosts` | Can delete a live Google post |
+| `manageLocalFalconGbpMedia` | Can delete live Google media |
+| `manageLocalFalconGbpReviewReplies` | Publishes/removes public replies on Google |
+| `manageLocalFalconGbpActionLinks` | Can delete live Google action links |
+| `manageLocalFalconGbpServices` | `replace` overwrites the entire service list |
+| `updateLocalFalconGbpProfile` | Writes live profile data; `CLOSED_PERMANENTLY` is effectively irreversible |
 
 ### State-Changing / Non-Destructive (8 tools) — `{ readOnlyHint: false, destructiveHint: false }`
 
@@ -284,7 +342,7 @@ npm run docker:run
 | File | Purpose |
 |---|---|
 | `index.ts` | Entry point — transport selection, session management, Express app, OAuth routes |
-| `server.ts` | MCP server factory — `getServer()` with all 37 tool registrations |
+| `server.ts` | MCP server factory — `getServer()` with all 60 tool registrations |
 | `localfalcon.ts` | API client — fetch functions, rate limiter, retry logic, types |
 | `oauth/` | OAuth 2.1 implementation (authorization, tokens, PKCE, client registration) |
 | `package.json` | Package config, scripts, dependencies |
