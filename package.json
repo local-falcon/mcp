@@ -1,8 +1,8 @@
 {
   "name": "@local-falcon/mcp",
-  "version": "1.4.9",
+  "version": "1.4.11",
   "description": "An MCP server for the Local Falcon API.",
-  "main": "index.js",
+  "main": "dist/index.js",
   "repository": {
     "type": "git",
     "url": "https://github.com/local-falcon/mcp"
@@ -11,6 +11,16 @@
   "bugs": {
     "url": "https://github.com/local-falcon/mcp/issues"
   },
+  "files": [
+    "dist",
+    "!dist/vite.ui.config.js",
+    "assets",
+    "skills",
+    "manifest.json",
+    ".mcp.json",
+    ".claude-plugin",
+    "SECURITY.md"
+  ],
   "keywords": [
     "mcp",
     "model-context-protocol",

@@ -10,7 +10,10 @@ export const OAUTH_CONFIG = {
   clientId: "74e0d6e848652234efed.localfalconapps.com",
   clientSecret: process.env.OAUTH_CLIENT_SECRET || '',
 
-  // OAuth endpoints — the login host is app.localfalcon.com, not www.
+  // OAuth endpoints — use the app host: "Sign in with Google" redirects to
+  // https://app.localfalcon.com/oauth-v2/google, and the PHPSESSID cookie is
+  // host-scoped (no Domain attribute), so the www host loses the session
+  // across the Google round-trip.
   authorizationUrl: "https://app.localfalcon.com/oauth-v2/authorize",
   tokenUrl: "https://app.localfalcon.com/oauth-v2/token",
   revocationUrl: "https://app.localfalcon.com/oauth-v2/revoke",
