@@ -50,6 +50,51 @@ Started via CLI argument to `index.ts`:
 
 Remote modes (SSE, HTTP) use OAuth 2.1 with PKCE for authentication. The server implements RFC 8414 (Authorization Server Metadata), RFC 9728 (Protected Resource Metadata), and RFC 7591 (Dynamic Client Registration).
 
+### OAuth Client Model
+
+**One static `client_id` by design.** Every integration receives the same
+`client_id` (`OAUTH_CONFIG.clientId`). Users must hold a Local Falcon account and log in
+regardless, so per-client registration would add nothing. Clients are OAuth 2.1 *public*
+clients authenticating with PKCE only — no `client_secret` is ever issued, and `client_id`
+confidentiality is not a security boundary.
+
+**Registration grants no trust.** `POST /register` (RFC 7591) is unauthenticated open
+registration. It mints no per-client identity and stores nothing. The authoritative control is
+the redirect URI policy in `oauth/clientStore.ts` (`checkRedirectUri`), which is stateless —
+loopback per RFC 8252, or an https URI on an allowlisted MCP client platform host, extensible
+only by the operator via `ADDITIONAL_TRUSTED_REDIRECT_DOMAINS`.
+
+It is enforced at three points, all of which must stay in agreement:
+
+| Point | Behaviour |
+|---|---|
+| `POST /register` | `400 invalid_redirect_uri` if a URI is structurally impossible, or if **none** of the supplied URIs is usable. A mix containing a usable URI is accepted and reflected unchanged. |
+| `GET /oauth/authorize` | `redirect_uri` is required; a disallowed one is `400`. |
+| `GET /oauth/callback` | Re-validated before the authorization code is delivered, so a poisoned or stale state entry cannot exfiltrate. |
+
+**Why `/register` rejects rather than filtering.** The MCP SDK's client metadata schema requires
+`redirect_uris` (`shared/auth.js` — `z.array(SafeUrlSchema)`, not optional), so the response
+cannot omit an offending entry, and silently dropping one could desync a client. Reflecting a URI
+that `/oauth/authorize` would later refuse is what made this endpoint look exploitable in an
+external security report, hence reject-or-reflect.
+
+**Why "none usable" rather than per-URI.** A client supplying a mix keeps working. The TS SDK
+authorizes with the same single `provider.redirectUrl` it registers and never compares the
+reflected list, but other clients are not the TS SDK, so this avoids breaking a
+register-one/authorize-with-another client.
+
+**Accepted limitation.** Because the upstream consent screen is rendered by
+`app.localfalcon.com` against our single fixed `client_id`, it always reads "LocalFalcon MCP"
+regardless of which client initiated the flow — a user cannot visually distinguish a legitimate
+integration from an attacker's. That is precisely why the redirect allowlist is the hard control
+and must be enforced identically at all three points above. Note also that each bare vendor
+domain in the allowlist delegates trust to its whole subdomain tree, so an open redirect or
+subdomain takeover there would be a code-exfil path.
+
+**Not applicable to STDIO.** `/register` and the `/oauth/*` routes live in `createBaseApp`,
+reached only for `sse`/`http`/`HTTPAndSSE`. The `stdio` path builds only a
+`StdioServerTransport`, so local npm/MCPB installs never execute any of this.
+
 ## Tool Inventory
 
 ### Reports — List & Retrieve (20 tools, all support `fieldmask`)

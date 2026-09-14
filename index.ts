@@ -477,33 +477,36 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
 
     // Registration does NOT grant redirect URI trust — see oauth/clientStore.ts.
     // The authoritative check runs at /oauth/authorize and again at
-    // /oauth/callback. What we do here is fail fast on URIs that could never be
-    // a legitimate redirect target, so a misconfigured client gets a clear
-    // RFC 7591 `invalid_redirect_uri` instead of a confusing failure mid-flow.
+    // /oauth/callback before the code is delivered.
     //
-    // Only structurally dangerous URIs are rejected (bad scheme, fragment,
-    // embedded credentials). An otherwise well-formed https URI on a host we
-    // don't currently trust is accepted here and logged: registration is used
-    // for platform onboarding, and refusing it outright would break clients
-    // whose callback host we simply haven't allowlisted yet.
+    // This endpoint nonetheless answers consistently with that policy. It
+    // previously accepted an untrusted-host redirect_uri with 201 and echoed it
+    // back, warning only to the server log — which an external tester
+    // reasonably reads as "accepted", and which RFC 7591 §3.2.2 says should be
+    // an `invalid_redirect_uri` response instead. Reflecting a URI we would
+    // later refuse is what made this endpoint look exploitable.
+    //
+    // Note the response cannot simply omit the offending URI: the MCP SDK's
+    // client metadata schema requires `redirect_uris`
+    // (shared/auth.js — `redirect_uris: z.array(SafeUrlSchema)`, not optional),
+    // and silently dropping an entry could desync a client. So the choice is
+    // reflect-or-reject, and we reject.
     const redirectUris: string[] = Array.isArray(clientMetadata.redirect_uris)
       ? clientMetadata.redirect_uris.filter((u: unknown): u is string => typeof u === "string")
       : [];
 
-    for (const uri of redirectUris) {
-      const decision = checkRedirectUri(uri);
-      if (decision.allowed) continue;
+    const decisions = redirectUris.map((uri) => ({ uri, decision: checkRedirectUri(uri) }));
 
-      if (decision.reason === "host-not-trusted") {
-        console.warn(
-          `[OAuth] Registered redirect_uri is on an untrusted host and will be ` +
-            `rejected at /oauth/authorize: "${uri}". Add its domain to ` +
-            `ADDITIONAL_TRUSTED_REDIRECT_DOMAINS if this client is legitimate.`
-        );
-        continue;
+    // 1. Structurally impossible URIs are refused whatever else was supplied:
+    //    no allowlist change could ever make a javascript:, fragment-bearing or
+    //    credential-bearing URI a legitimate target.
+    const malformed = decisions.filter(
+      ({ decision }) => !decision.allowed && decision.reason !== "host-not-trusted"
+    );
+    if (malformed.length > 0) {
+      for (const { uri, decision } of malformed) {
+        console.error(`[OAuth] Rejecting registration (${decision.reason}): "${uri}"`);
       }
-
-      console.error(`[OAuth] Rejecting registration (${decision.reason}): "${uri}"`);
       res.status(400).json({
         error: "invalid_redirect_uri",
         error_description:
@@ -511,6 +514,43 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
           "https URI, with no fragment and no embedded credentials.",
       });
       return;
+    }
+
+    // 2. A registration in which NOTHING is usable could never complete a flow,
+    //    because /oauth/authorize would refuse every one of these URIs. Say so
+    //    now rather than returning 201 and failing later.
+    //
+    //    Deliberately keyed on "none usable" rather than rejecting per URI: a
+    //    client that supplies a mix including a usable callback keeps working.
+    //    The TS SDK authorizes with the same single provider.redirectUrl it
+    //    registers and never compares the reflected list, but other clients are
+    //    not the TS SDK, so this avoids breaking a register-one/authorize-with-
+    //    another client we cannot inspect.
+    const usable = decisions.filter(({ decision }) => decision.allowed);
+    if (decisions.length > 0 && usable.length === 0) {
+      for (const { uri } of decisions) {
+        console.error(`[OAuth] Rejecting registration (no usable redirect_uri): "${uri}"`);
+      }
+      res.status(400).json({
+        error: "invalid_redirect_uri",
+        error_description:
+          "None of the supplied redirect_uris can receive an authorization code. Each must be " +
+          "a loopback URI (RFC 8252) or an https URI on a supported MCP client platform. If " +
+          "this is a legitimate integration, contact compliance@localfalcon.com to have its " +
+          "callback host allowlisted, or set ADDITIONAL_TRUSTED_REDIRECT_DOMAINS on a " +
+          "self-hosted deployment.",
+      });
+      return;
+    }
+
+    // 3. Mixed set — at least one URI is usable, so accept and reflect the list
+    //    unchanged, but flag the entries that will be refused at authorize time.
+    for (const { uri } of decisions.filter(({ decision }) => !decision.allowed)) {
+      console.warn(
+        `[OAuth] Registered redirect_uri is on an untrusted host and will be ` +
+          `rejected at /oauth/authorize: "${uri}". Add its domain to ` +
+          `ADDITIONAL_TRUSTED_REDIRECT_DOMAINS if this client is legitimate.`
+      );
     }
 
     // Strip credential-bearing fields from the echoed metadata so a
