@@ -167,7 +167,7 @@ The widget is built as a single-file HTML application using Vite and served as a
 
 ---
 
-## Tools (37)
+## Tools (60)
 
 All 37 tools include MCP tool annotations that signal to AI clients whether a tool is safe to auto-execute:
 
@@ -187,6 +187,7 @@ All 37 tools include MCP tool annotations that signal to AI clients whether a to
 * **listLocalFalconCampaignReports**: Lists all campaign reports. Campaigns track rankings at scale with scheduled scans.
 * **getLocalFalconCampaignReport**: Retrieves a specific campaign report (e.g., `https://www.localfalcon.com/campaigns/view/XXXXX`).
 * **createLocalFalconCampaign**: Creates a new campaign with scheduled recurring scans.
+* **updateLocalFalconCampaign**: Edits an existing campaign — settings, locations or keywords.
 * **runLocalFalconCampaign**: Manually triggers a campaign to run immediately.
 * **pauseLocalFalconCampaign**: Pauses a campaign's scheduled runs.
 * **resumeLocalFalconCampaign**: Resumes a paused campaign.
@@ -225,6 +226,7 @@ All 37 tools include MCP tool annotations that signal to AI clients whether a to
 
 ### Location Management
 * **listAllLocalFalconLocations**: Lists all business locations saved in your account.
+* **listLocalFalconLocationGroups**: Lists saved location groups in the account.
 * **getLocalFalconGoogleBusinessLocations**: Searches Google for business listings to find Place IDs.
 * **searchForLocalFalconBusinessLocation**: Searches for business locations on Google or Apple platforms.
 * **saveLocalFalconBusinessLocationToAccount**: Saves a business location to your account.
@@ -242,6 +244,32 @@ All 37 tools include MCP tool annotations that signal to AI clients whether a to
 * **viewLocalFalconAccountInformation**: Retrieves account info including user, credits, and subscription details.
 
 ---
+
+### Manage Google Business Profile
+
+Act on the **live** Google Business Profile behind a location, not on Local Falcon report data. All require the location to be connected to a Google account in your Local Falcon dashboard.
+
+* **getLocalFalconGbpProfile**: Retrieves the live profile — name, address, phone, categories, hours, website, open status.
+* **getLocalFalconGbpGoogleUpdates**: Retrieves Google's pending version of the profile, for spotting unapplied Google-suggested edits.
+* **getLocalFalconGbpVerificationStatus**: Checks Google verification state. Unverified or suspended profiles rank poorly or not at all.
+* **getLocalFalconGbpAttributes**: Lists attributes currently set on the profile.
+* **getLocalFalconGbpAvailableAttributes**: Lists attributes Google permits for a category, with expected value types.
+* **listLocalFalconGbpServices**: Lists services on the profile, with descriptions and prices.
+* **getLocalFalconGbpPerformanceMetrics**: Google's own engagement metrics — impressions, calls, website clicks, direction requests.
+* **listLocalFalconGbpPosts**: Lists profile posts (updates, events, offers, alerts).
+* **listLocalFalconGbpMedia**: Lists owner-uploaded photos and videos, filterable by category.
+* **listLocalFalconGbpCustomerMedia**: Lists customer-uploaded photos and videos.
+* **listLocalFalconGbpReviews**: Lists Google reviews and owner replies. Filter by rating or unanswered.
+* **listLocalFalconGbpActionLinks**: Lists action links (booking, ordering, appointments).
+* **getLocalFalconGbpAvailableActionTypes**: Lists action link types the profile supports.
+* **searchLocalFalconGbpCategories**: Searches Google's category taxonomy for `gcid:` identifiers.
+* **searchLocalFalconGbpChains**: Searches Google's chain directory.
+* **manageLocalFalconGbpPosts**: Creates, updates or deletes a post. Writes live to Google.
+* **manageLocalFalconGbpMedia**: Adds, recategorises or deletes owner media. Writes live to Google.
+* **manageLocalFalconGbpReviewReplies**: Publishes or deletes public replies to reviews, singly or up to 50 at once.
+* **manageLocalFalconGbpActionLinks**: Adds, updates or removes action links.
+* **manageLocalFalconGbpServices**: Adds, removes or wholesale-replaces services. `replace` overwrites the entire list.
+* **updateLocalFalconGbpProfile**: Updates core details, hours, open status or attributes. `CLOSED_PERMANENTLY` is effectively irreversible.
 
 ## Skills
 

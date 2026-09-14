@@ -2604,3 +2604,602 @@ export async function fetchImageAsBase64(imageUrl: string): Promise<{ data: stri
     return null;
   }
 }
+// ════════════════════════════════════════════════════════════════════════════
+// Manage Google Business Profile (v2 /gbp/*)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// These endpoints read and write the live Google Business Profile behind a
+// connected location, rather than Local Falcon report data. Every one is keyed
+// on place_id and only works for locations linked to a Google account — list
+// eligible ones with fetchAllLocalFalconLocations and gbpLinked = true.
+//
+// Wire format: POST with form fields, matching the other v2 endpoints. Nested
+// values use PHP bracket notation (attributes[0][name], call_to_action[url],
+// names[0]), so appendFormValue flattens objects and arrays into that shape.
+// Callers therefore pass ordinary objects and arrays and never build bracket
+// keys by hand.
+//
+// Note: getGbpLocation and getGbpGoogleUpdated return Google's own resource
+// unchanged, so their response fields are camelCase; every other endpoint here
+// returns snake_case.
+
+/** Recursively flatten a value into PHP-style bracket form fields. */
+function appendFormValue(form: FormData, key: string, value: unknown): void {
+  if (value === undefined || value === null || value === "") return;
+  if (Array.isArray(value)) {
+    value.forEach((entry, i) => appendFormValue(form, `${key}[${i}]`, entry));
+    return;
+  }
+  if (typeof value === "object") {
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      appendFormValue(form, `${key}[${k}]`, v);
+    }
+    return;
+  }
+  if (typeof value === "boolean") {
+    form.append(key, value ? "true" : "false");
+    return;
+  }
+  form.append(key, String(value));
+}
+
+/**
+ * Shared transport for every /v2/gbp/* endpoint.
+ *
+ * Empty, null and undefined params are dropped rather than sent blank, matching
+ * the `if (value)` convention used by the rest of this module.
+ */
+async function gbpRequest(
+  apiKey: string,
+  endpoint: string,
+  params: Record<string, unknown> = {},
+  timeoutMs: number = DEFAULT_TIMEOUT_MS
+): Promise<any> {
+  try {
+    await rateLimiter.waitForAvailableSlot();
+
+    const form = new FormData();
+    for (const [key, value] of Object.entries(params)) {
+      appendFormValue(form, key, value);
+    }
+
+    const response = await withRetry(async () => {
+      return await fetchWithTimeout(
+        `${API_BASE_V2}/gbp/${endpoint}/`,
+        { method: "POST", body: form, headers: buildHeaders(apiKey, true) },
+        timeoutMs
+      );
+    });
+
+    const data = await safeParseJson(response);
+
+    if (!response.ok) {
+      throw parseApiError(response.status, data);
+    }
+
+    return data;
+  } catch (error) {
+    console.error(`Error calling GBP endpoint "${endpoint}":`, error);
+    throw error;
+  }
+}
+
+// ── Structured parameter types ──────────────────────────────────────────────
+
+/** A service on a profile: identified by free-text name OR Google service type. */
+export interface GbpServiceInput {
+  name?: string;
+  service_type_id?: string;
+  description?: string;
+  price?: Record<string, unknown>;
+}
+
+/** An attribute assignment. Supply exactly one of the value variants. */
+export interface GbpAttributeInput {
+  name: string;
+  values?: unknown[];
+  set_values?: unknown[];
+  unset_values?: unknown[];
+  uris?: string[];
+}
+
+/** A regular weekly opening period. */
+export interface GbpRegularPeriodInput {
+  open_day: string;
+  open_time: string;
+  close_day: string;
+  close_time: string;
+}
+
+/** A media item attached to a post. */
+export interface GbpPostMediaInput {
+  media_format: string;
+  source_url: string;
+}
+
+/** A single review reply, for the batch form of replyToGbpReviews. */
+export interface GbpReviewReplyInput {
+  place_id: string;
+  review_id: string;
+  reply: string;
+}
+
+// ── Reads: profile ──────────────────────────────────────────────────────────
+
+export async function getGbpLocation(apiKey: string, placeId: string): Promise<any> {
+  return gbpRequest(apiKey, "location", { place_id: placeId });
+}
+
+export async function getGbpGoogleUpdated(
+  apiKey: string,
+  placeId: string,
+  fieldsMask?: string
+): Promise<any> {
+  return gbpRequest(apiKey, "google-updated", { place_id: placeId, fields_mask: fieldsMask });
+}
+
+export async function getGbpVerification(apiKey: string, placeId: string): Promise<any> {
+  return gbpRequest(apiKey, "verification", { place_id: placeId });
+}
+
+export async function getGbpAttributes(apiKey: string, placeId: string): Promise<any> {
+  return gbpRequest(apiKey, "attributes", { place_id: placeId });
+}
+
+export async function listGbpServices(apiKey: string, placeId: string): Promise<any> {
+  return gbpRequest(apiKey, "services", { place_id: placeId });
+}
+
+export async function getGbpMetrics(
+  apiKey: string,
+  placeId: string,
+  metrics?: string,
+  startDate?: string,
+  endDate?: string
+): Promise<any> {
+  return gbpRequest(apiKey, "metrics", {
+    place_id: placeId,
+    metrics,
+    start_date: startDate,
+    end_date: endDate,
+  });
+}
+
+// ── Reads: content ──────────────────────────────────────────────────────────
+
+export async function listGbpPosts(
+  apiKey: string,
+  placeId: string,
+  postId?: string,
+  limit?: number | string,
+  nextToken?: string
+): Promise<any> {
+  return gbpRequest(apiKey, "posts", {
+    place_id: placeId,
+    post_id: postId,
+    limit,
+    next_token: nextToken,
+  });
+}
+
+export async function listGbpMedia(
+  apiKey: string,
+  placeId: string,
+  mediaId?: string,
+  category?: string,
+  limit?: number | string,
+  nextToken?: string
+): Promise<any> {
+  return gbpRequest(apiKey, "media", {
+    place_id: placeId,
+    media_id: mediaId,
+    category,
+    limit,
+    next_token: nextToken,
+  });
+}
+
+export async function listGbpCustomerMedia(
+  apiKey: string,
+  placeId: string,
+  mediaId?: string,
+  limit?: number | string,
+  nextToken?: string
+): Promise<any> {
+  return gbpRequest(apiKey, "customer-media", {
+    place_id: placeId,
+    media_id: mediaId,
+    limit,
+    next_token: nextToken,
+  });
+}
+
+export async function listGbpReviews(
+  apiKey: string,
+  placeId: string,
+  reviewId?: string,
+  limit?: number | string,
+  unanswered?: boolean,
+  rating?: string,
+  nextToken?: string
+): Promise<any> {
+  return gbpRequest(apiKey, "reviews", {
+    place_id: placeId,
+    review_id: reviewId,
+    limit,
+    unanswered,
+    rating,
+    next_token: nextToken,
+  });
+}
+
+export async function listGbpLinks(
+  apiKey: string,
+  placeId: string,
+  linkId?: string,
+  limit?: number | string,
+  nextToken?: string
+): Promise<any> {
+  return gbpRequest(apiKey, "links", {
+    place_id: placeId,
+    link_id: linkId,
+    limit,
+    next_token: nextToken,
+  });
+}
+
+// ── Reads: taxonomy / reference data ────────────────────────────────────────
+
+export async function listGbpCategories(
+  apiKey: string,
+  placeId: string,
+  query?: string,
+  regionCode?: string,
+  language?: string,
+  names?: string,
+  limit?: number | string,
+  nextToken?: string
+): Promise<any> {
+  return gbpRequest(apiKey, "categories", {
+    place_id: placeId,
+    query,
+    region_code: regionCode,
+    language,
+    names,
+    limit,
+    next_token: nextToken,
+  });
+}
+
+export async function listGbpChains(
+  apiKey: string,
+  placeId: string,
+  query?: string,
+  chainId?: string,
+  limit?: number | string
+): Promise<any> {
+  return gbpRequest(apiKey, "chains", {
+    place_id: placeId,
+    query,
+    chain_id: chainId,
+    limit,
+  });
+}
+
+export async function listGbpAttributeMetadata(
+  apiKey: string,
+  placeId: string,
+  category?: string,
+  regionCode?: string,
+  language?: string,
+  showAll?: boolean,
+  limit?: number | string,
+  nextToken?: string
+): Promise<any> {
+  return gbpRequest(apiKey, "attribute-metadata", {
+    place_id: placeId,
+    category,
+    region_code: regionCode,
+    language,
+    show_all: showAll,
+    limit,
+    next_token: nextToken,
+  });
+}
+
+export async function listGbpActionTypes(
+  apiKey: string,
+  placeId: string,
+  language?: string,
+  limit?: number | string,
+  nextToken?: string
+): Promise<any> {
+  return gbpRequest(apiKey, "action-types", {
+    place_id: placeId,
+    language,
+    limit,
+    next_token: nextToken,
+  });
+}
+
+// ── Writes: posts ───────────────────────────────────────────────────────────
+
+export async function createGbpPost(
+  apiKey: string,
+  placeId: string,
+  options: {
+    summary?: string;
+    topicType?: string;
+    callToAction?: Record<string, unknown>;
+    media?: GbpPostMediaInput[];
+    event?: Record<string, unknown>;
+    offer?: Record<string, unknown>;
+    language?: string;
+  } = {}
+): Promise<any> {
+  return gbpRequest(apiKey, "create-post", {
+    place_id: placeId,
+    summary: options.summary,
+    topic_type: options.topicType,
+    call_to_action: options.callToAction,
+    media: options.media,
+    event: options.event,
+    offer: options.offer,
+    language: options.language,
+  });
+}
+
+export async function updateGbpPost(
+  apiKey: string,
+  placeId: string,
+  postId: string,
+  options: {
+    summary?: string;
+    callToAction?: Record<string, unknown>;
+    media?: GbpPostMediaInput[];
+    event?: Record<string, unknown>;
+    offer?: Record<string, unknown>;
+    replace?: string;
+  } = {}
+): Promise<any> {
+  return gbpRequest(apiKey, "update-post", {
+    place_id: placeId,
+    post_id: postId,
+    summary: options.summary,
+    call_to_action: options.callToAction,
+    media: options.media,
+    event: options.event,
+    offer: options.offer,
+    replace: options.replace,
+  });
+}
+
+export async function deleteGbpPost(
+  apiKey: string,
+  placeId: string,
+  postId: string
+): Promise<any> {
+  // The API requires this literal confirmation token on destructive calls.
+  return gbpRequest(apiKey, "delete-post", {
+    place_id: placeId,
+    post_id: postId,
+    confirm: "DELETE_POST",
+  });
+}
+
+// ── Writes: media ───────────────────────────────────────────────────────────
+
+export async function createGbpMedia(
+  apiKey: string,
+  placeId: string,
+  mediaFormat: string,
+  sourceUrl: string,
+  category: string,
+  description?: string
+): Promise<any> {
+  return gbpRequest(apiKey, "create-media", {
+    place_id: placeId,
+    media_format: mediaFormat,
+    source_url: sourceUrl,
+    category,
+    description,
+  });
+}
+
+export async function updateGbpMedia(
+  apiKey: string,
+  placeId: string,
+  mediaId: string,
+  category: string
+): Promise<any> {
+  return gbpRequest(apiKey, "update-media", {
+    place_id: placeId,
+    media_id: mediaId,
+    category,
+  });
+}
+
+export async function deleteGbpMedia(
+  apiKey: string,
+  placeId: string,
+  mediaId: string
+): Promise<any> {
+  return gbpRequest(apiKey, "delete-media", {
+    place_id: placeId,
+    media_id: mediaId,
+    confirm: "DELETE_MEDIA",
+  });
+}
+
+// ── Writes: review replies ──────────────────────────────────────────────────
+
+export async function replyToGbpReviews(
+  apiKey: string,
+  options: {
+    placeId?: string;
+    reviewId?: string;
+    reply?: string;
+    replies?: GbpReviewReplyInput[];
+  }
+): Promise<any> {
+  return gbpRequest(apiKey, "reply-review", {
+    place_id: options.placeId,
+    review_id: options.reviewId,
+    reply: options.reply,
+    replies: options.replies,
+  });
+}
+
+export async function deleteGbpReviewReply(
+  apiKey: string,
+  placeId: string,
+  reviewId: string,
+  replies?: Array<{ place_id: string; review_id: string }>
+): Promise<any> {
+  return gbpRequest(apiKey, "delete-review-reply", {
+    place_id: placeId,
+    review_id: reviewId,
+    replies,
+    confirm: "DELETE_REPLY",
+  });
+}
+
+// ── Writes: action links ────────────────────────────────────────────────────
+
+export async function createGbpLink(
+  apiKey: string,
+  placeId: string,
+  actionType: string,
+  uri?: string,
+  isPreferred?: boolean
+): Promise<any> {
+  return gbpRequest(apiKey, "create-link", {
+    place_id: placeId,
+    action_type: actionType,
+    uri,
+    is_preferred: isPreferred,
+  });
+}
+
+export async function updateGbpLink(
+  apiKey: string,
+  placeId: string,
+  linkId: string,
+  uri?: string,
+  isPreferred?: boolean
+): Promise<any> {
+  return gbpRequest(apiKey, "update-link", {
+    place_id: placeId,
+    link_id: linkId,
+    uri,
+    is_preferred: isPreferred,
+  });
+}
+
+export async function deleteGbpLink(
+  apiKey: string,
+  placeId: string,
+  linkId: string
+): Promise<any> {
+  return gbpRequest(apiKey, "delete-link", {
+    place_id: placeId,
+    link_id: linkId,
+    confirm: "DELETE_LINK",
+  });
+}
+
+// ── Writes: services ────────────────────────────────────────────────────────
+
+export async function addGbpServices(
+  apiKey: string,
+  placeId: string,
+  services: GbpServiceInput[]
+): Promise<any> {
+  return gbpRequest(apiKey, "add-services", { place_id: placeId, services });
+}
+
+export async function removeGbpServices(
+  apiKey: string,
+  placeId: string,
+  names: string[]
+): Promise<any> {
+  return gbpRequest(apiKey, "remove-services", { place_id: placeId, names });
+}
+
+export async function replaceGbpServices(
+  apiKey: string,
+  placeId: string,
+  services: GbpServiceInput[]
+): Promise<any> {
+  // Wholesale replacement: anything absent from `services` is removed.
+  return gbpRequest(apiKey, "replace-services", {
+    place_id: placeId,
+    services,
+    confirm: "REPLACE_SERVICES",
+  });
+}
+
+// ── Writes: profile details, hours, status, attributes ──────────────────────
+
+export async function updateGbpLocation(
+  apiKey: string,
+  placeId: string,
+  options: {
+    updates?: Record<string, unknown>;
+    clear?: string;
+    replace?: string;
+  } = {}
+): Promise<any> {
+  return gbpRequest(apiKey, "update-location", {
+    place_id: placeId,
+    updates: options.updates,
+    clear: options.clear,
+    replace: options.replace,
+  });
+}
+
+export async function updateGbpHours(
+  apiKey: string,
+  placeId: string,
+  options: {
+    regular?: GbpRegularPeriodInput[];
+    special?: unknown[];
+    clear?: string;
+    replace?: string;
+  } = {}
+): Promise<any> {
+  return gbpRequest(apiKey, "update-hours", {
+    place_id: placeId,
+    regular: options.regular,
+    special: options.special,
+    clear: options.clear,
+    replace: options.replace,
+  });
+}
+
+export async function updateGbpStatus(
+  apiKey: string,
+  placeId: string,
+  status: string,
+  openingDate?: string
+): Promise<any> {
+  // CLOSED_PERMANENTLY requires echoing the status back as confirmation.
+  return gbpRequest(apiKey, "update-status", {
+    place_id: placeId,
+    status,
+    confirm: status === "CLOSED_PERMANENTLY" ? status : undefined,
+    opening_date: openingDate,
+  });
+}
+
+export async function updateGbpAttributes(
+  apiKey: string,
+  placeId: string,
+  attributes: GbpAttributeInput[]
+): Promise<any> {
+  return gbpRequest(apiKey, "update-attributes", {
+    place_id: placeId,
+    attributes,
+    confirm: "SET_ATTRIBUTES",
+  });
+}
