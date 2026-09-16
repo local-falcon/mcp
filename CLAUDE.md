@@ -61,8 +61,18 @@ confidentiality is not a security boundary.
 **Registration grants no trust.** `POST /register` (RFC 7591) is unauthenticated open
 registration. It mints no per-client identity and stores nothing. The authoritative control is
 the redirect URI policy in `oauth/clientStore.ts` (`checkRedirectUri`), which is stateless —
-loopback per RFC 8252, or an https URI on an allowlisted MCP client platform host, extensible
-only by the operator via `ADDITIONAL_TRUSTED_REDIRECT_DOMAINS`.
+loopback per RFC 8252, or an https URI on an allowlisted MCP client platform host.
+
+Operators extend it two ways, both server-side only and never reachable over HTTP:
+
+| Env var | Matching | When to use |
+|---|---|---|
+| `ADDITIONAL_TRUSTED_REDIRECT_URIS` | **Exact URI.** Host/scheme case-fold, default port implied; path and query significant. | Preferred — grants one endpoint, not sibling paths or subdomains. Reason: `operator-allowlisted-uri`. |
+| `ADDITIONAL_TRUSTED_REDIRECT_DOMAINS` | Bare domain **plus every subdomain**. | Only when the exact callback is unknown ahead of time. Reason: `trusted-domain`. |
+
+Neither can widen the structural rules: scheme, fragment and userinfo are checked *before* any
+allowlist, so a `javascript:` or fragment-bearing entry can never take effect. Malformed entries
+are dropped with a startup warning.
 
 It is enforced at three points, all of which must stay in agreement:
 
