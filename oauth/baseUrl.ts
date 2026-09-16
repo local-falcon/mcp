@@ -194,7 +194,17 @@ function requestedScheme(req: Request): "http" | "https" {
 }
 
 let warnedUnconfigured = false;
-const warnedRejectedHosts = new Set<string>();
+
+// Rejected-host warnings are throttled by TIME, not memoised by host.
+//
+// This previously kept a Set of every rejected host in order to log each one
+// once. The key is client-supplied (X-Forwarded-Host / Host) and
+// resolveBaseUrl() runs on every /.well-known/* request — routes which carry no
+// rate limiter — so an unauthenticated caller could grow that Set without bound
+// and amplify the log at the same time. A single timestamp gives the same
+// "don't spam the log" benefit with no attacker-controlled state.
+const REJECTED_HOST_WARN_INTERVAL_MS = 60 * 1000;
+let lastRejectedHostWarnAt = 0;
 
 /**
  * This server's public origin, e.g. "https://mcp.localfalcon.com" — never with
@@ -230,11 +240,13 @@ export function resolveBaseUrl(req: Request): string {
 
   // 4. Configured canonical origin wins over any untrusted or malformed host.
   if (publicBaseUrl) {
-    if (host && !warnedRejectedHosts.has(host)) {
-      warnedRejectedHosts.add(host);
+    const now = Date.now();
+    if (host && now - lastRejectedHostWarnAt >= REJECTED_HOST_WARN_INTERVAL_MS) {
+      lastRejectedHostWarnAt = now;
       console.warn(
         `[BaseUrl] Ignoring untrusted host "${host}" and using PUBLIC_BASE_URL ` +
-          `"${publicBaseUrl}". Add it to ALLOWED_HOSTS if this host is legitimate.`
+          `"${publicBaseUrl}". Add it to ALLOWED_HOSTS if this host is legitimate. ` +
+          `(further such warnings suppressed for ${REJECTED_HOST_WARN_INTERVAL_MS / 1000}s)`
       );
     }
     return publicBaseUrl;

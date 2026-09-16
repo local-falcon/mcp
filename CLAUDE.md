@@ -310,6 +310,57 @@ The Local Falcon API has two base URLs used by `localfalcon.ts`:
 
 Public API documentation: [docs.localfalcon.com](https://docs.localfalcon.com)
 
+## Memory Budget
+
+The server OOM-cycled on Render roughly every 50 hours. Two causes, both measured:
+
+**1. V8's heap ceiling, not the container's.** With no `--max-old-space-size`, V8 defaults to
+~2 GB *regardless of container size* — so a 16 GB instance still died at ~2 GB with ~14 GB
+unused. The `Dockerfile` now sets `NODE_OPTIONS=--max-old-space-size=12288`. Lower it for a
+smaller instance, keeping it under the container limit so V8 GCs rather than the kernel
+OOM-killing.
+
+**2. Unbounded session count × ~1.3 MB per session.** `getServer()` builds a fresh `McpServer`
+with all 60 tool registrations per session, measured at ~1.28 MB retained. This cannot be shared:
+`Protocol.connect()` throws *"Already connected to a transport… use a separate Protocol instance
+per connection."* Session creation had no cap — a re-initializing client abandons its previous
+session, and auto-recovery mints another up to 5×/min/key — while retention was 8 h.
+
+| Control | Default | Env var |
+|---|---|---|
+| Hard session cap; at the cap the least-recently-active session is evicted and its transport closed | 2000 | `MAX_SESSIONS` |
+| Idle time before a session is swept | 1 h | `SESSION_INACTIVITY_TIMEOUT_MS` |
+| Sweep frequency (must be well under the timeout) | 5 min | `INACTIVITY_CHECK_INTERVAL_MS` |
+| Full request/response body logging | off | `DEBUG_PAYLOAD_LOGGING` |
+
+Verified by A/B under a 128 MB heap: with the cap disabled the server died of a heap OOM after
+~81 initializes; with `MAX_SESSIONS=25` it survived 240, plateauing at 25 sessions and 33% heap.
+
+**`SessionManager.remove()` now closes the transport.** It previously only deleted map entries,
+leaving the SDK's per-stream keep-alive timer, stream controller and Express response reachable.
+Only the inactivity checker closed explicitly; every other path leaked. Two orphan paths were
+also closed: the SSE handler registers the session before `server.connect()` and did not clean up
+if connect threw, and the DELETE handler relied on the SDK's `finally`, which is skipped when its
+own validation rejects the request.
+
+**`BoundedEventStore` (`eventStore.ts`)** replaces the SDK's example `InMemoryEventStore`, which
+has no cap, TTL or eviction — its own header says "not for production use" — and whose
+`replayEventsAfter` copies and sorts *every* stored event on each reconnect. The replacement keeps
+events per stream in ring buffers (256/stream, 1024/store, oldest-first eviction) so replay cost
+is bounded by the cap rather than by history. Its fill path is currently gated off by
+`enableJsonResponse: true`, so this is closing a latent cliff rather than an active leak.
+
+**`/healthz` reports memory** — `rss`, `heapUsed`, `heapTotal`, `heapLimitMb`,
+`heapUsedPctOfLimit`, `transports`, `maxSessions` and buffered-event totals — and a warning is
+logged above 80% of the heap limit. Previously it reported only uptime and a session count, which
+was not enough to tell a leak from a high baseline.
+
+**Known gap:** auto-recovery (`attemptSessionRecovery`) currently returns 404 — the private-field
+poke at `_webStandardTransport` no longer suffices under SDK 1.30. Recovery runs and registers the
+session, but the SDK's `handleRequest` rejects it. Clients recover by re-initializing, so the
+effect is one wasted round-trip rather than a hard failure, but the shorter idle timeout leans on
+this path more than the old 8 h one did. Worth fixing via the SDK's public API.
+
 ## Release & Deployment
 
 | Component | Details |
@@ -389,6 +440,7 @@ npm run docker:run
 | `index.ts` | Entry point — transport selection, session management, Express app, OAuth routes |
 | `server.ts` | MCP server factory — `getServer()` with all 60 tool registrations |
 | `localfalcon.ts` | API client — fetch functions, rate limiter, retry logic, types |
+| `eventStore.ts` | Bounded resumability buffer — replaces the SDK's unbounded example store |
 | `oauth/` | OAuth 2.1 implementation (authorization, tokens, PKCE, client registration) |
 | `package.json` | Package config, scripts, dependencies |
 | `manifest.json` | MCPB Desktop Extension manifest (v0.3 spec) — tools, icons, user_config |
