@@ -51,10 +51,14 @@
  * identically across replicas — unlike the in-memory registration map it
  * replaces, which was wiped on restart and never shared between instances.
  *
- * Operators can extend the trusted set for a self-hosted MCP client via the
- * ADDITIONAL_TRUSTED_REDIRECT_DOMAINS environment variable (comma-separated
- * bare domains). That is a deliberate server-side configuration step; it is
- * deliberately NOT reachable over HTTP.
+ * Operators can extend the trusted set two ways, both deliberate server-side
+ * configuration steps that are NOT reachable over HTTP:
+ *
+ *   - ADDITIONAL_TRUSTED_REDIRECT_URIS — comma-separated absolute URIs, matched
+ *     exactly. Grants trust to one endpoint and nothing else. Prefer this.
+ *   - ADDITIONAL_TRUSTED_REDIRECT_DOMAINS — comma-separated bare domains,
+ *     which trusts the domain and every subdomain of it. Broader; use only when
+ *     the exact callback is not known ahead of time.
  */
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
@@ -141,9 +145,101 @@ function extraTrustedDomains(): string[] {
   return accepted;
 }
 
-/** Test seam: forget the cached env parse. */
+let extraUrisCache: Set<string> | null = null;
+
+/**
+ * Normalise a redirect URI for exact comparison.
+ *
+ * RFC 6749 §3.1.2.3 calls for exact matching, but a raw string compare would
+ * treat trivially equivalent forms as different — "https://A.example/cb" vs
+ * "https://a.example/cb", or ":443" vs the implied default port. WHATWG URL
+ * parsing lowercases the scheme and host and drops the default port while
+ * leaving the path case-sensitive (paths ARE case-sensitive), which is exactly
+ * the comparison we want. The query is significant and kept; a fragment cannot
+ * appear here because checkRedirectUri rejects those outright.
+ *
+ * Returns null when the value is not a usable absolute URI.
+ */
+function normaliseUri(value: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return null;
+  }
+  if (parsed.hash) return null;
+  if (parsed.username || parsed.password) return null;
+
+  const loopback = isLoopbackHost(parsed.hostname);
+  if (parsed.protocol === "http:") {
+    if (!loopback) return null;
+  } else if (parsed.protocol !== "https:") {
+    return null;
+  }
+
+  return parsed.toString();
+}
+
+/**
+ * Operator-supplied additional trusted redirect URIs, matched EXACTLY.
+ *
+ * Complements ADDITIONAL_TRUSTED_REDIRECT_DOMAINS: that variable delegates
+ * trust to a domain and every subdomain of it, which is a blunt instrument when
+ * an operator only needs one specific callback to work. Listing the full URI
+ * grants trust to that one endpoint and nothing else — no sibling paths, no
+ * subdomains — so prefer it when you know the exact callback.
+ *
+ * Entries must satisfy the same structural rules the policy enforces at request
+ * time (absolute, https or loopback-http, no fragment, no embedded credentials).
+ * Anything else is dropped with a warning rather than silently widening or
+ * narrowing the policy — in particular a javascript: or data: entry here can
+ * never take effect, since checkRedirectUri rejects those on scheme before any
+ * allowlist is consulted.
+ *
+ * Read lazily, for the same dotenv ordering reason as the domains list.
+ */
+function extraTrustedUris(): Set<string> {
+  if (extraUrisCache !== null) return extraUrisCache;
+
+  const raw = process.env.ADDITIONAL_TRUSTED_REDIRECT_URIS ?? "";
+  const accepted = new Set<string>();
+
+  for (const entry of raw.split(",")) {
+    const candidate = entry.trim();
+    if (!candidate) continue;
+
+    const normalised = normaliseUri(candidate);
+    if (!normalised) {
+      console.warn(
+        `[OAuth] Ignoring invalid ADDITIONAL_TRUSTED_REDIRECT_URIS entry: "${candidate}" ` +
+          `(expected an absolute https URI — or http only for loopback — with no fragment ` +
+          `and no embedded credentials, e.g. "https://mcp.example.com/oauth/callback")`
+      );
+      continue;
+    }
+    accepted.add(normalised);
+  }
+
+  if (accepted.size > 0) {
+    console.log(`[OAuth] Additional trusted redirect URIs: ${[...accepted].join(", ")}`);
+  }
+
+  extraUrisCache = accepted;
+  return accepted;
+}
+
+/** Whether `uri` exactly matches an operator-listed redirect URI. */
+function isTrustedUri(uri: string): boolean {
+  const uris = extraTrustedUris();
+  if (uris.size === 0) return false;
+  const normalised = normaliseUri(uri);
+  return normalised !== null && uris.has(normalised);
+}
+
+/** Test seam: forget the cached env parses. */
 export function resetTrustedDomainCache(): void {
   extraDomainsCache = null;
+  extraUrisCache = null;
 }
 
 function isLoopbackHost(hostname: string): boolean {
@@ -210,6 +306,12 @@ export function checkRedirectUri(uri: string): RedirectUriDecision {
   // machine, so it is not remotely exfiltratable (RFC 8252 §7.3).
   if (loopback) {
     return { allowed: true, reason: "loopback" };
+  }
+
+  // Exact operator-listed URI. Checked before the domain list purely so the
+  // reason reflects the narrower grant when both would allow it.
+  if (isTrustedUri(uri)) {
+    return { allowed: true, reason: "operator-allowlisted-uri" };
   }
 
   if (isTrustedHost(parsed.hostname)) {

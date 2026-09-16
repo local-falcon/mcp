@@ -138,6 +138,12 @@ function buildHeaders(apiKey: string, formData = false): Record<string, string> 
 }
 
 // Configuration
+// Full payload logging is opt-in. Scan and full-grid responses are
+// megabyte-class, JSON.stringify(x, null, 2) roughly doubles them, and
+// console.* to a pipe (Render captures stdout) queues on the heap with no bound
+// if the log consumer applies backpressure — a credible OOM contributor.
+const debugPayloadLogging = (): boolean => process.env.DEBUG_PAYLOAD_LOGGING === "true";
+
 const DEFAULT_TIMEOUT_MS = 30000;
 const LONG_OPERATION_TIMEOUT_MS = 60000;
 const MAX_RETRIES = 3;
@@ -1289,7 +1295,7 @@ export async function fetchLocalFalconFullGridSearch(
 
     console.info(`Is eager is: ${isEager}`)
     console.info(`Platform is: ${platform}`)
-    if (isEager) console.info(`Raw eager response is ${JSON.stringify(responseData, null, 2)}`)
+    if (isEager && debugPayloadLogging()) console.info(`Raw eager response is ${JSON.stringify(responseData, null, 2)}`)
     
     const data = responseData.data;
     const { data_points, rankings, ...rest } = data;
@@ -1300,7 +1306,7 @@ export async function fetchLocalFalconFullGridSearch(
       message: responseData.message,
       url: `https://www.localfalcon.com/reports/view/${rest.report_key}`
     }
-    console.info(`response is: ${JSON.stringify(result, null, 2)}`)
+    if (debugPayloadLogging()) console.info(`response is: ${JSON.stringify(result, null, 2)}`)
 
     return {
       success: true,

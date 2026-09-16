@@ -5,7 +5,7 @@
 This is the **Local Falcon MCP Server** (`@local-falcon/mcp`), a Model Context Protocol server that wraps the [Local Falcon API](https://docs.localfalcon.com). It enables AI agents to run geo-grid rank tracking scans, retrieve reports, manage campaigns, monitor Google Business Profiles, and analyze competitive positioning across Google Maps, Apple Maps, and AI search platforms.
 
 **Package:** [`@local-falcon/mcp`](https://www.npmjs.com/package/@local-falcon/mcp) (npm)
-**Version:** 1.4.12
+**Version:** 1.4.13
 **License:** MIT
 **Runtime:** Node.js 18+
 **Language:** TypeScript (strict mode)
@@ -49,6 +49,61 @@ Started via CLI argument to `index.ts`:
 | `HTTPAndSSE` | `npm run start:HTTPAndSSE` | Both HTTP and SSE on same server |
 
 Remote modes (SSE, HTTP) use OAuth 2.1 with PKCE for authentication. The server implements RFC 8414 (Authorization Server Metadata), RFC 9728 (Protected Resource Metadata), and RFC 7591 (Dynamic Client Registration).
+
+### OAuth Client Model
+
+**One static `client_id` by design.** Every integration receives the same
+`client_id` (`OAUTH_CONFIG.clientId`). Users must hold a Local Falcon account and log in
+regardless, so per-client registration would add nothing. Clients are OAuth 2.1 *public*
+clients authenticating with PKCE only — no `client_secret` is ever issued, and `client_id`
+confidentiality is not a security boundary.
+
+**Registration grants no trust.** `POST /register` (RFC 7591) is unauthenticated open
+registration. It mints no per-client identity and stores nothing. The authoritative control is
+the redirect URI policy in `oauth/clientStore.ts` (`checkRedirectUri`), which is stateless —
+loopback per RFC 8252, or an https URI on an allowlisted MCP client platform host.
+
+Operators extend it two ways, both server-side only and never reachable over HTTP:
+
+| Env var | Matching | When to use |
+|---|---|---|
+| `ADDITIONAL_TRUSTED_REDIRECT_URIS` | **Exact URI.** Host/scheme case-fold, default port implied; path and query significant. | Preferred — grants one endpoint, not sibling paths or subdomains. Reason: `operator-allowlisted-uri`. |
+| `ADDITIONAL_TRUSTED_REDIRECT_DOMAINS` | Bare domain **plus every subdomain**. | Only when the exact callback is unknown ahead of time. Reason: `trusted-domain`. |
+
+Neither can widen the structural rules: scheme, fragment and userinfo are checked *before* any
+allowlist, so a `javascript:` or fragment-bearing entry can never take effect. Malformed entries
+are dropped with a startup warning.
+
+It is enforced at three points, all of which must stay in agreement:
+
+| Point | Behaviour |
+|---|---|
+| `POST /register` | `400 invalid_redirect_uri` if a URI is structurally impossible, or if **none** of the supplied URIs is usable. A mix containing a usable URI is accepted and reflected unchanged. |
+| `GET /oauth/authorize` | `redirect_uri` is required; a disallowed one is `400`. |
+| `GET /oauth/callback` | Re-validated before the authorization code is delivered, so a poisoned or stale state entry cannot exfiltrate. |
+
+**Why `/register` rejects rather than filtering.** The MCP SDK's client metadata schema requires
+`redirect_uris` (`shared/auth.js` — `z.array(SafeUrlSchema)`, not optional), so the response
+cannot omit an offending entry, and silently dropping one could desync a client. Reflecting a URI
+that `/oauth/authorize` would later refuse is what made this endpoint look exploitable in an
+external security report, hence reject-or-reflect.
+
+**Why "none usable" rather than per-URI.** A client supplying a mix keeps working. The TS SDK
+authorizes with the same single `provider.redirectUrl` it registers and never compares the
+reflected list, but other clients are not the TS SDK, so this avoids breaking a
+register-one/authorize-with-another client.
+
+**Accepted limitation.** Because the upstream consent screen is rendered by
+`app.localfalcon.com` against our single fixed `client_id`, it always reads "LocalFalcon MCP"
+regardless of which client initiated the flow — a user cannot visually distinguish a legitimate
+integration from an attacker's. That is precisely why the redirect allowlist is the hard control
+and must be enforced identically at all three points above. Note also that each bare vendor
+domain in the allowlist delegates trust to its whole subdomain tree, so an open redirect or
+subdomain takeover there would be a code-exfil path.
+
+**Not applicable to STDIO.** `/register` and the `/oauth/*` routes live in `createBaseApp`,
+reached only for `sse`/`http`/`HTTPAndSSE`. The `stdio` path builds only a
+`StdioServerTransport`, so local npm/MCPB installs never execute any of this.
 
 ## Tool Inventory
 
@@ -265,6 +320,57 @@ The Local Falcon API has two base URLs used by `localfalcon.ts`:
 
 Public API documentation: [docs.localfalcon.com](https://docs.localfalcon.com)
 
+## Memory Budget
+
+The server OOM-cycled on Render roughly every 50 hours. Two causes, both measured:
+
+**1. V8's heap ceiling, not the container's.** With no `--max-old-space-size`, V8 defaults to
+~2 GB *regardless of container size* — so a 16 GB instance still died at ~2 GB with ~14 GB
+unused. The `Dockerfile` now sets `NODE_OPTIONS=--max-old-space-size=12288`. Lower it for a
+smaller instance, keeping it under the container limit so V8 GCs rather than the kernel
+OOM-killing.
+
+**2. Unbounded session count × ~1.3 MB per session.** `getServer()` builds a fresh `McpServer`
+with all 60 tool registrations per session, measured at ~1.28 MB retained. This cannot be shared:
+`Protocol.connect()` throws *"Already connected to a transport… use a separate Protocol instance
+per connection."* Session creation had no cap — a re-initializing client abandons its previous
+session, and auto-recovery mints another up to 5×/min/key — while retention was 8 h.
+
+| Control | Default | Env var |
+|---|---|---|
+| Hard session cap; at the cap the least-recently-active session is evicted and its transport closed | 2000 | `MAX_SESSIONS` |
+| Idle time before a session is swept | 1 h | `SESSION_INACTIVITY_TIMEOUT_MS` |
+| Sweep frequency (must be well under the timeout) | 5 min | `INACTIVITY_CHECK_INTERVAL_MS` |
+| Full request/response body logging | off | `DEBUG_PAYLOAD_LOGGING` |
+
+Verified by A/B under a 128 MB heap: with the cap disabled the server died of a heap OOM after
+~81 initializes; with `MAX_SESSIONS=25` it survived 240, plateauing at 25 sessions and 33% heap.
+
+**`SessionManager.remove()` now closes the transport.** It previously only deleted map entries,
+leaving the SDK's per-stream keep-alive timer, stream controller and Express response reachable.
+Only the inactivity checker closed explicitly; every other path leaked. Two orphan paths were
+also closed: the SSE handler registers the session before `server.connect()` and did not clean up
+if connect threw, and the DELETE handler relied on the SDK's `finally`, which is skipped when its
+own validation rejects the request.
+
+**`BoundedEventStore` (`eventStore.ts`)** replaces the SDK's example `InMemoryEventStore`, which
+has no cap, TTL or eviction — its own header says "not for production use" — and whose
+`replayEventsAfter` copies and sorts *every* stored event on each reconnect. The replacement keeps
+events per stream in ring buffers (256/stream, 1024/store, oldest-first eviction) so replay cost
+is bounded by the cap rather than by history. Its fill path is currently gated off by
+`enableJsonResponse: true`, so this is closing a latent cliff rather than an active leak.
+
+**`/healthz` reports memory** — `rss`, `heapUsed`, `heapTotal`, `heapLimitMb`,
+`heapUsedPctOfLimit`, `transports`, `maxSessions` and buffered-event totals — and a warning is
+logged above 80% of the heap limit. Previously it reported only uptime and a session count, which
+was not enough to tell a leak from a high baseline.
+
+**Known gap:** auto-recovery (`attemptSessionRecovery`) currently returns 404 — the private-field
+poke at `_webStandardTransport` no longer suffices under SDK 1.30. Recovery runs and registers the
+session, but the SDK's `handleRequest` rejects it. Clients recover by re-initializing, so the
+effect is one wasted round-trip rather than a hard failure, but the shorter idle timeout leans on
+this path more than the old 8 h one did. Worth fixing via the SDK's public API.
+
 ## Release & Deployment
 
 | Component | Details |
@@ -344,6 +450,7 @@ npm run docker:run
 | `index.ts` | Entry point — transport selection, session management, Express app, OAuth routes |
 | `server.ts` | MCP server factory — `getServer()` with all 60 tool registrations |
 | `localfalcon.ts` | API client — fetch functions, rate limiter, retry logic, types |
+| `eventStore.ts` | Bounded resumability buffer — replaces the SDK's unbounded example store |
 | `oauth/` | OAuth 2.1 implementation (authorization, tokens, PKCE, client registration) |
 | `package.json` | Package config, scripts, dependencies |
 | `manifest.json` | MCPB Desktop Extension manifest (v0.3 spec) — tools, icons, user_config |

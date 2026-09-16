@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import v8 from "v8";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import dotenv from "dotenv";
@@ -9,7 +10,9 @@ import { v4 as uuidv4 } from "uuid";
 import { getServer } from "./server.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
-import { InMemoryEventStore } from "@modelcontextprotocol/sdk/examples/shared/inMemoryEventStore.js";
+// Bounded replacement for the SDK's example InMemoryEventStore, which has no
+// cap, TTL or eviction and whose replay copies+sorts every stored event.
+import { BoundedEventStore } from "./eventStore.js";
 import {
   setupOAuthRoutes,
   createTokenVerifier,
@@ -35,6 +38,11 @@ interface SessionData {
   apiKey: string;
   createdAt: number;
   lastActivity: number;
+  /**
+   * The session's resumability buffer, kept here purely so /healthz can report
+   * how many events are retained. Optional: the SSE transport does not use one.
+   */
+  eventStore?: BoundedEventStore;
 }
 
 // Minimum session age before revocation (prevents revoking during OAuth setup)
@@ -42,14 +50,49 @@ interface SessionData {
 // connector proxy routinely drops and reconnects SSE/HTTP transports while
 // reusing the same Bearer token. Revocation now only happens via POST /oauth/revoke.
 
-// Session inactivity timeout - revoke tokens for sessions inactive longer than this.
-// 8 hours — was 10 days, but the server OOM-cycles every ~50h because the inactivity
-// checker never fires before the leak accumulates. Bearer-token auto-recovery handles
-// reconnection for clients that come back after this window — see attemptSessionRecovery.
-const SESSION_INACTIVITY_TIMEOUT_MS = 8 * 60 * 60 * 1000;
+// ── Session memory budget ────────────────────────────────────────────────
+//
+// Each live session retains its own McpServer: getServer() registers all 60
+// tools with their Zod schemas and descriptions per session, measured at
+// ~1.28 MB retained. The SDK forbids sharing one instance — Protocol.connect()
+// throws "Already connected to a transport… use a separate Protocol instance
+// per connection" — so the only lever is how many sessions are resident.
+//
+// Session creation is otherwise unbounded: a client re-initializing gets a
+// fresh session ID each time and abandons the previous one, and auto-recovery
+// mints another up to AUTO_RECOVERY_MAX_PER_KEY times per minute. Without a cap
+// that grows until V8's heap ceiling is hit, which is what produced the ~50h
+// OOM cycle. Note the ceiling is V8's, not the container's: with no
+// --max-old-space-size the default is ~2 GB regardless of how much RAM the box
+// has, so see the Dockerfile for the matching flag.
+const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS ?? "2000", 10);
 
-// How often to check for inactive sessions
-const INACTIVITY_CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+// Session inactivity timeout. Sessions are deliberately not dropped when an SSE
+// stream closes (the connector proxy reconnects constantly), so this sweep is
+// the main reclamation path. Bearer-token auto-recovery transparently rebuilds a
+// session for a client that returns later — see attemptSessionRecovery — which
+// is what makes a short window safe.
+const SESSION_INACTIVITY_TIMEOUT_MS = parseInt(
+  process.env.SESSION_INACTIVITY_TIMEOUT_MS ?? String(60 * 60 * 1000), // 1 hour
+  10
+);
+
+// How often to check for inactive sessions. Must be well under the timeout:
+// previously an 8h timeout was swept hourly, so a dead session could sit for 9h.
+const INACTIVITY_CHECK_INTERVAL_MS = parseInt(
+  process.env.INACTIVITY_CHECK_INTERVAL_MS ?? String(5 * 60 * 1000), // 5 minutes
+  10
+);
+
+// Log a warning when the V8 heap passes this fraction of its ceiling, so memory
+// pressure is visible in Render's logs before it becomes an OOM.
+const HEAP_WARN_RATIO = 0.8;
+
+// Full request/response payload logging. Off by default: scan responses are
+// megabyte-class and JSON.stringify(x, null, 2) roughly doubles them, and
+// console.log to a pipe (Render captures stdout) queues on the heap with no
+// bound if the log consumer applies backpressure.
+const DEBUG_PAYLOAD_LOGGING = process.env.DEBUG_PAYLOAD_LOGGING === "true";
 
 // Auto-recovery rate limiting: max 5 auto-recoveries per API key per minute
 const AUTO_RECOVERY_MAX_PER_KEY = 5;
@@ -74,6 +117,21 @@ class AutoRecoveryRateLimiter {
     valid.push(now);
     this.attempts.set(key, valid);
     return true;
+  }
+
+  /**
+   * Drop keys whose window has fully expired.
+   *
+   * isAllowed() re-set an empty array rather than deleting, so the map retained
+   * one entry per API-key prefix seen, forever. Small, but it never shrank.
+   */
+  prune(): void {
+    const now = Date.now();
+    for (const [key, timestamps] of this.attempts) {
+      if (timestamps.every((t) => now - t >= AUTO_RECOVERY_WINDOW_MS)) {
+        this.attempts.delete(key);
+      }
+    }
   }
 }
 
@@ -157,7 +215,7 @@ async function attemptSessionRecovery(
 
   // Create a new session — identical to the normal initialize flow
   const newSessionId = uuidv4();
-  const eventStore = new InMemoryEventStore();
+  const eventStore = new BoundedEventStore();
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: () => newSessionId,
     enableJsonResponse: true,
@@ -189,7 +247,7 @@ async function attemptSessionRecovery(
   webTransport._initialized = true;
 
   // Register the session in the manager — same as onsessioninitialized would do
-  sessionManager.add(newSessionId, { apiKey }, transport);
+  sessionManager.add(newSessionId, { apiKey, eventStore }, transport);
 
   console.warn(`[Session] Auto-recovered session for apiKey: "${apiKeyPrefix}" → new session: ${newSessionId}`);
 
@@ -209,6 +267,28 @@ type Transport = SSEServerTransport | StreamableHTTPServerTransport;
 
 type AsyncRequestHandler = (req: Request, res: Response) => Promise<void>;
 
+/**
+ * Warn when the V8 heap approaches its ceiling.
+ *
+ * The ceiling is V8's own --max-old-space-size, which defaults to roughly 2 GB
+ * no matter how much RAM the container has — so a 16 GB box will still OOM at
+ * ~2 GB unless the flag is set. Surfacing the ratio makes that visible instead
+ * of it presenting as an unexplained restart.
+ */
+const reportHeapPressure = (sessionCount: number): void => {
+  const { heap_size_limit } = v8.getHeapStatistics();
+  const { heapUsed, rss } = process.memoryUsage();
+  const ratio = heapUsed / heap_size_limit;
+  if (ratio < HEAP_WARN_RATIO) return;
+  const mb = (bytes: number) => Math.round(bytes / 1024 / 1024);
+  console.warn(
+    `[Memory] Heap at ${(ratio * 100).toFixed(1)}% of limit ` +
+      `(${mb(heapUsed)}MB used / ${mb(heap_size_limit)}MB limit, rss ${mb(rss)}MB) ` +
+      `across ${sessionCount} sessions. Sessions cost ~1.3MB each; consider lowering ` +
+      `MAX_SESSIONS or raising --max-old-space-size.`
+  );
+};
+
 // Session Management
 class SessionManager {
   private sessions = new Map<string, SessionData>();
@@ -222,8 +302,39 @@ class SessionManager {
       apiKeyPrefix: data.apiKey ? data.apiKey.substring(0, 8) + '...' : 'none',
       createdAt: sessionData.createdAt,
     });
+
+    // Enforce the memory budget before inserting. Each session costs ~1.28 MB
+    // in retained McpServer state, so an unbounded map is an unbounded heap.
+    this.evictToFit(sessionId);
+
     this.sessions.set(sessionId, sessionData);
     if (transport) this.transports.set(sessionId, transport);
+  }
+
+  /**
+   * Evict least-recently-active sessions until there is room for one more.
+   *
+   * Oldest-`lastActivity` first, so an idle abandoned session goes before a live
+   * one. An evicted client is not broken: presenting its session ID afterwards
+   * triggers Bearer-token auto-recovery, which transparently mints a new session.
+   */
+  private evictToFit(incomingSessionId: string): void {
+    if (this.sessions.size < MAX_SESSIONS) return;
+
+    const candidates = [...this.sessions.entries()]
+      .filter(([id]) => id !== incomingSessionId)
+      .sort((a, b) => a[1].lastActivity - b[1].lastActivity);
+
+    const overBy = this.sessions.size - MAX_SESSIONS + 1;
+    for (const [sessionId] of candidates.slice(0, overBy)) {
+      const idleMs = Date.now() - (this.sessions.get(sessionId)?.lastActivity ?? Date.now());
+      console.warn(
+        `[Session] At MAX_SESSIONS (${MAX_SESSIONS}); evicting least-recently-active ` +
+          `session ${sessionId} (idle ${Math.round(idleMs / 1000)}s). ` +
+          `Raise MAX_SESSIONS if this is steady state rather than churn.`
+      );
+      this.remove(sessionId);
+    }
   }
 
   remove(sessionId: string): void {
@@ -232,7 +343,9 @@ class SessionManager {
 
     if (!session) {
       console.log(`[Session] No session found for ${sessionId} - already removed or never existed`);
-      this.transports.delete(sessionId);
+      // A transport can outlive its session entry (e.g. the SSE add-then-connect
+      // failure path), so still close whatever is there.
+      this.closeAndForgetTransport(sessionId);
       return;
     }
 
@@ -256,8 +369,33 @@ class SessionManager {
     }
 
     this.sessions.delete(sessionId);
-    this.transports.delete(sessionId);
+    this.closeAndForgetTransport(sessionId);
     console.log(`[Session] Session ${sessionId} removed from manager`);
+  }
+
+  /**
+   * Drop a transport from the map and close it.
+   *
+   * remove() previously only deleted the map entry. Closing matters because the
+   * SDK arms a keep-alive timer per SSE stream and retains the stream controller
+   * and Express response — dropping the reference alone leaves those reachable
+   * until the transport itself is collected. Only the inactivity checker closed
+   * explicitly; every other removal path leaked. Safe to call more than once.
+   */
+  private closeAndForgetTransport(sessionId: string): void {
+    const transport = this.transports.get(sessionId);
+    this.transports.delete(sessionId);
+    if (!transport) return;
+    try {
+      const closing = transport.close();
+      if (closing && typeof closing.catch === "function") {
+        closing.catch((err: unknown) => {
+          console.error(`[Session] Failed to close transport for session ${sessionId}:`, err);
+        });
+      }
+    } catch (err: unknown) {
+      console.error(`[Session] Failed to close transport for session ${sessionId}:`, err);
+    }
   }
 
   getTransport(sessionId: string): Transport | undefined {
@@ -280,6 +418,24 @@ class SessionManager {
     return this.sessions.size;
   }
 
+  /**
+   * Events retained across every session's resumability buffer.
+   *
+   * Each store is individually capped (see eventStore.ts), so this is bounded
+   * by session count — it is reported to make that bound observable rather than
+   * assumed.
+   */
+  getBufferedEventCount(): { retained: number; evicted: number } {
+    let retained = 0;
+    let evicted = 0;
+    for (const session of this.sessions.values()) {
+      if (!session.eventStore) continue;
+      retained += session.eventStore.size();
+      evicted += session.eventStore.evictedCount();
+    }
+    return { retained, evicted };
+  }
+
   updateActivity(sessionId: string): void {
     const session = this.sessions.get(sessionId);
     if (session) {
@@ -292,21 +448,18 @@ class SessionManager {
   startInactivityChecker(): void {
     this.inactivityInterval = setInterval(() => {
       const now = Date.now();
-      for (const [sessionId, session] of this.sessions) {
-        const inactiveMs = now - session.lastActivity;
-        if (inactiveMs >= SESSION_INACTIVITY_TIMEOUT_MS) {
-          console.log(`[Session] Session ${sessionId} inactive for ${Math.round(inactiveMs / 1000 / 60 / 60)}h, revoking token and removing`);
-          // Grab transport before remove() deletes it from the map
-          const transport = this.transports.get(sessionId);
-          this.remove(sessionId);
-          // Also close the transport to free resources
-          if (transport) {
-            transport.close().catch((err) => {
-              console.error(`[Session] Failed to close transport for stale session ${sessionId}:`, err);
-            });
-          }
-        }
+      // Snapshot first: remove() mutates the map we would otherwise be iterating.
+      const stale = [...this.sessions.entries()].filter(
+        ([, session]) => now - session.lastActivity >= SESSION_INACTIVITY_TIMEOUT_MS
+      );
+      for (const [sessionId, session] of stale) {
+        const inactiveMin = Math.round((now - session.lastActivity) / 1000 / 60);
+        console.log(`[Session] Session ${sessionId} inactive for ${inactiveMin}m, removing`);
+        // remove() closes the transport itself.
+        this.remove(sessionId);
       }
+      autoRecoveryLimiter.prune();
+      reportHeapPressure(this.sessions.size);
     }, INACTIVITY_CHECK_INTERVAL_MS);
   }
 
@@ -393,12 +546,30 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
     res.status(200).json({ status: "ok", message: "Local Falcon MCP server is up." });
   });
 
+  // Exposes heap and session figures so memory growth is diagnosable from
+  // outside the process. Previously this reported only uptime and a session
+  // count, which was not enough to tell a leak from a high baseline.
   app.get("/healthz", (_req: Request, res: Response): void => {
+    const { heap_size_limit } = v8.getHeapStatistics();
+    const { heapUsed, heapTotal, rss, external } = process.memoryUsage();
+    const mb = (bytes: number) => Math.round(bytes / 1024 / 1024);
     res.status(200).json({
       status: "ok",
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
       connectedSessions: sessionManager.getSessionCount(),
+      transports: sessionManager.getTransportMap().size,
+      maxSessions: MAX_SESSIONS,
+      sessionInactivityTimeoutMs: SESSION_INACTIVITY_TIMEOUT_MS,
+      memory: {
+        rssMb: mb(rss),
+        heapUsedMb: mb(heapUsed),
+        heapTotalMb: mb(heapTotal),
+        heapLimitMb: mb(heap_size_limit),
+        externalMb: mb(external),
+        heapUsedPctOfLimit: Number(((heapUsed / heap_size_limit) * 100).toFixed(1)),
+      },
+      bufferedEvents: sessionManager.getBufferedEventCount(),
     });
   });
 
@@ -477,33 +648,36 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
 
     // Registration does NOT grant redirect URI trust — see oauth/clientStore.ts.
     // The authoritative check runs at /oauth/authorize and again at
-    // /oauth/callback. What we do here is fail fast on URIs that could never be
-    // a legitimate redirect target, so a misconfigured client gets a clear
-    // RFC 7591 `invalid_redirect_uri` instead of a confusing failure mid-flow.
+    // /oauth/callback before the code is delivered.
     //
-    // Only structurally dangerous URIs are rejected (bad scheme, fragment,
-    // embedded credentials). An otherwise well-formed https URI on a host we
-    // don't currently trust is accepted here and logged: registration is used
-    // for platform onboarding, and refusing it outright would break clients
-    // whose callback host we simply haven't allowlisted yet.
+    // This endpoint nonetheless answers consistently with that policy. It
+    // previously accepted an untrusted-host redirect_uri with 201 and echoed it
+    // back, warning only to the server log — which an external tester
+    // reasonably reads as "accepted", and which RFC 7591 §3.2.2 says should be
+    // an `invalid_redirect_uri` response instead. Reflecting a URI we would
+    // later refuse is what made this endpoint look exploitable.
+    //
+    // Note the response cannot simply omit the offending URI: the MCP SDK's
+    // client metadata schema requires `redirect_uris`
+    // (shared/auth.js — `redirect_uris: z.array(SafeUrlSchema)`, not optional),
+    // and silently dropping an entry could desync a client. So the choice is
+    // reflect-or-reject, and we reject.
     const redirectUris: string[] = Array.isArray(clientMetadata.redirect_uris)
       ? clientMetadata.redirect_uris.filter((u: unknown): u is string => typeof u === "string")
       : [];
 
-    for (const uri of redirectUris) {
-      const decision = checkRedirectUri(uri);
-      if (decision.allowed) continue;
+    const decisions = redirectUris.map((uri) => ({ uri, decision: checkRedirectUri(uri) }));
 
-      if (decision.reason === "host-not-trusted") {
-        console.warn(
-          `[OAuth] Registered redirect_uri is on an untrusted host and will be ` +
-            `rejected at /oauth/authorize: "${uri}". Add its domain to ` +
-            `ADDITIONAL_TRUSTED_REDIRECT_DOMAINS if this client is legitimate.`
-        );
-        continue;
+    // 1. Structurally impossible URIs are refused whatever else was supplied:
+    //    no allowlist change could ever make a javascript:, fragment-bearing or
+    //    credential-bearing URI a legitimate target.
+    const malformed = decisions.filter(
+      ({ decision }) => !decision.allowed && decision.reason !== "host-not-trusted"
+    );
+    if (malformed.length > 0) {
+      for (const { uri, decision } of malformed) {
+        console.error(`[OAuth] Rejecting registration (${decision.reason}): "${uri}"`);
       }
-
-      console.error(`[OAuth] Rejecting registration (${decision.reason}): "${uri}"`);
       res.status(400).json({
         error: "invalid_redirect_uri",
         error_description:
@@ -511,6 +685,43 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
           "https URI, with no fragment and no embedded credentials.",
       });
       return;
+    }
+
+    // 2. A registration in which NOTHING is usable could never complete a flow,
+    //    because /oauth/authorize would refuse every one of these URIs. Say so
+    //    now rather than returning 201 and failing later.
+    //
+    //    Deliberately keyed on "none usable" rather than rejecting per URI: a
+    //    client that supplies a mix including a usable callback keeps working.
+    //    The TS SDK authorizes with the same single provider.redirectUrl it
+    //    registers and never compares the reflected list, but other clients are
+    //    not the TS SDK, so this avoids breaking a register-one/authorize-with-
+    //    another client we cannot inspect.
+    const usable = decisions.filter(({ decision }) => decision.allowed);
+    if (decisions.length > 0 && usable.length === 0) {
+      for (const { uri } of decisions) {
+        console.error(`[OAuth] Rejecting registration (no usable redirect_uri): "${uri}"`);
+      }
+      res.status(400).json({
+        error: "invalid_redirect_uri",
+        error_description:
+          "None of the supplied redirect_uris can receive an authorization code. Each must be " +
+          "a loopback URI (RFC 8252) or an https URI on a supported MCP client platform. If " +
+          "this is a legitimate integration, contact compliance@localfalcon.com to have its " +
+          "callback host allowlisted, or set ADDITIONAL_TRUSTED_REDIRECT_DOMAINS on a " +
+          "self-hosted deployment.",
+      });
+      return;
+    }
+
+    // 3. Mixed set — at least one URI is usable, so accept and reflect the list
+    //    unchanged, but flag the entries that will be refused at authorize time.
+    for (const { uri } of decisions.filter(({ decision }) => !decision.allowed)) {
+      console.warn(
+        `[OAuth] Registered redirect_uri is on an untrusted host and will be ` +
+          `rejected at /oauth/authorize: "${uri}". Add its domain to ` +
+          `ADDITIONAL_TRUSTED_REDIRECT_DOMAINS if this client is legitimate.`
+      );
     }
 
     // Strip credential-bearing fields from the echoed metadata so a
@@ -615,15 +826,20 @@ const setupSSERoutes = (app: Application, sessionManager: SessionManager): void 
 
     console.log(`[${new Date().toISOString()}] SSE auth - apiKey: "${apiKey.substring(0, 8)}..."`);
 
-    try {
-      const transport = new SSEServerTransport("/sse/messages", res);
-      const sessionId = transport.sessionId;
+    let transport: SSEServerTransport | undefined;
+    let sessionId: string | undefined;
 
-      sessionManager.add(sessionId, { apiKey }, transport);
+    try {
+      transport = new SSEServerTransport("/sse/messages", res);
+      sessionId = transport.sessionId;
+      // Captured as a const so the closure below sees a non-optional string.
+      const activeSessionId = sessionId;
+
+      sessionManager.add(activeSessionId, { apiKey }, transport);
 
       transport.onclose = () => {
-        console.log(`[Transport] SSE transport onclose triggered for session ${sessionId}`);
-        sessionManager.remove(sessionId);
+        console.log(`[Transport] SSE transport onclose triggered for session ${activeSessionId}`);
+        sessionManager.remove(activeSessionId);
       };
 
       const server = getServer(sessionManager.getSessionMap());
@@ -631,11 +847,11 @@ const setupSSERoutes = (app: Application, sessionManager: SessionManager): void 
       console.log(`Established SSE stream with session ID: ${sessionId}`);
     } catch (error: unknown) {
       console.error("Error establishing SSE stream:", error);
+      // The session was registered before server.connect(); if connect threw,
+      // drop it rather than leaving a dead entry for the sweep to find.
+      if (sessionId) sessionManager.remove(sessionId);
       if (!res.headersSent) {
-        res.status(500).json({
-          error: "Error establishing SSE stream",
-          details: String(error)
-        });
+        res.status(500).json({ error: "Error establishing SSE stream" });
       }
     }
   };
@@ -747,14 +963,19 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
 
   // Main MCP HTTP endpoint
   const mcpHandler: AsyncRequestHandler = async (req, res) => {
-    console.log(`MCP Request received: ${req.method} ${req.url}`, { body: req.body });
-
-    // Capture response data for logging
-    const originalJson = res.json;
-    res.json = function(body) {
-      console.log(`MCP Response being sent:`, JSON.stringify(body, null, 2));
-      return originalJson.call(this, body);
-    };
+    // Payload logging is opt-in: request/response bodies here can be
+    // megabyte-class, pretty-printing roughly doubles them, and console.log to
+    // a pipe queues unbounded on the heap under log backpressure.
+    if (DEBUG_PAYLOAD_LOGGING) {
+      console.log(`MCP Request received: ${req.method} ${req.url}`, { body: req.body });
+      const originalJson = res.json;
+      res.json = function (body) {
+        console.log(`MCP Response being sent:`, JSON.stringify(body, null, 2));
+        return originalJson.call(this, body);
+      };
+    } else {
+      console.log(`MCP Request received: ${req.method} ${req.url} (method: ${req.body?.method ?? "n/a"})`);
+    }
 
     try {
       const sessionId = req.headers['mcp-session-id'] as string | undefined;
@@ -773,14 +994,14 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
 
         console.log(`[${new Date().toISOString()}] HTTP auth - apiKey: "${apiKey.substring(0, 8)}..."`);
 
-        const eventStore = new InMemoryEventStore();
+        const eventStore = new BoundedEventStore();
         transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => uuidv4(),
           enableJsonResponse: true,
           eventStore,
           onsessioninitialized: (sessionId) => {
             console.log(`HTTP Session initialized: ${sessionId}`);
-            sessionManager.add(sessionId, { apiKey }, transport);
+            sessionManager.add(sessionId, { apiKey, eventStore }, transport);
           }
         });
 
@@ -892,7 +1113,7 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
         //   3. Force auto-recovery for every subsequent request, adding latency
         // The session will be cleaned up by:
         //   - Explicit DELETE /mcp request (client-initiated termination)
-        //   - The inactivity checker (10-day timeout)
+        //   - The inactivity checker (SESSION_INACTIVITY_TIMEOUT_MS)
         //   - Server shutdown (SIGTERM/SIGINT)
       });
 
@@ -935,13 +1156,15 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
       const duration = Date.now() - startTime;
       console.log(`HTTP Session termination completed in ${duration}ms for session: ${sessionId}`);
       
-      setTimeout(() => {
-        if (sessionManager.getTransport(sessionId)) {
-          console.log(`Note: HTTP Transport for session ${sessionId} still exists after DELETE request`);
-        } else {
-          console.log(`HTTP Transport for session ${sessionId} successfully removed after DELETE request`);
-        }
-      }, 100);
+      // The SDK closes the transport in its own `finally`, which fires onclose
+      // and removes the session — but it returns early without closing when its
+      // session or protocol-version validation rejects the request, which would
+      // leave the session resident until the inactivity sweep. remove() is
+      // idempotent, so calling it here covers that case.
+      if (sessionManager.getTransport(sessionId) || sessionManager.getSession(sessionId)) {
+        console.log(`[Session] Ensuring session ${sessionId} is removed after DELETE`);
+        sessionManager.remove(sessionId);
+      }
     } catch (error) {
       console.error('Error handling HTTP DELETE request:', error);
       if (!res.headersSent) {
