@@ -30,3 +30,51 @@ jobs:
 
       - name: Publish to npm
         run: npm publish --access public
+
+  mcpb:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+
+      # The bundle ships node_modules (manifest server.type is "node"), so dev
+      # deps must go before packing or the .mcpb carries vite/typescript.
+      - name: Prune dev dependencies
+        run: npm prune --omit=dev
+
+      - name: Validate manifest
+        run: npx --yes @anthropic-ai/mcpb@2 validate manifest.json
+
+      - name: Pack bundle
+        run: npx --yes @anthropic-ai/mcpb@2 pack . local-falcon-mcp.mcpb
+
+      - name: Inspect bundle
+        run: npx --yes @anthropic-ai/mcpb@2 info local-falcon-mcp.mcpb
+
+      - name: Upload bundle as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-falcon-mcp-mcpb
+          path: local-falcon-mcp.mcpb
+          if-no-files-found: error
+
+      - name: Attach bundle to release
+        run: gh release upload "$TAG" local-falcon-mcp.mcpb --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
