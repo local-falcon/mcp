@@ -1,4 +1,5 @@
 import fetch from "node-fetch";
+import { rejectChatGptApiFailure } from "./chatgptPolicy.js";
 import { AbortController } from "abort-controller";
 
 export interface LocalFalconLocation {
@@ -300,6 +301,8 @@ export function parseApiError(status: number, errorBody: string | any): Error {
     parsed = errorBody;
   }
 
+  rejectChatGptApiFailure(parsed ?? errorBody, true);
+
   const rawMessage = typeof parsed?.message === 'string' ? parsed.message.trim() : '';
   const serverMessage = rawMessage.length > 0 ? rawMessage : undefined;
   const serverCode = typeof parsed?.code === 'number' ? parsed.code : status;
@@ -462,12 +465,15 @@ async function withRetry(fn: () => Promise<any>, maxRetries = MAX_RETRIES, initi
  */
 async function safeParseJson(response: any) {
   const raw = await (response as Response).text();
+  let parsed: any;
   try {
-    return JSON.parse(raw);
+    parsed = JSON.parse(raw);
   } catch (err) {
     console.error('Raw response from Local Falcon API:', raw);
     throw new Error('Failed to parse JSON from Local Falcon API response');
   }
+  rejectChatGptApiFailure(parsed, !response.ok);
+  return parsed;
 }
 
 /**

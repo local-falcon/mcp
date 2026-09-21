@@ -10,11 +10,7 @@ Complete reference for all metrics used in Local Falcon reports and analysis.
 - **Definition:** Average ranking across ALL grid points in the scan
 - **Range:** 1-20+ (lower is better)
 - **Use Case:** Primary metric for overall visibility health
-- **Interpretation:**
-  - 1-3: Excellent (dominating the area)
-  - 4-7: Good (competitive but room to improve)
-  - 8-12: Moderate (appearing but often below fold)
-  - 13+: Poor (rarely seen by searchers)
+- **Interpretation:** Compare with competitors, the keyword, geographic coverage, and scan configuration. Avoid fixed numeric labels for good or poor performance.
 
 ### ARP (Average Rank Position)
 - **Definition:** Average rank only for grid points WHERE the business appears
@@ -80,7 +76,7 @@ Complete reference for all metrics used in Local Falcon reports and analysis.
 
 ### SAIV (Share of AI Visibility)
 - **Definition:** Percentage of AI results that mention the business
-- **Platforms:** ChatGPT, Google AI Overviews, Gemini, AI Mode, Grok
+- **Platforms:** ChatGPT, Google AI Overviews, Gemini, AI Mode
 - **Range:** 0-100%
 - **CRITICAL:** NEVER confuse with SoLV - this is AI-only, completely separate measurement
 - **Interpretation:** What % of times someone asks an AI about your category/area does it mention you?
@@ -121,7 +117,7 @@ Complete reference for all metrics used in Local Falcon reports and analysis.
 ### Rating
 - **Definition:** Average star rating (1.0-5.0)
 - **Use Case:** Quick reputation snapshot
-- **Note:** 4.0-4.5 often performs better than 5.0 (authenticity perception)
+- **Note:** Interpret the rating alongside review volume, themes, recency, and competitor context.
 
 ### Unresponded to Reviews
 - **Definition:** Count of reviews without owner response
@@ -181,4 +177,4 @@ Complete reference for all metrics used in Local Falcon reports and analysis.
 
 ---
 
-*For personalized metric analysis, connect the Local Falcon MCP server or use Falcon Agent.*
+*Use these definitions to interpret supplied reports or connected Local Falcon data.*

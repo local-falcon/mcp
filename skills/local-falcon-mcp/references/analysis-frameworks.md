@@ -36,7 +36,7 @@ Based on the limiting factor identified in Step 2, apply the appropriate diagnos
 
 **Branch A — Poor rankings near the business (red zones in proximity):**
 - If caused by high competitor density: Acknowledge the proximity limitation. Identify whether the competitor has structural advantages (keyword-in-name, better category, more reviews). If the advantage is reviews or content, those are addressable. If the advantage is location proximity, recommend Google Maps Ads for contested zones and organic focus on opportunity areas.
-- If SAB with offset pattern: This is likely expected behavior. Verify the scan center point is set to the customer concentration area, not the office. Recommend a scan centered on the customer service area.
+- If SAB with offset pattern: Assess customer concentration, service areas, competitors, relevance, and proximity before judging the pattern. Consider whether the scan center represents the customers being studied; the office is not automatically the right center. Do not classify an inverted pattern as healthy or problematic without context.
 - Otherwise: Pull the competitor report and compare the top 3 businesses in that zone. Identify the specific gap (review count, rating, category, content) and prescribe targeted action.
 
 **Branch B — Low AI visibility (low SAIV):**
@@ -124,7 +124,7 @@ Different scan contexts require different analytical lenses:
 
 Scanning the business's own brand name (e.g., "Joe's Plumbing"). The business should dominate these results.
 
-- SoLV below 70% on a brand search indicates a problem: competitors with similar names, duplicate listings, or GBP issues.
+- Unexpected gaps in brand-search coverage warrant checking for competitors with similar names, duplicate listings, or GBP issues.
 - Strong brand search performance is the baseline — it confirms GBP health but does not indicate market competitiveness.
 - Use brand search scans as diagnostic tools: if the business can't rank for its own name, generic keyword optimization will not succeed.
 
@@ -151,7 +151,7 @@ Scanning non-branded keywords (e.g., "plumber near me," "best Italian restaurant
 Google Maps heavily weights proximity. This creates predictable patterns:
 
 - **Storefronts:** Strong rankings radiate outward from the business location, weakening with distance. The grid visualization shows a green center fading to red at edges. This is normal and expected.
-- **Service Area Businesses (SABs):** May show strong rankings far from the office address, in areas where they serve customers. Weak rankings near the office are NOT a problem for SABs — they should be evaluated based on performance in their service area.
+- **Service Area Businesses (SABs):** May show strong rankings far from the office address, in areas where they serve customers. Evaluate weak rankings near the office against customer concentrations, service areas, competition, relevance, and proximity; do not assume the pattern is healthy or problematic.
 - **Multi-location businesses:** Each location creates its own proximity zone. Scanning from one location's center point will show that location's dominance nearby and weakness in areas closer to another location.
 
 ### Keyword-in-Name Advantage
@@ -223,7 +223,7 @@ Larger grids cost more credits but provide finer geographic resolution. For ongo
 ### Center Point Placement
 
 - **Storefronts:** Center on the business location. The scan measures visibility radiating from the physical location.
-- **SABs:** Center on the customer concentration area, not the office. An HVAC company in a suburban office park should center scans on the residential neighborhoods they serve.
+- **SABs:** Choose a center that represents the customer concentration and service area being studied. The office is not automatically the right center; residential neighborhoods may better represent an HVAC company's customers.
 - **Multi-location:** Run separate scans centered on each location to understand each location's competitive position independently.
 
 ## Credit Management Strategy
@@ -231,6 +231,6 @@ Larger grids cost more credits but provide finer geographic resolution. For ongo
 - **Avoid duplicate scans:** Always check `listLocalFalconScanReports` before running new scans. If a recent scan exists with similar settings, use that data.
 - **Right-size configurations:** Match grid size and radius to the business type. A 15x15 grid with a 20-mile radius for a single-location restaurant wastes credits without providing useful additional data.
 - **Use campaigns for ongoing monitoring:** Campaigns consolidate reporting and schedule automatically, reducing manual scan overhead.
-- **AI Analysis toggle:** Adds cost per scan. Enable for important analysis scans; skip for routine monitoring where aggregate metrics suffice.
+- **AI Analysis toggle:** May use additional existing credits. Explain the option and use the user's approved choice; ask only if that choice has not already been made. Aggregate metrics may suffice for routine monitoring.
 - **Prioritize platforms:** Most businesses should focus credits on Google Maps scans. Add Apple Maps and AI platforms selectively based on business type and audience.
 - **Optimize frequency:** Monthly scans are sufficient for most businesses. Increase to weekly or biweekly only during active optimization campaigns where rapid feedback justifies the credit spend.

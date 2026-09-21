@@ -79,7 +79,7 @@ This reference covers behavioral differences between each platform supported by 
 - Consistent NAP data across the web
 - Unique differentiators that make the business notable or frequently recommended
 
-**Training data consideration:** ChatGPT's knowledge has a training cutoff. Newer businesses or recent changes may not be reflected. Real-time search integration is evolving — results may combine trained knowledge with live web data.
+**Source interpretation:** Public recommendation sources and connected account access are different. Source/provider behavior can change. When Local Falcon report citations are available, inspect the actual sources present in the report rather than assuming a fixed provider hierarchy.
 
 ## Gemini (`gemini`)
 
@@ -90,16 +90,6 @@ This reference covers behavioral differences between each platform supported by 
 **Key behavior:** Gemini has native access to Google's data, potentially including Google Maps data, reviews, and business information. This may give Gemini's recommendations a different character from ChatGPT's.
 
 **Strategic notes:** Because Gemini lives in the Google ecosystem, strong GBP optimization may have more influence on Gemini visibility than on other AI platforms. Monitor cross-platform — if a business has strong Google Maps rankings but weak Gemini SAIV, investigate whether GBP content is being effectively surfaced by Gemini.
-
-## Grok (`grok`)
-
-**X (Twitter)-associated AI** — integrated with the X platform ecosystem.
-
-**Available metrics:** ARP, ATRP, SAIV, Found In, Total Competitors
-
-**Key behavior:** Grok draws from X/Twitter data and web sources. Businesses with active social media presence on X may see different visibility patterns compared to other AI platforms.
-
-**Strategic notes:** Grok is the most niche AI platform in the Local Falcon suite. Most relevant for businesses whose customer base overlaps with X's user demographic. Lower priority for most local businesses unless the user's audience is specifically active on X.
 
 ## Cross-Platform Strategy
 

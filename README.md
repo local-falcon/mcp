@@ -21,16 +21,16 @@
 
 ## Local SEO and AI Visibility Monitoring MCP Server
 
-An MCP (Model Context Protocol) server for the [Local Falcon platform](https://www.localfalcon.com/), implemented in TypeScript, using the official MCP SDK. This server exposes Local Falcon scanning, tracking and reporting capabilities as 37 MCP tools, enabling integration with agentic AI systems and workflows.
+An MCP (Model Context Protocol) server for the [Local Falcon platform](https://www.localfalcon.com/), implemented in TypeScript, using the official MCP SDK. This server exposes Local Falcon scanning, tracking, reporting, and connected Google Business Profile management to MCP clients.
 
 ---
 
 ## Features
 
-- **37 MCP tools** for scanning, reporting, campaign management, competitor analysis, reviews, and Falcon Guard monitoring
+- **MCP tools** for scanning, reporting, campaign management, competitor analysis, reviews, Falcon Guard monitoring, and Google Business Profile management
 - **Interactive MCP Apps widget** — geo-grid heatmap with Google Maps, colored rank pins, and clickable detail panels
 - **OAuth 2.1** with PKCE, refresh token support, and dynamic client registration
-- **Tool annotations** on all 37 tools — `readOnlyHint`, `destructiveHint`, and `openWorldHint` for safe auto-execution
+- **Explicit tool annotations** — `readOnlyHint`, `destructiveHint`, and `openWorldHint` describe each tool's effects and scope
 - **Multi-platform** — Google Maps, Apple Maps, ChatGPT, Gemini, Grok, Google AI Overviews, AI Mode
 - **ChatGPT MCP connector compatible** — OAuth scope alignment, widget sandbox domain, structured content parsing
 - **HTML sanitizer** for AI scrape content displayed in the heatmap widget
@@ -167,16 +167,34 @@ The widget is built as a single-file HTML application using Vite and served as a
 
 ---
 
-## Tools (60)
+## Deployment profiles
 
-All 37 tools include MCP tool annotations that signal to AI clients whether a tool is safe to auto-execute:
+The normal profile exposes **60 tools**. A dedicated ChatGPT deployment exposes **57 tools**, selected by the trusted server environment setting `LOCAL_FALCON_MCP_PROFILE=chatgpt`. Leaving the setting unset or setting it to `normal` retains the normal profile. Profile selection does not use tool arguments, request parameters, client names, or User-Agent headers.
 
-| Annotation | Tools | Behavior |
-|---|---|---|
-| `readOnlyHint: true` | 26 tools | Read-only data retrieval — safe to auto-execute |
-| `destructiveHint: true` | 3 tools | Consumes credits or permanently removes resources — always confirm with user |
-| `readOnlyHint: false, destructiveHint: false` | 8 tools | Modifies state but reversible and free — confirm recommended |
-| `openWorldHint: true` | All 37 tools | Tool data originates from external sources (search engines, AI platforms) accessed via the Local Falcon API. |
+The ChatGPT profile does not register `getLocalFalconGoogleBusinessLocations`, `getLocalFalconRankingAtCoordinate`, or `getLocalFalconKeywordAtCoordinate`, because these On-Demand tools record separately billable usage. The normal profile and On-Demand API retain those capabilities. `getLocalFalconGrid` remains available in both profiles, as does `searchForLocalFalconBusinessLocation`, which costs exactly **2 existing credits per successful search**.
+
+The ChatGPT profile is an existing-account integration. It may use existing account entitlements and credits, but must not buy credits, trigger Auto Recharge, initiate checkout, change subscriptions, promote upgrades, or cause separate monetary usage charges. A neutral informational link to [plans and entitlements](https://www.localfalcon.com/pricing) is allowed. ChatGPT responses normalize Local Falcon failures, remove transactional account copy/links, and exclude Knowledge Base article IDs `15`, `16`, `23`, `37`, `57`, and `81` from search and direct retrieval. Normal-profile KB access is unchanged; articles `28`, `50`, and `58` remain available.
+
+### ChatGPT deployment checklist
+
+1. Provision a **separate deployment** with `LOCAL_FALCON_MCP_PROFILE=chatgpt`. Keep the existing general MCP deployment in normal mode.
+2. Configure the dedicated deployment's public URL and OAuth settings for that deployment. The OpenAI submission must point to its `/mcp` endpoint, not the normal endpoint shown in the general-client examples above.
+3. Verify authenticated `tools/list` on that exact endpoint against the expected profile before submission. Confirm that OAuth redirects and tool calls remain on the intended deployment.
+4. **Release gate:** Pia must complete and verify backend Auto Recharge isolation for immediate and scheduled credit-using operations before the ChatGPT deployment is released. MCP response filtering and profile selection do not themselves prevent backend charges.
+5. Shaun/Pia must review and deploy the separate LF.app OAuth entitlement wording changes. They are not deployed with the MCP service.
+
+These are deployment instructions, not a record of production changes. The implementation work does not change production infrastructure or deploy either application.
+
+## Tools
+
+All tools explicitly declare the three MCP annotation hints. Hints describe behavior; they are not a substitute for authorization or confirmation of consequential actions.
+
+| Annotation | Meaning in this server |
+|---|---|
+| `readOnlyHint: true` | Retrieves data without changing state or consuming credits/billable usage. |
+| `destructiveHint: true` | Spends credits, enables future credit use, or overwrites/removes existing state. Reversibility alone does not make an update non-destructive. |
+| `openWorldHint: false` | Interacts with bounded account data, connected GBP reads, the fixed Local Falcon KB, or local grid arithmetic. Data's historical origin does not determine this hint. |
+| `openWorldHint: true` | Searches open public systems, schedules/runs public scans, or publishes/edits a public GBP. |
 
 ### Scan Reports
 * **listLocalFalconScanReports**: Lists all existing scan reports. Check here first before running new scans to avoid duplicates.
@@ -228,7 +246,7 @@ All 37 tools include MCP tool annotations that signal to AI clients whether a to
 * **listAllLocalFalconLocations**: Lists all business locations saved in your account.
 * **listLocalFalconLocationGroups**: Lists saved location groups in the account.
 * **getLocalFalconGoogleBusinessLocations**: Searches Google for business listings to find Place IDs.
-* **searchForLocalFalconBusinessLocation**: Searches for business locations on Google or Apple platforms.
+* **searchForLocalFalconBusinessLocation**: Searches for business locations on Google or Apple platforms. Costs 2 existing Local Falcon credits per successful search.
 * **saveLocalFalconBusinessLocationToAccount**: Saves a business location to your account.
 
 ### On-Demand Tools
@@ -277,7 +295,7 @@ This repo includes two AI skills under `skills/`:
 
 | Skill | Path | Description |
 |---|---|---|
-| **Local Falcon MCP** | `skills/local-falcon-mcp/` | MCP tool usage guidance — helps AI agents use the 37 MCP tools effectively |
+| **Local Falcon MCP** | `skills/local-falcon-mcp/` | MCP tool usage guidance for the ChatGPT profile |
 | **Local Visibility** | `skills/local-visibility-skill/` | General AI visibility & local SEO strategy — platform analysis, metrics interpretation, prompt templates |
 
 ---

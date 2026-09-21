@@ -1,6 +1,6 @@
 # Local Falcon MCP Workflows
 
-Complete reference for using Local Falcon's MCP server tools for automated local SEO analysis.
+Complete ChatGPT-profile tool inventory and common workflows for Local Falcon analysis. Apply the existing-account and Knowledge Base boundaries in SKILL.md throughout.
 
 ---
 
@@ -18,90 +18,81 @@ The MCP server wraps Local Falcon's API endpoints with developer-friendly tool n
 
 **Base URL:** `https://api.localfalcon.com`
 
-**Authentication:** All endpoints require an `api_key` parameter. Manage keys at [localfalcon.com/api/credentials/](https://www.localfalcon.com/api/credentials/)
+**Authentication:** ChatGPT uses the existing-account sign-in flow. Credentials are supplied by the server, never by a tool argument or pasted into chat. Do not call API endpoints directly to bypass the ChatGPT profile.
 
-**Platform Options:** `google`, `apple`, `chatgpt`, `gemini`, `grok`, `aimode`, `gaio` (Google AI Overviews)
-
----
-
-## Complete Tool Reference
-
-### Account & Location Management
-
-| Tool | Purpose | Key Parameters |
-|------|---------|----------------|
-| `viewLocalFalconAccountInformation` | Get account info, credits, subscription status | - |
-| `listAllLocalFalconLocations` | List all saved locations in account | `limit`, `next_token` |
-| `searchForLocalFalconBusinessLocation` | Search Google/Apple for businesses | `query`, `platform` |
-| `saveLocalFalconBusinessLocationToAccount` | Save location for tracking | `place_id`, `platform` |
-
-### Scan Reports
-
-| Tool | Purpose | Key Parameters |
-|------|---------|----------------|
-| `listLocalFalconScanReports` | List all scan reports | `place_id`, `keyword`, `platform`, `start_date`, `end_date` |
-| `getLocalFalconReport` | Get specific scan report | `report_key` |
-| `runLocalFalconScan` | Execute new scan (uses credits) | `place_id`, `keyword`, `grid_size`, `platform`, `ai_analysis` |
-
-### Campaign Management
-
-| Tool | Purpose | Key Parameters |
-|------|---------|----------------|
-| `listLocalFalconCampaignReports` | List all campaigns | `limit`, `next_token` |
-| `getLocalFalconCampaignReport` | Get specific campaign data | `campaign_key` |
-| `createLocalFalconCampaign` | Create new scheduled campaign | `name`, `place_ids`, `keywords`, `schedule` |
-| `runLocalFalconCampaign` | Trigger campaign immediately | `campaign_key` |
-| `pauseLocalFalconCampaign` | Pause scheduled runs | `campaign_key` |
-| `resumeLocalFalconCampaign` | Resume paused campaign | `campaign_key` |
-| `reactivateLocalFalconCampaign` | Reactivate after credit issue | `campaign_key` |
-
-### Trend & Competitor Analysis
-
-| Tool | Purpose | Key Parameters |
-|------|---------|----------------|
-| `listLocalFalconTrendReports` | List trend reports | `place_id`, `keyword` |
-| `getLocalFalconTrendReport` | Get historical trend data | `trend_key` |
-| `getLocalFalconCompetitorReports` | List competitor reports | `place_id` |
-| `getLocalFalconCompetitorReport` | Get specific competitor analysis | `report_key` |
-
-### Aggregated Reports
-
-| Tool | Purpose | Key Parameters |
-|------|---------|----------------|
-| `listLocalFalconLocationReports` | List by location (multi-keyword roll-up) | `limit` |
-| `getLocalFalconLocationReport` | Get location aggregate | `location_key` |
-| `listLocalFalconKeywordReports` | List by keyword (multi-location roll-up) | `limit` |
-| `getLocalFalconKeywordReport` | Get keyword aggregate | `keyword_key` |
-
-### Reviews Analysis
-
-| Tool | Purpose | Key Parameters |
-|------|---------|----------------|
-| `listLocalFalconReviewsAnalysisReports` | List reviews analysis reports | `place_id` |
-| `getLocalFalconReviewsAnalysisReport` | Get detailed review analysis | `report_key` |
-
-### Falcon Guard (GBP Monitoring)
-
-| Tool | Purpose | Key Parameters |
-|------|---------|----------------|
-| `listLocalFalconGuardReports` | List monitored locations | `limit` |
-| `getLocalFalconGuardReport` | Get specific monitoring report | `place_id` |
-| `addLocationsToFalconGuard` | Add locations to monitoring | `place_ids` |
-| `pauseFalconGuardProtection` | Pause monitoring | `place_ids` |
-| `resumeFalconGuardProtection` | Resume monitoring | `place_ids` |
-| `removeFalconGuardProtection` | Remove from monitoring | `place_ids` |
-
-### Auto Scans
-
-| Tool | Purpose | Key Parameters |
-|------|---------|----------------|
-| `listLocalFalconAutoScans` | List scheduled recurring scans | `limit` |
+**Platform Options:** `google`, `apple`, `chatgpt`, `gemini`, `aimode`, `gaio` (Google AI Overviews)
 
 ---
 
-## AI Analysis Report (CRITICAL)
+## Complete ChatGPT Tool Reference
 
-When running scans via `runLocalFalconScan`, **ALWAYS enable the AI Analysis Report option**.
+The ChatGPT profile exposes 57 tools. The normal MCP profile additionally supports separately metered On-Demand lookups; those are unavailable here. This inventory includes connected GBP reads and public GBP writes. Follow the current tool input schema for exact parameter names, required fields, and supported values; examples below describe workflow intent rather than literal API payloads.
+
+| Tool | Purpose |
+|------|---------|
+| `listLocalFalconScanReports` | List Scan Reports |
+| `getLocalFalconReport` | Get Scan Report |
+| `listAllLocalFalconLocations` | List Saved Locations |
+| `listLocalFalconLocationGroups` | List Location Groups |
+| `runLocalFalconScan` | Run Ranking Scan |
+| `listLocalFalconCampaignReports` | List Campaign Reports |
+| `getLocalFalconCampaignReport` | Get Campaign Report |
+| `createLocalFalconCampaign` | Create Campaign |
+| `updateLocalFalconCampaign` | Update Campaign |
+| `runLocalFalconCampaign` | Run Campaign |
+| `pauseLocalFalconCampaign` | Pause Campaign |
+| `resumeLocalFalconCampaign` | Resume Campaign |
+| `reactivateLocalFalconCampaign` | Reactivate Campaign |
+| `listLocalFalconReviewsAnalysisReports` | List Reviews Analysis Reports |
+| `getLocalFalconReviewsAnalysisReport` | Get Reviews Analysis Report |
+| `listLocalFalconGuardReports` | List Falcon Guard Reports |
+| `getLocalFalconGuardReport` | Get Falcon Guard Report |
+| `addLocationsToFalconGuard` | Add Locations to Falcon Guard |
+| `pauseFalconGuardProtection` | Pause Falcon Guard Protection |
+| `resumeFalconGuardProtection` | Resume Falcon Guard Protection |
+| `removeFalconGuardProtection` | Remove Falcon Guard Protection |
+| `listLocalFalconTrendReports` | List Trend Reports |
+| `getLocalFalconTrendReport` | Get Trend Report |
+| `listLocalFalconAutoScans` | List Scheduled Auto-Scans |
+| `listLocalFalconLocationReports` | List Location Reports |
+| `getLocalFalconLocationReport` | Get Location Report |
+| `listLocalFalconKeywordReports` | List Keyword Reports |
+| `getLocalFalconKeywordReport` | Get Keyword Report |
+| `getLocalFalconCompetitorReports` | List Competitor Reports |
+| `getLocalFalconCompetitorReport` | Get Competitor Report |
+| `getLocalFalconGrid` | Generate Grid Coordinates |
+| `searchForLocalFalconBusinessLocation` | Search public businesses; costs exactly 2 existing Local Falcon credits per successful search |
+| `saveLocalFalconBusinessLocationToAccount` | Save Business Location |
+| `viewLocalFalconAccountInformation` | View Account Information |
+| `searchLocalFalconKnowledgeBase` | Search Knowledge Base |
+| `getLocalFalconKnowledgeBaseArticle` | Get Knowledge Base Article |
+| `getLocalFalconGbpProfile` | Get GBP Profile |
+| `getLocalFalconGbpGoogleUpdates` | Get GBP Google Updates |
+| `getLocalFalconGbpVerificationStatus` | Get GBP Verification Status |
+| `getLocalFalconGbpAttributes` | Get GBP Attributes |
+| `listLocalFalconGbpServices` | List GBP Services |
+| `getLocalFalconGbpPerformanceMetrics` | Get GBP Performance Metrics |
+| `listLocalFalconGbpPosts` | List GBP Posts |
+| `listLocalFalconGbpMedia` | List GBP Media |
+| `listLocalFalconGbpCustomerMedia` | List GBP Customer Media |
+| `listLocalFalconGbpReviews` | List GBP Reviews |
+| `listLocalFalconGbpActionLinks` | List GBP Action Links |
+| `searchLocalFalconGbpCategories` | Search GBP Categories |
+| `searchLocalFalconGbpChains` | Search GBP Chains |
+| `getLocalFalconGbpAvailableAttributes` | Get GBP Available Attributes |
+| `getLocalFalconGbpAvailableActionTypes` | Get GBP Available Action Types |
+| `manageLocalFalconGbpPosts` | Manage GBP Posts |
+| `manageLocalFalconGbpMedia` | Manage GBP Media |
+| `manageLocalFalconGbpReviewReplies` | Manage GBP Review Replies |
+| `manageLocalFalconGbpActionLinks` | Manage GBP Action Links |
+| `manageLocalFalconGbpServices` | Manage GBP Services |
+| `updateLocalFalconGbpProfile` | Update GBP Profile |
+
+---
+
+## Optional AI Analysis Report
+
+AI Analysis is optional for `runLocalFalconScan` and may consume additional existing credits. Explain this and use the user's confirmed choice.
 
 ### What It Provides
 - Automated pattern detection
@@ -110,15 +101,13 @@ When running scans via `runLocalFalconScan`, **ALWAYS enable the AI Analysis Rep
 - Expert-level interpretation of raw metrics
 
 ### Implementation
-```
-WHEN executing runLocalFalconScan:
-  - ALWAYS set ai_analysis: true (or equivalent parameter)
-  - Default this option to ON unless user explicitly opts out
-  - Inform user: "I'm enabling AI Analysis Report for comprehensive insights"
-```
+
+Read the current tool schema for the AI Analysis option. Explain its additional existing-credit use and apply the user's confirmed choice; do not automatically add it.
 
 ### User Communication
-> "When we run this scan, I'll enable the AI Analysis Report which gives you automated expert-level insights - pattern detection, competitive diagnosis, and prioritized action items. It's like having a Local SEO consultant analyze your data automatically."
+
+If the user has not already specified their AI Analysis choice:
+> "Optional AI Analysis adds automated interpretation and may use additional existing credits. Would you like it included?"
 
 ---
 
@@ -153,7 +142,7 @@ Agent: "Since you're a service area business, we should scan a wider area -
 listAllLocalFalconLocations → See what they have saved
   ↓
 IF saved: Get GBP data (category, address, service areas)
-IF not: searchForLocalFalconBusinessLocation → Get Place ID and GBP data
+IF not: disclose the 2-existing-credit cost, then searchForLocalFalconBusinessLocation → Get Place ID and GBP data
 ```
 
 **Step 2: Suggest Keywords Based on GBP Category**
@@ -181,23 +170,25 @@ IF not: searchForLocalFalconBusinessLocation → Get Place ID and GBP data
 **Step 4: Center Point Logic**
 
 - **Storefronts:** Use business address (automatic)
-- **SABs:** Center where customers ARE, not where office is
+- **SABs:** Choose a center based on customer concentrations and service coverage; do not assume the office is always right or wrong
 
 **Agent says:** "For service businesses, we center the scan where your customers are. Where do you get most of your jobs - any particular neighborhood or part of town?"
 
-**Step 5: Execute with AI Analysis**
+**Step 5: Execute the confirmed scan**
 
 ```
 runLocalFalconScan:
-  place_id: [from discovery]
+  placeId: [from discovery]
   keyword: [suggested and confirmed]
   platform: google (default) or user's choice
-  grid_size: [appropriate for business type]
-  grid_distance: [appropriate for service radius]
-  ai_analysis: true  ← ALWAYS ENABLE THIS
+  gridSize: [appropriate supported size]
+  radius: [appropriate for service radius]
+  measurement: mi or km
+  lat/lng: [confirmed center coordinates]
+  aiAnalysis: [confirmed choice; Google Maps only]
 ```
 
-**Agent says:** "Running the scan now with AI Analysis enabled - this will give you expert-level insights automatically."
+**Before execution:** Make scan settings, optional AI Analysis, and existing-credit use clear. Obtain confirmation only for an operation or settings the user has not already explicitly approved.
 
 ### Campaign vs Single Scan
 
@@ -241,24 +232,24 @@ runLocalFalconScan:
 ```
 1. searchForLocalFalconBusinessLocation
    → Search by business name to get Place ID
-   → Parameters: query="Business Name City", platform="google"
+   → Parameters: query="Business Name City", platform="google"; costs 2 existing credits
 
 2. saveLocalFalconBusinessLocationToAccount
    → Save location for ongoing tracking
-   → Parameters: place_id from step 1
+   → Parameters: placeId from step 1
 
 3. listLocalFalconScanReports
    → Check if any existing scan data
-   → Parameters: place_id, limit=5
+   → Parameters: placeId; use nextToken for more results
 
 4. runLocalFalconScan (if no recent scans)
    → Execute initial scan
-   → Parameters: place_id, keyword, grid_size, ai_analysis=true
-   → ⚠️ ALWAYS enable AI Analysis Report
+   → Parameters: placeId, keyword, lat, lng, gridSize, radius, measurement, platform, aiAnalysis=[confirmed choice]
+   → Make optional AI Analysis and existing-credit use clear; ask only for approval not already given
 
 5. getLocalFalconReport
    → Retrieve and analyze results
-   → Parameters: report_key from step 4
+   → Parameters: reportKey from the completed report listing
 ```
 
 **Output:** Complete initial visibility assessment with recommendations
@@ -272,7 +263,7 @@ runLocalFalconScan:
 ```
 1. listLocalFalconScanReports
    → Find existing AI platform scans
-   → Parameters: place_id, platform (cycle through: chatgpt, gemini, grok, aimode, gaio)
+   → Parameters: placeId, platform (cycle through: chatgpt, gemini, aimode, gaio)
 
 2. FOR EACH platform with recent data:
    getLocalFalconReport
@@ -285,9 +276,8 @@ runLocalFalconScan:
    - Platform-specific patterns?
 
 4. APPLY platform knowledge:
-   - ChatGPT weak? → Check Bing Places, Foursquare
-   - Grok weak? → Check X/Twitter presence
-   - AI Overviews weak? → Check Reddit, Yelp citations
+   - ChatGPT weak? → Inspect actual report citations and compare relevant listings and third-party mentions
+   - AI Overviews weak? → Inspect actual cited publishers, business websites, and competitor mentions
 ```
 
 **Output:** Cross-platform SAIV comparison with platform-specific recommendations
@@ -304,11 +294,11 @@ runLocalFalconScan:
 
 2. getLocalFalconCompetitorReports
    → List available competitor analyses
-   → Parameters: place_id
+   → Parameters: placeId
 
 3. getLocalFalconCompetitorReport
    → Pull detailed competitor data
-   → Parameters: report_key
+   → Parameters: reportKey
 
 4. ANALYZE:
    - Competitor SoLV scores
@@ -333,11 +323,11 @@ runLocalFalconScan:
 ```
 1. listLocalFalconTrendReports
    → Find available trend data
-   → Parameters: place_id, keyword
+   → Parameters: placeId, keyword
 
 2. getLocalFalconTrendReport
    → Pull historical data
-   → Parameters: trend_key
+   → Parameters: trendKey
 
 3. ANALYZE:
    - Direction: Improving, declining, or stable?
@@ -364,7 +354,7 @@ runLocalFalconScan:
 
 2. getLocalFalconGuardReport
    → Pull specific monitoring data
-   → Parameters: place_id
+   → Parameters: placeId
 
 3. CHECK:
    - Any recent GBP edits detected?
@@ -414,16 +404,16 @@ runLocalFalconScan:
 ## Common Parameters
 
 ### Pagination
-- `limit` - Results per page (1-100, default 10)
-- `next_token` - Token from previous response for next page
+- Result limits are tool-specific; use only fields supported by the current tool schema.
+- `nextToken` - Token from previous response for next page
 
 ### Filtering
-- `place_id` - Filter by Google/Apple Place ID
+- `placeId` - Filter by Google/Apple Place ID
 - `keyword` - Filter by keyword (loose match)
-- `grid_size` - Filter by scan grid size (3, 5, 7, 9, 11, 13, 15, 17, 19, 21)
+- `gridSize` - Filter by supported scan grid size; allowed sizes vary by tool
 - `platform` - Filter by platform(s)
-- `start_date` / `end_date` - Date range (MM/DD/YYYY format)
-- `campaign_key` - Filter scans from specific campaign
+- `startDate` / `endDate` - Date range; follow the specific tool's date format
+- `campaignKey` - Filter scans from specific campaign
 
 ### Field Masks (Performance Optimization)
 Use `fieldmask` to return only needed fields:
@@ -440,13 +430,13 @@ fieldmask=reports.*.report_key,reports.*.date
 
 | Error | Cause | Solution |
 |-------|-------|----------|
-| Invalid API key | Key missing or expired | Check [credentials page](https://www.localfalcon.com/api/credentials/) |
-| Insufficient credits | Account out of credits | Purchase more credits or check subscription |
+| Authentication failed | Connection missing or expired | Reconnect the existing account through the integration sign-in flow |
+| Insufficient credits | Account out of credits | Explain that the action was not run because existing credits are insufficient; optionally link neutrally to https://www.localfalcon.com/pricing |
 | Place ID not found | Invalid or unsaved location | Use `searchForLocalFalconBusinessLocation` first |
-| Rate limit exceeded | Too many requests | Wait and retry with backoff |
+| Rate limit exceeded | Too many requests | Wait before retrying reads; do not retry a submitted scan |
 
 ### Best Practices
-1. Always check `viewLocalFalconAccountInformation` first for credit availability
+1. Before a requested credit-consuming action, check `viewLocalFalconAccountInformation` for existing balance when needed. General strategy questions need no account calls.
 2. Use `fieldmask` to reduce response size when possible
 3. Cache results when appropriate
 4. Handle pagination for large result sets
@@ -455,7 +445,7 @@ fieldmask=reports.*.report_key,reports.*.date
 
 ## Integration Tips
 
-### For Claude Code / Cursor Users
+### For Connected MCP Clients
 - MCP tools appear in your tool list automatically once configured
 - Use natural language: "Check my Local Falcon account" → triggers appropriate tools
 - Chain workflows together for comprehensive analysis
