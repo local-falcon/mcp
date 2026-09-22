@@ -21,6 +21,13 @@ import {
   hasCanonicalBaseUrl,
 } from "./oauth/index.js";
 import { fetchLocalFalconAccountInfo } from "./localfalcon.js";
+import {
+  currentRequestSource,
+  deriveRequestSource,
+  runWithRequestSource,
+  setProcessRequestSource,
+  type RequestSource,
+} from "./requestSource.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 
 // Augment Express Request to include auth info set by our bearer auth middleware
@@ -43,6 +50,17 @@ interface SessionData {
    * how many events are retained. Optional: the SSE transport does not use one.
    */
   eventStore?: BoundedEventStore;
+  /**
+   * Best attribution seen for the client driving this session, stamped on every
+   * outgoing Local Falcon API call as request_source.
+   *
+   * Held per session because the strongest signal rarely arrives on the request
+   * that opens one: ChatGPT's connector sends no Origin on `initialize`, and the
+   * `GET /sse` that creates an SSE session precedes the `initialize` naming the
+   * client. The middleware in createBaseApp upgrades this when a better-tier
+   * signal appears. See requestSource.ts.
+   */
+  requestSource?: RequestSource;
 }
 
 // Minimum session age before revocation (prevents revoking during OAuth setup)
@@ -247,7 +265,11 @@ async function attemptSessionRecovery(
   webTransport._initialized = true;
 
   // Register the session in the manager — same as onsessioninitialized would do
-  sessionManager.add(newSessionId, { apiKey, eventStore }, transport);
+  sessionManager.add(
+    newSessionId,
+    { apiKey, eventStore, requestSource: currentRequestSource() },
+    transport
+  );
 
   console.warn(`[Session] Auto-recovered session for apiKey: "${apiKeyPrefix}" → new session: ${newSessionId}`);
 
@@ -301,6 +323,7 @@ class SessionManager {
       hasApiKey: !!data.apiKey,
       apiKeyPrefix: data.apiKey ? data.apiKey.substring(0, 8) + '...' : 'none',
       createdAt: sessionData.createdAt,
+      requestSource: data.requestSource?.value ?? 'unresolved',
     });
 
     // Enforce the memory budget before inserting. Each session costs ~1.28 MB
@@ -516,6 +539,37 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
     origin: "*",
     exposedHeaders: ['mcp-session-id', 'WWW-Authenticate'],
   }));
+
+  // Resolve who is calling, then run the whole request inside that attribution
+  // so the API client layer can stamp request_source on every outgoing Local
+  // Falcon call — without threading a parameter through 60 tool handlers.
+  //
+  // Registered here, after the body parsers, because resolution reads
+  // clientInfo out of the parsed initialize body, and ahead of every route so
+  // no MCP path can run outside the context. See requestSource.ts.
+  app.use((req: Request, _res: Response, next: Function): void => {
+    // Both transports are covered: Streamable HTTP names its session in a
+    // header, the SSE message endpoint in a query parameter.
+    const sessionId =
+      (req.headers["mcp-session-id"] as string | undefined) ??
+      (typeof req.query.sessionId === "string" ? req.query.sessionId : undefined);
+    const session = sessionId ? sessionManager.getSession(sessionId) : undefined;
+
+    const resolved = deriveRequestSource(
+      { headers: req.headers, body: req.body },
+      session?.requestSource
+    );
+
+    // Persist an improvement. Strictly greater, so a session keeps the best
+    // signal it has ever seen rather than flapping between request paths — the
+    // ChatGPT widget's calls carry a sandbox origin while the connector's do
+    // not, and both belong to the same session.
+    if (session && (!session.requestSource || resolved.tier > session.requestSource.tier)) {
+      session.requestSource = resolved;
+    }
+
+    runWithRequestSource(resolved, () => next());
+  });
 
   // HTTP rate limiting for auth endpoints — stricter than MCP endpoints.
   const authRateLimiter = rateLimit({
@@ -835,7 +889,13 @@ const setupSSERoutes = (app: Application, sessionManager: SessionManager): void 
       // Captured as a const so the closure below sees a non-optional string.
       const activeSessionId = sessionId;
 
-      sessionManager.add(activeSessionId, { apiKey }, transport);
+      // The attribution resolved for this GET seeds the session; the
+      // initialize that follows over POST /sse/messages usually improves on it.
+      sessionManager.add(
+        activeSessionId,
+        { apiKey, requestSource: currentRequestSource() },
+        transport
+      );
 
       transport.onclose = () => {
         console.log(`[Transport] SSE transport onclose triggered for session ${activeSessionId}`);
@@ -1001,7 +1061,15 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
           eventStore,
           onsessioninitialized: (sessionId) => {
             console.log(`HTTP Session initialized: ${sessionId}`);
-            sessionManager.add(sessionId, { apiKey, eventStore }, transport);
+            // Runs inside handleRequest below, so this is still the initialize
+            // request's async context — and that request is the one carrying
+            // clientInfo, the signal that identifies a connector sending no
+            // Origin header.
+            sessionManager.add(
+              sessionId,
+              { apiKey, eventStore, requestSource: currentRequestSource() },
+              transport
+            );
           }
         });
 
@@ -1296,6 +1364,10 @@ const startStdioServer = (): void => {
   // Note: In STDIO mode, stdout is reserved for JSON-RPC messages only.
   // Use stderr for logging to avoid breaking the protocol.
   console.error("Starting STDIO server...");
+  // No HTTP request to attribute in STDIO mode, so every outgoing API call is
+  // reported as "stdio" unless the operator labelled the install via
+  // LOCAL_FALCON_REQUEST_SOURCE.
+  setProcessRequestSource("stdio");
   const transport = new StdioServerTransport();
   const server = getServer(new Map<string, SessionData>());
 
