@@ -2,8 +2,8 @@
   "name": "local-falcon",
   "display_name": "Local Falcon - AI Visibility & Local SEO Expert",
   "version": "1.0.0",
-  "description": "Expert AI Visibility and Local SEO guidance from Local Falcon - the pioneer of geo-grid rank tracking. Deep knowledge on optimizing for AI search platforms (ChatGPT, Gemini, AI Mode, Grok), local pack rankings, and Google Business Profile optimization.",
-  "long_description": "This skill equips AI agents with expert-level knowledge about AI Visibility (getting mentioned by ChatGPT, Gemini, AI Mode, Grok) and Local SEO (Google Business Profile, map pack rankings, reviews). It understands the critical difference between SoLV (Share of Local Voice - maps) and SAIV (Share of AI Visibility - AI platforms), and provides platform-specific optimization guidance. Pairs with the @local-falcon/mcp server for live data analysis.",
+  "description": "Local Falcon's frameworks for understanding local SEO, map visibility, AI visibility, Google Business Profile optimization, and related metrics.",
+  "long_description": "Educational guidance for local SEO and AI visibility, including ChatGPT, Gemini, AI Mode, and AI Overviews. Explains SoLV versus SAIV, geo-grid interpretation, reviews, competitors, and multi-location strategy. Works without a connected account; uses Local Falcon MCP tools for relevant account-specific analysis when available. Perplexity is awareness-only and is not tracked by Local Falcon.",
   "author": "Local Falcon",
   "author_url": "https://www.localfalcon.com",
   "license": "MIT",
@@ -35,7 +35,6 @@
     "gemini visibility",
     "ai overviews",
     "ai mode",
-    "grok visibility",
     "review strategy",
     "multi-location seo",
     "franchise seo",
@@ -70,9 +69,7 @@
       "google_ai_overviews",
       "google_ai_mode",
       "google_gemini",
-      "chatgpt",
-      "grok",
-      "perplexity"
+      "chatgpt"
     ],
     "metrics_understood": [
       "solv",
@@ -81,22 +78,21 @@
       "arp",
       "review_velocity",
       "review_quality_score"
+    ],
+    "awareness_only_platforms": [
+      "perplexity"
     ]
   },
   "install": {
-    "instructions": "Copy the skill folder to ~/.config/claude/skills/ or .claude/skills/",
+    "instructions": "Upload the complete skill folder through the supported ChatGPT skill upload flow, or install it in your MCP client's supported skills directory.",
     "npm": "npm install @local-falcon/skill",
-    "manual": "Download SKILL.md and reference files from GitHub"
+    "manual": "Use the complete bundled folder, including SKILL.md and every reference file"
   },
   "related": {
     "mcp_server": {
       "package": "@local-falcon/mcp",
       "npm": "https://www.npmjs.com/package/@local-falcon/mcp",
-      "description": "MCP server for live Local Falcon data access"
-    },
-    "falcon_agent": {
-      "url": "https://www.localfalcon.com",
-      "description": "Full-featured AI assistant for Local Falcon subscribers"
+      "description": "Existing-account Local Falcon integration; bundled workflows target the ChatGPT tool profile"
     },
     "documentation": {
       "url": "https://docs.localfalcon.com",

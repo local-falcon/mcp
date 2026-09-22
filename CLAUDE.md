@@ -2,10 +2,10 @@
 
 ## Project Overview
 
-This is the **Local Falcon MCP Server** (`@local-falcon/mcp`), a Model Context Protocol server that wraps the [Local Falcon API](https://docs.localfalcon.com). It enables AI agents to run geo-grid rank tracking scans, retrieve reports, manage campaigns, monitor Google Business Profiles, and analyze competitive positioning across Google Maps, Apple Maps, and AI search platforms.
+This is the **Local Falcon MCP Server** (`@local-falcon/mcp`), a Model Context Protocol server that wraps the [Local Falcon API](https://docs.localfalcon.com). It enables AI agents to run geo-grid rank tracking scans, retrieve reports, manage campaigns, monitor Google Business Profiles, and analyze competitive positioning across AI search platforms, Google Maps, and Apple Maps.
 
 **Package:** [`@local-falcon/mcp`](https://www.npmjs.com/package/@local-falcon/mcp) (npm)
-**Version:** 1.4.14
+**Version:** 1.4.15
 **License:** MIT
 **Runtime:** Node.js 18+
 **Language:** TypeScript (strict mode)
@@ -14,14 +14,14 @@ This is the **Local Falcon MCP Server** (`@local-falcon/mcp`), a Model Context P
 
 ```
 index.ts          → Entry point. Transport selection (STDIO, SSE, HTTP), session management, OAuth 2.1
-server.ts         → MCP tool registrations. Exports getServer() which creates McpServer with 60 tools
+server.ts         → MCP tool registrations. Exports getServer() with session-selected tool registration
 localfalcon.ts    → API client layer. All fetch functions, rate limiting, retry logic, timeout handling
 oauth/            → OAuth 2.1 authorization server (routes, provider, config, state/client stores)
 ```
 
 ### Key Design Patterns
 
-- **`server.ts`** exports a single `getServer(sessionMapping)` function that creates and returns an `McpServer` instance with all 60 tools registered via `server.tool(name, description, zodSchema, annotations, handler)`. Every tool includes MCP tool annotations (`readOnlyHint`, `destructiveHint`) that signal to AI clients whether a tool reads data or modifies state.
+- **`server.ts`** exports a single `getServer(sessionMapping)` function that creates and returns an `McpServer` instance with profile-selected tools registered via `server.tool(name, description, zodSchema, annotations, handler)`. Every tool includes MCP tool annotations (`readOnlyHint`, `destructiveHint`, `openWorldHint`) that signal to AI clients whether a tool reads data or modifies state.
 - **`localfalcon.ts`** contains one exported function per API endpoint. Two call patterns:
   - **URL params (v1):** `new URL(endpoint)` → `url.searchParams.set()` → POST with JSON headers
   - **FormData (v2):** `new FormData()` → `form.append()` → POST with form body
@@ -154,7 +154,7 @@ reached only for `sse`/`http`/`HTTPAndSSE`. The `stdio` path builds only a
 
 ## Tool Inventory
 
-### Reports — List & Retrieve (20 tools, all support `fieldmask`)
+### Account Retrieval and Business Lookup
 
 | Tool | Description |
 |---|---|
@@ -175,11 +175,12 @@ reached only for `sse`/`http`/`HTTPAndSSE`. The `stdio` path builds only a
 | `listLocalFalconReviewsAnalysisReports` | List reviews analysis reports. Filter by placeId, frequency, reviewsKey |
 | `getLocalFalconReviewsAnalysisReport` | Get a specific reviews analysis report by report_key |
 | `listAllLocalFalconLocations` | List all saved locations in the account. Filter by query |
-| `getLocalFalconGoogleBusinessLocations` | Search Google for business listings by query, optional near filter |
+| `listLocalFalconLocationGroups` | List saved account location groups |
+| `getLocalFalconGoogleBusinessLocations` | Normal profile only: public business search with separate metered billing |
 | `listLocalFalconAutoScans` | List individually scheduled auto-scans. Filter by placeId, keyword, gridSize, frequency, status, platform |
 | `viewLocalFalconAccountInformation` | Get account info (user, credits, subscription). Optional returnField filter |
 
-### Actions (18 tools, no fieldmask)
+### Actions and Utilities
 
 | Tool | Description |
 |---|---|
@@ -194,11 +195,11 @@ reached only for `sse`/`http`/`HTTPAndSSE`. The `stdio` path builds only a
 | `pauseFalconGuardProtection` | Pause Guard monitoring for location(s) |
 | `resumeFalconGuardProtection` | Resume Guard monitoring for location(s) |
 | `removeFalconGuardProtection` | Remove location(s) from Guard entirely |
-| `searchForLocalFalconBusinessLocation` | Search for businesses on Google or Apple Maps |
+| `searchForLocalFalconBusinessLocation` | Search Google or Apple Maps; costs 2 existing credits per successful search |
 | `saveLocalFalconBusinessLocationToAccount` | Save a business to the Local Falcon account |
 | `getLocalFalconGrid` | Generate grid coordinates for manual single-point checks |
-| `getLocalFalconRankingAtCoordinate` | Check ranking at a single coordinate |
-| `getLocalFalconKeywordAtCoordinate` | Get raw SERP data at a single coordinate |
+| `getLocalFalconRankingAtCoordinate` | Normal profile only: single-coordinate ranking with separate metered billing |
+| `getLocalFalconKeywordAtCoordinate` | Normal profile only: single-coordinate search with separate metered billing |
 | `searchLocalFalconKnowledgeBase` | Search the help/docs knowledge base |
 | `getLocalFalconKnowledgeBaseArticle` | Get full content of a knowledge base article |
 
@@ -256,35 +257,24 @@ other GBP endpoint returns snake_case.
 
 ## Tool Annotations
 
-Every `server.tool()` call includes an MCP tool annotations object that tells AI clients whether the tool is safe to auto-execute or should require user confirmation. These are placed after the Zod input schema and before the handler callback.
+Every registered tool declares readOnlyHint, openWorldHint, and destructiveHint explicitly. Annotations describe behavior; they do not enforce authorization or replace user confirmation.
 
-### Read-Only (41 tools) — `{ readOnlyHint: true }`
+- Bounded Local Falcon account retrieval and connected GBP reads are read-only, closed-world, and non-destructive. Historical Google/public data provenance does not make a retrieval open-world.
+- Arbitrary public business, category, and chain searches are open-world. Credit-consuming searches and separately metered lookups are also non-read-only and destructive.
+- New scans and active campaign scheduling are non-read-only, open-world, and destructive because they cause public searches and existing-credit expenditure.
+- Updates/removals of existing state are destructive even if reversible. In particular, campaign editing and pausing are not additive-only operations.
+- Public GBP writes are non-read-only, open-world, and destructive. Bounded connected GBP reads do not inherit the write tools' open-world status.
+- The seven previously flagged retrieval tools (scan report list/get, saved locations, campaign report list, account information, KB search, KB article get) use true/false/false in read-only/open-world/destructive order.
 
-These tools only retrieve data. They never modify state, create resources, or cost credits.
+## Trusted ChatGPT Profile
 
-All 20 report list/get tools, plus: `listAllLocalFalconLocations`, `getLocalFalconGoogleBusinessLocations`, `getLocalFalconGrid`, `getLocalFalconRankingAtCoordinate`, `getLocalFalconKeywordAtCoordinate`, `viewLocalFalconAccountInformation`, `searchForLocalFalconBusinessLocation`, `searchLocalFalconKnowledgeBase`, `getLocalFalconKnowledgeBaseArticle`.
+See README.md deployment profiles for the canonical profile counts and deployment checklist. The same MCP endpoint selects the ChatGPT tool set for authenticated sessions identified as chatgpt by the existing requestSource.ts attribution; other clients receive the normal profile. Bind the profile after authentication/session ownership checks and preserve it through supported session recovery. Reuse the existing attribution rather than adding another detector, route, or profile environment variable.
 
-### Destructive / Credit-Consuming (9 tools) — `{ destructiveHint: true }`
+Only the three separately Stripe-metered On-Demand tools are excluded. Grid generation and the 2-existing-credit business search remain. ChatGPT KB search and direct retrieval share the hardcoded denylist 15, 16, 23, 37, 57, 81; articles 28, 50, and 58 remain accessible. Normal KB access is unchanged. ChatGPT failures are normalized, including HTTP-200 success:false responses, and account output cannot fall back to the whole raw account response.
 
-These tools consume credits (irreversible) or permanently remove resources. AI clients should always confirm with the user before executing.
+Existing-credit use and neutral entitlement information are allowed; purchase, checkout, Auto Recharge, upgrade promotion, and separate monetary charges are not. A neutral informational link to https://www.localfalcon.com/pricing is permitted. Do not add quote infrastructure, KB hashes/allowlists/CMS schema, billing changes, or unrelated refactors.
 
-| Tool | Reason |
-|---|---|
-| `runLocalFalconScan` | Costs credits |
-| `runLocalFalconCampaign` | Costs credits |
-| `removeFalconGuardProtection` | Permanently removes Guard monitoring |
-| `manageLocalFalconGbpPosts` | Can delete a live Google post |
-| `manageLocalFalconGbpMedia` | Can delete live Google media |
-| `manageLocalFalconGbpReviewReplies` | Publishes/removes public replies on Google |
-| `manageLocalFalconGbpActionLinks` | Can delete live Google action links |
-| `manageLocalFalconGbpServices` | `replace` overwrites the entire service list |
-| `updateLocalFalconGbpProfile` | Writes live profile data; `CLOSED_PERMANENTLY` is effectively irreversible |
-
-### State-Changing / Non-Destructive (8 tools) — `{ readOnlyHint: false, destructiveHint: false }`
-
-These tools modify state but are reversible and do not consume credits.
-
-`createLocalFalconCampaign`, `updateLocalFalconCampaign`, `pauseLocalFalconCampaign`, `resumeLocalFalconCampaign`, `reactivateLocalFalconCampaign`, `saveLocalFalconBusinessLocationToAccount`, `addLocationsToFalconGuard`, `pauseFalconGuardProtection`, `resumeFalconGuardProtection`.
+**Submission dependency:** Pia owns backend Auto Recharge isolation. The remaining scheduled-campaign protection in LF.api/LF.internal must be deployed and verified before final OpenAI submission. This MCP profile and its sanitized responses do not prove that isolation. LF.app's neutral OAuth entitlement messages require separate review/deployment by Shaun/Pia. No production deployment is authorized by this implementation task.
 
 ## Valid Enum Values
 
@@ -378,7 +368,7 @@ smaller instance, keeping it under the container limit so V8 GCs rather than the
 OOM-killing.
 
 **2. Unbounded session count × ~1.3 MB per session.** `getServer()` builds a fresh `McpServer`
-with all 60 tool registrations per session, measured at ~1.28 MB retained. This cannot be shared:
+with the normal profile's tool registrations per session, historically measured at ~1.28 MB retained. This cannot be shared:
 `Protocol.connect()` throws *"Already connected to a transport… use a separate Protocol instance
 per connection."* Session creation had no cap — a re-initializing client abandons its previous
 session, and auto-recovery mints another up to 5×/min/key — while retention was 8 h.
@@ -495,7 +485,7 @@ npm run docker:run
 | File | Purpose |
 |---|---|
 | `index.ts` | Entry point — transport selection, session management, Express app, OAuth routes |
-| `server.ts` | MCP server factory — `getServer()` with all 60 tool registrations |
+| `server.ts` | MCP server factory — `getServer()` with session-selected tool registrations |
 | `localfalcon.ts` | API client — fetch functions, rate limiter, retry logic, types |
 | `eventStore.ts` | Bounded resumability buffer — replaces the SDK's unbounded example store |
 | `requestSource.ts` | Resolves which client is calling; carries it in AsyncLocalStorage for `request_source` |
@@ -543,7 +533,7 @@ The `build` script runs both TypeScript compilation and UI builds.
 
 ### OAuth 2.1 Requirements (ChatGPT-specific)
 
-ChatGPT's MCP connector (`openai-mcp/1.0.0`) has stricter OAuth requirements than Claude's:
+ChatGPT MCP connector compatibility requires the following OAuth settings:
 
 | Requirement | Detail | File |
 |---|---|---|
@@ -592,4 +582,4 @@ ChatGPT's OAuth dialog enters an infinite React render loop in normal Chrome ses
 
 ### Error Handling in Tool Responses
 
-Tool handlers never expose raw `error.message` to users — catch blocks log the full error to `console.error` and return a generic user-facing message. This prevents leaking internal API details.
+ChatGPT-facing Local Falcon failures are normalized for both non-2xx responses and HTTP-200 payloads with `success:false`. Do not return raw upstream commerce HTML, purchase/checkout links, or upgrade prompts. Use authoritative credit requirements/balances only when present; otherwise use the neutral insufficient-credit fallback. Normal-profile behavior is preserved.

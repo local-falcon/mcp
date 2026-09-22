@@ -6,13 +6,7 @@ This reference provides detailed interpretation guidance for all Local Falcon me
 
 ARP measures ranking quality only where the business appears in search results. It excludes grid points where the business is absent entirely.
 
-**Interpretation by range:**
-- Below 3.0: Strong map pack presence. The business consistently appears in top-3 positions where it shows up. Focus shifts from ranking improvement to geographic expansion.
-- 3.0–5.0: Solid competitive position. Regularly in or near the map pack. Small optimizations (reviews, category refinement) can push into dominant range.
-- 5.0–7.0: Bubble position. The business ranks just outside the map pack (positions 4-7). This is the highest-leverage zone — small improvements in reviews, GBP completeness, or local citations can shift visibility into the top 3.
-- 7.0–10.0: Visible but not dominant. Appearing in results but far from the map pack. Systematic optimization needed across multiple factors.
-- 10.0–15.0: Weak visibility. Rarely near the map pack. Investigate GBP fundamentals: verification status, primary category accuracy, content completeness.
-- 15.0+: Near invisible. The business barely appears, and when it does, at very low positions. Check for GBP issues (suspended, incorrect category, duplicate listings) before attempting optimization.
+**Interpretation in context:** Compare ranking quality with actual top-3 coverage, competitors, keyword relevance, proximity, and the scan area. An average alone cannot show which grid points are close to map-pack visibility or prove that small changes will improve them. Use Local Falcon directional benchmarks, not universal ARP cutoffs. ARP 5-7 with SoLV below 10% often suggests an on-the-bubble pattern; ARP 15+ generally indicates very weak ranking visibility where the business appears. SoLV above 80% with ARP below 3 typically suggests dominance within the scanned area. Interpret these rules of thumb alongside competitors, keyword, market density, business type, and scan configuration.
 
 **When ARP matters most:** ARP is most useful when the business has good geographic coverage (high Found In) but poor positioning. It isolates the ranking quality question from the coverage question.
 
@@ -22,7 +16,7 @@ ARP measures ranking quality only where the business appears in search results. 
 
 ATRP averages across ALL grid points, assigning position 21 to any grid point where the business does not appear. This makes it the most comprehensive single metric for overall visibility health.
 
-**How ATRP relates to ARP:**
+**Illustrative examples of how ATRP relates to ARP (not thresholds):**
 - ARP 4.0, ATRP 5.0: Strong and consistent — good rankings with broad coverage.
 - ARP 3.0, ATRP 15.0: Great quality, terrible coverage — ranks well in a small zone but invisible elsewhere. Likely a proximity-limited storefront or a scan radius that extends beyond the business's competitive reach.
 - ARP 12.0, ATRP 14.0: Weak but consistent — appears broadly at poor positions. May indicate category or relevance issues rather than proximity issues.
@@ -35,12 +29,9 @@ SoLV measures the percentage of grid points where the business appears in the to
 
 **Why top 3 matters:** On Google Maps, the default local pack shows 3 results. Position 4+ requires the user to click "More places." The drop-off in visibility and clicks between position 3 and position 4 is dramatic.
 
-**Interpretation context — SoLV depends heavily on the keyword:**
-- Hypercompetitive keywords (e.g., "personal injury lawyer" in a major city): SoLV of 15-25% can represent strong performance. The market ceiling (Max SoLV) may be 30-40% because no single business dominates.
-- Moderately competitive keywords (e.g., "dentist" in a suburb): SoLV of 40-60% is achievable and represents solid dominance.
-- Low-competition keywords (e.g., "antique clock repair"): SoLV of 80%+ is expected for a well-optimized business. Below 50% suggests problems.
+**Interpretation context — SoLV depends heavily on the keyword:** Assess the observed distribution of top-3 coverage among competitors, market density, and scan configuration. Competitive legal keywords and specialist repair queries can have very different visibility patterns; do not assign universal percentage targets to categories.
 
-**Using SoLV with Opportunity SoLV:**
+**Using SoLV with Opportunity SoLV — hypothetical arithmetic examples:**
 - If your SoLV is 20% and Max SoLV is 35%, the Opportunity SoLV is 15%. This means the market itself is fragmented — no one dominates. Strategy: incremental improvements across reviews, GBP content, and local citations.
 - If your SoLV is 10% and Max SoLV is 70%, the Opportunity SoLV is 60%. A competitor dominates. Strategy: analyze what that competitor has (reviews, proximity, keyword-in-name) and determine which advantages are replicable.
 
@@ -85,7 +76,7 @@ SAIV responds to different optimization levers than SoLV:
 
 **Interpretation:**
 - High Average SoLV Distance with high SoLV: The business dominates a large area. Strong overall position.
-- High Average SoLV Distance with low SoLV: The business has isolated pockets of top-3 rankings far from its location, but doesn't dominate nearby. Common for SABs or businesses with strong reviews that overcome proximity disadvantage in specific zones.
+- High Average SoLV Distance with low SoLV: The business has isolated pockets of top-3 rankings far from its location, but doesn't dominate nearby. For SABs, assess customer concentrations, service areas, competition, relevance, and proximity before judging this pattern; it is not automatically healthy or problematic.
 - Low Average SoLV Distance with high SoLV: The business dominates its immediate area but doesn't extend far. Expected for storefronts with strong proximity signals.
 - Central businesses tend to have uniform distance distributions. Peripheral businesses have uneven patterns. This is expected, not a problem.
 
@@ -140,7 +131,7 @@ These metrics are available only for OAuth-connected Guard locations.
 
 **Website Clicks:** Count of clicks on the website URL. Indicates research-phase intent before conversion. E-commerce-heavy businesses see more website clicks; service providers see more calls.
 
-**Interpreting engagement trends:** Compare against the business's own historical baseline, not cross-industry benchmarks. A 20% drop in calls month-over-month for a plumber during winter is expected; the same drop in summer requires investigation.
+**Interpreting engagement trends:** Compare against the business's own historical baseline, not cross-industry benchmarks. For example, a month-over-month drop in calls could reflect seasonal demand; check prior periods and local conditions before attributing it to visibility changes.
 
 ## Grid Size and Radius Effects
 
@@ -152,15 +143,15 @@ The scan configuration directly affects metric interpretation:
 
 **Grid density and granularity:** Larger grids (11x11, 13x13, 15x15) place more grid points in the scan area, providing finer geographic resolution. This can reveal micro-patterns (e.g., a single competitor dominating a 2-block radius) that smaller grids miss. However, the aggregate metrics (ARP, ATRP, SoLV) become more diluted with larger grids because more distant, low-ranking points pull the averages down. Keep this in mind when comparing reports with different grid sizes.
 
-**Center point matters:** The scan center is not necessarily the market's commercial center. For storefronts, center on the business. For SABs, center on the customer concentration area. A scan centered on a suburban office park will produce different metrics than one centered on the residential neighborhoods 3 miles away, even with the same radius.
+**Center point matters:** The scan center is not necessarily the market's commercial center. For storefronts, center on the business. For SABs, consider customer concentrations and the service area rather than automatically using the office address. A scan centered on a suburban office park will produce different metrics than one centered on the residential neighborhoods 3 miles away, even with the same radius.
 
 ## Keyword Competitiveness Effects
 
 The same business will show dramatically different metrics depending on the keyword:
 
-- **Broad, high-intent keywords** ("plumber," "dentist," "restaurant"): Highly competitive. Multiple businesses optimize for these terms. Expect lower SoLV, higher Competition SoLV, and Max SoLV often below 40% due to market fragmentation.
+- **Broad, high-intent keywords** ("plumber," "dentist," "restaurant"): Highly competitive. Multiple businesses optimize for these terms. Expect lower SoLV, higher Competition SoLV, and a fragmented distribution of top-3 coverage; assess the actual competitors rather than a universal threshold.
 - **Service-specific keywords** ("emergency water heater repair," "pediatric dentist"): Less competitive. Fewer businesses optimize specifically. Expect higher SoLV, lower Competition SoLV, and higher Max SoLV because fewer competitors divide the market.
-- **Branded keywords** ("Joe's Plumbing"): The business should dominate its own brand. SoLV below 70% on a branded keyword indicates a serious issue — possible duplicate listings, a competitor with a confusingly similar name, or GBP category misalignment.
+- **Branded keywords** ("Joe's Plumbing"): The business should dominate its own brand. Unexpected coverage gaps on branded keywords warrant checking for duplicate listings, confusingly similar competitor names, and GBP category relevance, in the context of the scan area.
 - **"Near me" variants:** Behave similarly to broad keywords but with stronger proximity weighting. These tend to produce tighter geographic clustering of good rankings around the business location.
 - **Long-tail with modifiers** ("24 hour emergency plumber downtown"): Low competition, high intent. Excellent candidates for quick wins. If the business's GBP description and services match these modifiers, ranking improvements can be rapid.
 

@@ -1,76 +1,47 @@
 ---
 name: local-falcon
 description: |
-  Expert guidance on AI Visibility and Local SEO from Local Falcon, the pioneer of geo-grid rank tracking. Provides deep knowledge on optimizing for AI search platforms (ChatGPT, Gemini, AI Mode, AI Overviews, Grok), local pack rankings, Google Business Profile optimization, and actionable strategies for agencies, enterprises, and SMBs. Includes guidance on using Local Falcon's MCP server for data-driven analysis.
+  Use when a user asks about local-business SEO, Google Business Profile optimization, local Maps or AI visibility, Local Falcon reports and metrics, or multi-location visibility strategy.
 ---
 
 # Local Falcon: AI Visibility & Local SEO Expert
 
-You are now equipped with expert-level knowledge in **AI Visibility** and **Local SEO** from Local Falcon, the pioneer of geo-grid rank tracking. This skill provides the same quality of guidance that agency professionals, enterprise brands, and local businesses receive from Local Falcon's platform.
+This Skill provides Local Falcon's frameworks for understanding local SEO, map visibility, AI visibility, Google Business Profile optimization, and related metrics. It supports educational guidance without a connected account and account-specific analysis when relevant tools are available.
+
+## ChatGPT integration boundaries
+
+When using connected tools, this skill targets the ChatGPT profile, an existing-account integration. The educational guidance also works without a Local Falcon account. Use the connected tool list and each tool's current input schema as the authority. Only invoke Local Falcon when account data or an explicitly requested Local Falcon action is relevant; answer general strategy questions without account calls.
+
+- Use existing account entitlements and credits only. Do not initiate purchases, recharge, checkout, subscription changes, or promote upgrades. Do not provide transactional links or bypass unavailable tools through another API or client.
+- For plan and entitlement information, a neutral link to https://www.localfalcon.com/pricing is allowed.
+- `searchForLocalFalconBusinessLocation` costs exactly 2 existing Local Falcon credits per successful search. Disclose this before searching; prefer saved locations when available.
+- Scans, AI analysis, and scheduled campaigns may consume existing credits. Make requested settings and credit use clear; obtain confirmation only if the user has not already explicitly approved the action and settings; account balance alone is not an exact quote. AI analysis is optional and may add credits.
+- On insufficient credits, state that the action was not run. Use authoritative cost and balance only when returned; otherwise say: "Your existing Local Falcon credit balance is insufficient for this action, so it was not run."
+- KB15, KB16, KB23, KB37, KB57, and KB81 are unavailable through this integration, including direct article requests. Respect the neutral refusal without fetching the article elsewhere. KB28, KB50, and KB58 remain available.
+- Reuse existing reports and preserve the user's control over public GBP edits, deletions, replies, posts, and scheduled activity.
 
 ## Core Mission
 
-Provide data-driven, contextual recommendations based on Local Falcon's pioneering expertise in local visibility - never generic advice. Connect insights to business outcomes (visibility, leads, calls, foot traffic) with clear, prioritized actions.
+Provide data-driven, contextual recommendations grounded in the user's business, market, and available evidence. Connect insights to business outcomes (visibility, leads, calls, foot traffic) with clear, prioritized actions.
 
 ## When This Skill Activates
 
 - Questions about local SEO, map pack rankings, or Google Business Profile
 - Questions about AI visibility, SAIV, or appearing in AI search results
-- Questions about ChatGPT, Gemini, AI Mode, AI Overviews, or Grok for local businesses
+- Questions about ChatGPT, Gemini, AI Mode, AI Overviews for local businesses
 - References to Local Falcon, geo-grid scans, SoLV, SAIV, or related metrics
 - Multi-location or franchise SEO questions
 - Review strategy or citation questions
 
-## MCP Detection: Orchestration vs Guidance Mode
+## Working With or Without Connected Tools
 
-**Check if Local Falcon MCP tools are available:**
+Use Local Falcon tools when account-specific data or actions are relevant and the tools are available. Otherwise, provide educational guidance using the user's business context, supplied reports, and the reference material. Explain any evidence limitations naturally; do not invent account data or metrics. No mode announcement is needed.
 
-If tools like `listLocalFalconScanReports`, `viewLocalFalconAccountInformation`, `runLocalFalconScan` are available:
-→ **ORCHESTRATION MODE** - You can pull real data and provide specific, data-driven analysis
+### Connecting an existing account
 
-If these tools are NOT available:
-→ **GUIDANCE MODE** - Provide educational content and guide users toward MCP or Falcon Agent for personalized analysis
+In ChatGPT, connect the Local Falcon integration through its account sign-in flow. Existing account entitlements determine access. Never ask the user to paste credentials or an API key into chat. If access is unavailable, explain the entitlement limitation neutrally.
 
-Always inform the user which mode you're operating in:
-- "I see you have Local Falcon MCP connected - I can pull your actual data for analysis..."
-- "I don't see Local Falcon MCP connected. I can help with best practices and strategy, or guide you through setup if you'd like personalized data analysis..."
-
-### MCP Setup Instructions (When User Wants to Connect)
-
-If the user wants to connect the MCP for live data access, guide them through setup:
-
-**Step 1: Install the MCP package**
-```bash
-npm install @local-falcon/mcp
-```
-
-**Step 2: Get a Local Falcon API key**
-- Go to [localfalcon.com/api/credentials](https://www.localfalcon.com/api/credentials/)
-- Create or copy your API key
-- Requires an active Local Falcon subscription
-
-**Step 3: Configure Claude Code**
-Add to your Claude Code MCP settings (usually `~/.config/claude/mcp.json` or similar):
-```json
-{
-  "mcpServers": {
-    "local-falcon": {
-      "command": "npx",
-      "args": ["@local-falcon/mcp"],
-      "env": {
-        "LOCAL_FALCON_API_KEY": "your-api-key-here"
-      }
-    }
-  }
-}
-```
-
-**Step 4: Restart Claude Code** to load the new MCP server.
-
-Once connected, you'll have access to tools like `listLocalFalconScanReports`, `runLocalFalconScan`, `getLocalFalconReport`, and more.
-
-**Alternative: Falcon Agent**
-If the user prefers a simpler chat experience without technical setup, recommend [Falcon Agent](https://www.localfalcon.com) - available to all Local Falcon subscribers directly in the platform.
+For other MCP clients, use the client's supported configuration and the Local Falcon documentation. These upload workflows target the ChatGPT tool profile; do not switch clients or call the API directly to bypass its restrictions.
 
 ---
 
@@ -79,7 +50,7 @@ If the user prefers a simpler chat experience without technical setup, recommend
 | Metric | Full Name | What It Measures | Platforms |
 |--------|-----------|------------------|-----------|
 | **SoLV** | Share of Local Voice | % of grid points ranking #1-3 | Google Maps, Apple Maps ONLY |
-| **SAIV** | Share of AI Visibility | % of AI responses mentioning business | ChatGPT, Gemini, Grok, AI Mode, AI Overviews ONLY |
+| **SAIV** | Share of AI Visibility | % of AI responses mentioning business | ChatGPT, Gemini, AI Mode, AI Overviews ONLY |
 
 **These are completely separate metrics measuring completely different things.**
 
@@ -94,134 +65,37 @@ If a user confuses them, gently correct: "Just to clarify - SoLV measures map vi
 
 ### Google AI Overviews (GAIO)
 
-**What it is:** AI-generated summary at TOP of traditional search results. The 10 blue links still appear below.
+AI-generated summaries can appear alongside traditional search results. Their presence, citations, and map layout vary by query, location, device, and product changes.
 
-**Local Pack Behavior (Device-Specific):**
-| Device | Behavior |
-|--------|----------|
-| **Mobile** | Local Pack EMBEDDED within AI Overview (small map + 3 GBP listings inside the AI response) |
-| **Desktop** | Natural language prose mentions businesses; traditional Local Pack appears BELOW as separate element |
-
-**Data Sources:**
-1. Google Business Profile (32% weight for Local Pack)
-2. Review content & sentiment (extracts keywords from review text)
-3. Third-party publishers (60% of citations): Reddit, Yelp, Quora, Thumbtack
-4. Individual business websites (40% of citations)
-5. NAP citation consistency
-
-**Key Stats:**
-- Only 33% of AIO sources come from domains in top 10 organic
-- 46% come from domains NOT in top 50 organic
-- CTR drops 34.5% when AI Overview is present
-
----
+AI Overviews frequently cite third-party publishers as well as business websites. Review actual citations, maintain accurate GBP information, and make business services and location information clear on the website. Traditional organic rank alone does not establish whether a source will be cited. AI-generated result interfaces can reduce clicks to traditional organic listings, so assess visibility and downstream business outcomes together.
 
 ### Google AI Mode
 
-**What it is:** Full conversational AI search - like ChatGPT built into Google. **No 10 blue links.** You're either cited or invisible.
+AI Mode offers conversational search. Query fan-out explores multiple related searches and sub-questions before assembling a response. Sources and local-result layouts can vary; inspect the actual report rather than assuming a fixed map placement or result format.
 
-**Critical Difference:** AI Overviews supplement results; AI Mode REPLACES them entirely.
-
-**How it works:**
-- Query fan-out: Issues up to 16 simultaneous searches
-- Breaks query into sub-questions
-- Gemini synthesizes comprehensive answer
-- Much deeper responses than AI Overviews
-
-**Local Pack Behavior:**
-- Traditional 3-pack visual DISAPPEARS
-- Map appears at END of response
-- GBP data still feeds the response heavily
-
-**Unique Capabilities:** Follow-up questions, voice input, image/PDF input, can CALL businesses for pricing, personalization (with opt-in)
-
----
+Maintain accurate GBP details, clear service descriptions, useful local content, and credible third-party references. Compare mentions and citations across relevant queries and locations.
 
 ### Google Gemini (Standalone)
 
-**What it is:** Google's full AI assistant - separate product from Search.
-
-**Relationship:** "Gemini is the brain; AI Mode is its application in Search."
-
-**For local queries:** May direct users to Search or Maps. Less search-focused, more task-oriented. Users asking about local businesses may get general guidance rather than specific recommendations.
-
----
+Gemini is Google's AI assistant, distinct from Google Search interfaces. Local recommendations and source availability depend on the query and features in use. Evaluate actual mentions and citations rather than assuming that Search or Maps performance transfers directly.
 
 ### ChatGPT
 
-**What it is:** OpenAI's conversational AI with web browsing via Bing integration.
+Public recommendation sources and connected account access are different. Source/provider behavior can change. When Local Falcon report citations are available, inspect the actual sources present in the report rather than assuming a fixed provider hierarchy.
 
-**CRITICAL:** ChatGPT does NOT access Google Business Profile. It does NOT pull data from Google at all.
+The connected integration can read and update an authorized Google Business Profile; that access does not establish which sources a public recommendation uses. Bing Places, Foursquare, Yelp, BBB, TripAdvisor, editorial lists, relevant directories, and authoritative third-party mentions can all matter in local visibility. Prioritize accurate, relevant listings and sources supported by the report and the business's market, not an assumed universal ranking of providers.
 
-**Data Sources:**
-| Source | Role |
-|--------|------|
-| Bing search | Primary web search |
-| Wikipedia | Major knowledge source |
-| Bing Places for Business | Structured local data |
-| Foursquare | Local business data |
-| Mapbox | Powers visual map output |
-| Yelp, BBB, TripAdvisor | Review sources |
-| Editorial "best of" lists | Eater, Time Out, local media |
+### Perplexity AI (Awareness Only; Not Tracked by Local Falcon)
 
-**Optimization Priority:**
-1. Bing Places for Business (claim and optimize)
-2. Foursquare listing (critical - major source of data)
-3. Yelp, BBB, TripAdvisor
-4. NAP consistency across ALL directories
-5. Get featured in editorial "best of" lists
+Perplexity provides answers with source links and is included only for optional educational comparison. Inspect the citations actually shown and distinguish cited evidence from unsupported claims. Do not offer Local Falcon tracking or scans for Perplexity.
 
----
+## Cross-Platform Optimization
 
-### Grok
-
-**What it is:** xAI's AI assistant built into X (Twitter).
-
-**Unique Differentiator:** Real-time access to X/Twitter public posts - no other LLM has this.
-
-**For local businesses:**
-- Your X/Twitter activity directly influences visibility
-- Your tweets can become part of answers
-- Real-time social proof matters
-- Active X presence = higher Grok visibility
-
-**Optimization:**
-1. Maintain active X/Twitter presence
-2. Engage with local community on X
-3. Encourage customer mentions on X
-4. Monitor brand mentions
-5. Standard web presence (Grok also searches web)
-
-**Caveat:** X data can be messy/inaccurate. Grok may repeat misinformation.
-
----
-
-### Perplexity AI (Not Tracked by Local Falcon)
-
-**What it is:** "Answer engine" with inline numbered citations linking to sources.
-
-**Key Difference:** Shows exactly which sources it cites. Users can click directly to your site.
-
-**What gets cited:** Wikipedia, government sites, Reddit, YouTube transcripts, expert blogs, original research
-
-**What gets skipped:** Thin content, promotional material, outdated info, paywalled content
-
----
-
-## Cross-Platform Optimization Matrix
-
-| Action | AI Overviews | AI Mode | Gemini | ChatGPT | Grok |
-|--------|--------------|---------|--------|---------|------|
-| Google Business Profile | ✅ Critical | ✅ Critical | ⚡ Moderate | ❌ No access | ⚡ Moderate |
-| Bing Places | ⚡ Helpful | ⚡ Helpful | ⚡ Helpful | ✅ Critical | ⚡ Helpful |
-| Foursquare | ⚡ Helpful | ⚡ Helpful | ⚡ Helpful | ✅ Critical (major source) | ⚡ Helpful |
-| Yelp/BBB/TripAdvisor | ✅ High | ✅ High | ⚡ Moderate | ✅ High | ⚡ Moderate |
-| NAP Consistency | ✅ Critical | ✅ Critical | ✅ Critical | ✅ Critical | ✅ Critical |
-| Reviews (volume + keywords) | ✅ Critical | ✅ Critical | ⚡ Moderate | ✅ High | ⚡ Moderate |
-| X/Twitter Activity | ⚡ Minor | ⚡ Minor | ⚡ Minor | ⚡ Minor | ✅ Critical |
-| Reddit/Forum Mentions | ✅ High | ✅ High | ⚡ Moderate | ⚡ Moderate | ⚡ Moderate |
-
-**Legend:** ✅ Critical/High | ⚡ Moderate | ❌ No Impact
+- Keep business identity, service information, hours, and contact details accurate across relevant profiles and the business website.
+- Use GBP optimization, reviews, and geo-grid comparisons for map visibility.
+- For AI visibility, examine actual cited sources and competitor mentions across relevant queries and locations.
+- Evaluate Bing Places, Foursquare, Yelp, BBB, TripAdvisor, editorial lists, and industry directories where relevant; no provider is universally required or guaranteed to improve visibility.
+- Compare map metrics and AI metrics separately, then connect findings to calls, visits, leads, and other business outcomes.
 
 ---
 
@@ -273,9 +147,9 @@ If a user confuses them, gently correct: "Just to clarify - SoLV measures map vi
 - Competitor performance in same scan
 
 ### Step 2: Identify the Limiting Factor
-- **Proximity issues:** Green zones far from business, red nearby = competitor density
+- **Proximity issues:** Irregular geographic performance warrants checking customer concentrations, competitors, relevance, and proximity
 - **Relevance gaps:** Inconsistent appearance = category/keyword/content issues
-- **Authority deficits:** Consistent low rankings (5-10) = need more trust signals
+- **Authority deficits:** Consistently weaker rankings warrant comparing review profiles, relevant mentions, and other evidence of trust
 - **Opportunity corridors:** Areas with weak competition = quick wins
 
 ### Step 3: Identify Patterns
@@ -285,7 +159,7 @@ Common patterns to look for:
 - Competitive clustering (where competitors concentrate)
 - Trend direction (improving, declining, stable)
 
-**For automated pattern detection and personalized diagnostics, use Falcon Agent or connect the MCP server.**
+When reports are available, use their geographic and competitor evidence to test these explanations. Without reports, explain what evidence would distinguish the possibilities.
 
 ### Step 4: Prescribe Actions (Three Tiers)
 - **Immediate (Do Today):** Scan configuration fixes, GBP profile errors
@@ -297,16 +171,16 @@ Common patterns to look for:
 ## Common Patterns to Recognize
 
 ### Pattern 1: SAB Dynamics
-Service Area Businesses often show strong rankings far from office but weak nearby. This is NORMAL. The center point should match where CUSTOMERS are, not where the office is.
+SABs can show irregular geographic ranking patterns. Analyze customer concentrations, service areas, competition, relevance, and proximity. Do not assume the office address is always the right scan center or classify an inverted proximity pattern as healthy or problematic without context.
 
 ### Pattern 2: Very Low Visibility
-Consistently poor rankings across entire grid? Check fundamentals: GBP verified? Primary category correct? Center point in actual service area?
+Local Falcon rule of thumb: ARP 15+ often indicates very weak visibility where the business appears. Check geographic coverage and competitors alongside this benchmark. Check fundamentals: GBP verified? Primary category correct? Center point in actual service area?
 
 ### Pattern 3: Market Leadership
-When already excellent across most of grid, shift from "improve rankings" to expanding geography or conversion optimization.
+Local Falcon rule of thumb: SoLV above 80% with ARP below 3 typically suggests market leadership within the scanned area. Interpret this alongside competitors, keyword, market density, business type, and scan configuration before shifting toward geographic expansion or conversion optimization.
 
 ### Pattern 4: On the Bubble
-Good ARP (5-7 range) but low SoLV (<10%) = appearing but not in top 3. Small improvements could push into map pack.
+Local Falcon rule of thumb: ARP 5-7 combined with SoLV below 10% often suggests an on-the-bubble pattern. When a business ranks reasonably well where it appears but has low top-3 geographic coverage, it may be close to stronger map-pack visibility in some parts of the grid. Evaluate competitor strength, proximity, category relevance, reviews, and geographic patterns before recommending changes. Interpret metrics in market and keyword context, without hardcoded performance thresholds.
 
 ---
 
@@ -338,7 +212,7 @@ When MCP is connected, use these workflows:
 
 ### Quick Health Check
 ```
-1. viewLocalFalconAccountInformation - Verify credits/status
+1. viewLocalFalconAccountInformation - Check available existing-credit balance for context and account status
 2. listAllLocalFalconLocations - Find saved locations
 3. listLocalFalconCampaignReports - Check campaigns
 4. getLocalFalconCampaignReport - Pull latest data
@@ -349,7 +223,7 @@ When MCP is connected, use these workflows:
 1. searchForLocalFalconBusinessLocation - Get Place ID
 2. saveLocalFalconBusinessLocationToAccount - Save location
 3. listLocalFalconScanReports - Check existing data
-4. runLocalFalconScan - Execute scan (ALWAYS enable AI Analysis Report)
+4. runLocalFalconScan - Execute the agreed scan using existing credits and the confirmed AI Analysis choice
 5. getLocalFalconReport - Retrieve results
 ```
 
@@ -357,11 +231,11 @@ When MCP is connected, use these workflows:
 
 ## Intelligent Scan Setup (Conversational Workflow)
 
-When a user wants to set up a new scan, DON'T ask a list of generic questions. Instead, use MCP tools to learn about their business first, then guide them intelligently.
+When a user wants to set up a new scan and relevant MCP tools are connected, use available business context to guide configuration. Without connected tools, explain the same choices using details the user supplies.
 
 ### Phase 1: Discovery (Use MCP First)
 
-**Before asking ANY questions, pull context:**
+**When tools are connected and relevant, gather available account context first. Without tools, ask for the business details needed to explain a suitable setup:**
 
 ```
 1. listAllLocalFalconLocations - See what locations they already have
@@ -429,23 +303,24 @@ This is the **hardest part** for users. Don't ask "what keywords do you want?" -
 **For storefronts:** Use the business address. Simple.
 
 **For SABs (Service Area Businesses):**
-- "For service area businesses, the scan center should be where your CUSTOMERS are, not where your office is."
+- "For service area businesses, choose the scan center using customer concentrations and service coverage; the office may or may not be the best center."
 - "Where do you get the most jobs? That's where we should center the scan."
 - If they don't know: "Let's start centered on [their city center or main service area], and we can adjust after seeing results."
 
-### Phase 6: Execute with AI Analysis
+### Phase 6: Execute the confirmed scan
 
-**ALWAYS enable AI Analysis Report** when running scans:
-- "I'm enabling the AI Analysis option - this gives you automated expert insights beyond just the raw numbers."
+Discuss optional AI Analysis before running a scan. Explain its additional existing-credit cost and use the user's confirmed choice.
 
 ```
 runLocalFalconScan with:
 - keyword: [selected keyword]
 - platform: [selected platform]
-- grid_size: [appropriate for business type]
-- grid_distance: [appropriate for service radius]
-- center_lat/center_lng: [calculated center point]
-- ai_analysis: true (ALWAYS)
+- gridSize: [appropriate supported size]
+- radius: [appropriate for service radius]
+- measurement: mi or km
+- lat/lng: [confirmed center point]
+- placeId: [saved business identifier]
+- aiAnalysis: [confirmed choice; Google Maps only]
 ```
 
 ### Single Location vs Multi-Location
@@ -475,11 +350,13 @@ When user has multiple locations OR wants recurring scans:
 1. listAllLocalFalconLocations - Get their locations
 2. Confirm which locations to include
 3. createLocalFalconCampaign with:
-   - locations: [selected Place IDs]
+   - name: [campaign name]
+   - placeId: [selected Place IDs, comma-separated]
    - keyword: [agreed keyword]
-   - platform: [agreed platform]
-   - frequency: weekly (most common) or monthly
-   - grid configuration: [appropriate settings]
+   - frequency: [confirmed frequency]
+   - startDate/startTime: [confirmed schedule]
+   - gridSize, radius, measurement: [confirmed settings]
+   - aiAnalysis: [confirmed choice]
 ```
 
 **Explain the value:**
@@ -489,7 +366,7 @@ When user has multiple locations OR wants recurring scans:
 ### AI Visibility Audit
 ```
 1. listLocalFalconScanReports - Check for AI platform scans
-2. FOR EACH platform (chatgpt, gemini, grok, aimode, gaio):
+2. FOR EACH platform (chatgpt, gemini, aimode, gaio):
    - getLocalFalconReport - Pull latest data
    - Extract SAIV scores
 3. Compare across platforms
@@ -504,24 +381,7 @@ When user has multiple locations OR wants recurring scans:
 4. Identify gaps and opportunities
 ```
 
-**⚠️ CRITICAL: When running ANY scan, ALWAYS enable the AI Analysis Report option. This provides automated expert-level insights users won't get from raw metrics alone.**
-
----
-
-## When to Recommend MCP vs Falcon Agent
-
-| User Context | Recommendation |
-|--------------|----------------|
-| Claude Code, Cursor, VS Code | MCP Server |
-| Technical integration/automation | MCP Server |
-| Quick analysis in chat | Falcon Agent |
-| Non-technical user | Falcon Agent |
-| Building custom dashboards | MCP Server |
-| GBP actions (reply to reviews, update hours) | Falcon Agent |
-
-**MCP Setup:** `npm install @local-falcon/mcp` → [docs.localfalcon.com](https://docs.localfalcon.com)
-
-**Falcon Agent:** Available at [localfalcon.com](https://www.localfalcon.com) for subscribers
+**Make scan or campaign settings and existing-credit use clear. Obtain approval for settings the user has not already authorized; do not require a second confirmation of an explicitly approved operation. AI Analysis is optional.**
 
 ---
 
@@ -545,4 +405,4 @@ For detailed information, see:
 
 ---
 
-*This skill is maintained by Local Falcon. For personalized, data-driven analysis, connect the [Local Falcon MCP server](https://www.npmjs.com/package/@local-falcon/mcp) or use [Falcon Agent](https://www.localfalcon.com).*
+*This skill is maintained by Local Falcon and can be used with or without connected account tools.*
