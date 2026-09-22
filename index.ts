@@ -1,3 +1,5 @@
+import { pathToFileURL } from "node:url";
+import { getMcpProfile, type McpProfile } from "./chatgptPolicy.js";
 import crypto from "crypto";
 import v8 from "v8";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
@@ -57,10 +59,14 @@ interface SessionData {
    * Held per session because the strongest signal rarely arrives on the request
    * that opens one: ChatGPT's connector sends no Origin on `initialize`, and the
    * `GET /sse` that creates an SSE session precedes the `initialize` naming the
-   * client. The middleware in createBaseApp upgrades this when a better-tier
-   * signal appears. See requestSource.ts.
+   * client. Authenticated ownership middleware binds this before tool execution.
+   * See requestSource.ts.
    */
   requestSource?: RequestSource;
+  profile?: McpProfile;
+  /** SSE opens its stream before initialize supplies the final client attribution. */
+  serverReady?: Promise<void>;
+  requiresInitialize?: boolean;
 }
 
 // Minimum session age before revocation (prevents revoking during OAuth setup)
@@ -70,7 +76,7 @@ interface SessionData {
 
 // ── Session memory budget ────────────────────────────────────────────────
 //
-// Each live session retains its own McpServer: getServer() registers all 60
+// Each live session retains its own McpServer: getServer() registers 57 or 60
 // tools with their Zod schemas and descriptions per session, measured at
 // ~1.28 MB retained. The SDK forbids sharing one instance — Protocol.connect()
 // throws "Already connected to a transport… use a separate Protocol instance
@@ -78,7 +84,7 @@ interface SessionData {
 //
 // Session creation is otherwise unbounded: a client re-initializing gets a
 // fresh session ID each time and abandons the previous one, and auto-recovery
-// mints another up to AUTO_RECOVERY_MAX_PER_KEY times per minute. Without a cap
+// restores a transport up to AUTO_RECOVERY_MAX_PER_KEY times per minute. Without a cap
 // that grows until V8's heap ceiling is hit, which is what produced the ~50h
 // OOM cycle. Note the ceiling is V8's, not the container's: with no
 // --max-old-space-size the default is ~2 GB regardless of how much RAM the box
@@ -192,13 +198,19 @@ async function validateApiKey(apiKey: string): Promise<boolean> {
  * Returns the new transport on success, or null if recovery failed
  * (in which case an error response has already been sent).
  */
-async function attemptSessionRecovery(
+async function restoreSessionTransport(
   req: Request,
   res: Response,
   sessionManager: SessionManager
 ): Promise<StreamableHTTPServerTransport | null> {
   if (!req.auth) return null;
 
+  const oldSessionId = req.headers["mcp-session-id"] as string | undefined;
+  const binding = oldSessionId ? sessionManager.getRetired(oldSessionId) : undefined;
+  if (!binding?.profile || binding.requiresInitialize) {
+    res.status(404).json({ jsonrpc: "2.0", error: { code: -32000, message: "Session binding unavailable. Reconnect and send a new initialize request." }, id: req.body?.id ?? null });
+    return null;
+  }
   const apiKey = req.auth.token;
   const apiKeyPrefix = apiKey.substring(0, 10) + '...';
 
@@ -231,8 +243,8 @@ async function attemptSessionRecovery(
     return null;
   }
 
-  // Create a new session — identical to the normal initialize flow
-  const newSessionId = uuidv4();
+  // Restore the authenticated session identity as well as its profile.
+  const newSessionId = oldSessionId!;
   const eventStore = new BoundedEventStore();
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: () => newSessionId,
@@ -254,6 +266,13 @@ async function attemptSessionRecovery(
   // Connect transport to MCP server
   const server = getServer(sessionManager.getSessionMap());
   await server.connect(transport);
+  // Another authenticated request can discover ChatGPT while recovery awaits
+  // API validation/connection. Do not resurrect the superseded normal registry.
+  if (binding.requiresInitialize) {
+    await server.close();
+    res.status(404).json({ error: "Session profile changed. Send a new initialize request." });
+    return null;
+  }
 
   // Directly mark the transport as initialized and assign the session ID.
   // Normally this happens when the transport processes an initialize JSON-RPC
@@ -267,7 +286,7 @@ async function attemptSessionRecovery(
   // Register the session in the manager — same as onsessioninitialized would do
   sessionManager.add(
     newSessionId,
-    { apiKey, eventStore, requestSource: currentRequestSource() },
+    { apiKey, eventStore, requestSource: currentRequestSource(), profile: getMcpProfile(currentRequestSource()!.value) },
     transport
   );
 
@@ -283,6 +302,36 @@ async function attemptSessionRecovery(
   }
 
   return transport;
+}
+
+// Serialize recovery by session ID so simultaneous GET/POST reconnects share
+// one restored registry and transport instead of replacing one another.
+async function attemptSessionRecovery(req: Request, res: Response, manager: SessionManager): Promise<StreamableHTTPServerTransport | null> {
+  const id = req.headers["mcp-session-id"] as string | undefined;
+  if (!id) return restoreSessionTransport(req, res, manager);
+  const pending = manager.recovering.get(id);
+  if (pending) {
+    const binding = manager.getRetired(id);
+    // A tombstone can expire/be evicted while the first recovery is waiting.
+    // Never let an unknown-session request join that authenticated recovery.
+    const ownerHash = crypto.createHash("sha256").update(req.auth?.token ?? "").digest("hex");
+    if (!binding || binding.requiresInitialize || !secretsMatch(binding.ownerHash, ownerHash)) {
+      res.status(404).json({ error: "Session binding unavailable. Send a new initialize request." });
+      return null;
+    }
+    await pending;
+    const restored = manager.getTransport(id);
+    const session = manager.getSession(id);
+    if (restored instanceof StreamableHTTPServerTransport && session &&
+        secretsMatch(session.apiKey, req.auth!.token) &&
+        session.profile === getMcpProfile(currentRequestSource()!.value) && !session.requiresInitialize) return restored;
+    res.status(404).json({ error: "Session recovery unavailable. Send a new initialize request." });
+    return null;
+  }
+  const recovering = restoreSessionTransport(req, res, manager);
+  manager.recovering.set(id, recovering);
+  try { return await recovering; }
+  finally { manager.recovering.delete(id); }
 }
 
 type Transport = SSEServerTransport | StreamableHTTPServerTransport;
@@ -312,9 +361,21 @@ const reportHeapPressure = (sessionCount: number): void => {
 };
 
 // Session Management
-class SessionManager {
+export class SessionManager {
+  readonly recovering = new Map<string, Promise<StreamableHTTPServerTransport | null>>();
   private sessions = new Map<string, SessionData>();
   private transports = new Map<string, Transport>();
+  // Bounded credential-bound tombstones preserve profiles after transport eviction.
+  // One API key can be used by both ChatGPT and other clients concurrently.
+  private retired = new Map<string, { ownerHash: string; requestSource?: RequestSource; profile?: McpProfile; requiresInitialize?: boolean; expiresAt: number }>();
+
+  getRetired(sessionId: string) {
+    const binding = this.retired.get(sessionId);
+    if (binding && binding.expiresAt > Date.now()) return binding;
+    this.retired.delete(sessionId);
+    return undefined;
+  }
+
 
   add(sessionId: string, data: Omit<SessionData, 'createdAt' | 'lastActivity'>, transport?: Transport): void {
     const now = Date.now();
@@ -330,6 +391,7 @@ class SessionManager {
     // in retained McpServer state, so an unbounded map is an unbounded heap.
     this.evictToFit(sessionId);
 
+    this.retired.delete(sessionId);
     this.sessions.set(sessionId, sessionData);
     if (transport) this.transports.set(sessionId, transport);
   }
@@ -339,7 +401,7 @@ class SessionManager {
    *
    * Oldest-`lastActivity` first, so an idle abandoned session goes before a live
    * one. An evicted client is not broken: presenting its session ID afterwards
-   * triggers Bearer-token auto-recovery, which transparently mints a new session.
+   * triggers Bearer-token recovery with its retained credential-bound profile.
    */
   private evictToFit(incomingSessionId: string): void {
     if (this.sessions.size < MAX_SESSIONS) return;
@@ -391,6 +453,16 @@ class SessionManager {
       console.log(`[Session] Session ${sessionId} disconnected (age: ${Math.round((Date.now() - session.createdAt) / 1000)}s) — token preserved for reconnect`);
     }
 
+    this.retired.set(sessionId, {
+      ownerHash: crypto.createHash("sha256").update(session.apiKey).digest("hex"),
+      requestSource: session.requestSource, profile: session.profile,
+      requiresInitialize: session.requiresInitialize,
+      expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+    });
+    for (const [id, binding] of this.retired) {
+      if (binding.expiresAt <= Date.now()) this.retired.delete(id);
+    }
+    while (this.retired.size > MAX_SESSIONS * 5) this.retired.delete(this.retired.keys().next().value!);
     this.sessions.delete(sessionId);
     this.closeAndForgetTransport(sessionId);
     console.log(`[Session] Session ${sessionId} removed from manager`);
@@ -514,6 +586,7 @@ class SessionManager {
     }
     this.sessions.clear();
     this.transports.clear();
+    this.retired.clear();
   }
 }
 
@@ -548,26 +621,9 @@ const createBaseApp = (sessionManager: SessionManager): Application => {
   // clientInfo out of the parsed initialize body, and ahead of every route so
   // no MCP path can run outside the context. See requestSource.ts.
   app.use((req: Request, _res: Response, next: Function): void => {
-    // Both transports are covered: Streamable HTTP names its session in a
-    // header, the SSE message endpoint in a query parameter.
-    const sessionId =
-      (req.headers["mcp-session-id"] as string | undefined) ??
-      (typeof req.query.sessionId === "string" ? req.query.sessionId : undefined);
-    const session = sessionId ? sessionManager.getSession(sessionId) : undefined;
-
-    const resolved = deriveRequestSource(
-      { headers: req.headers, body: req.body },
-      session?.requestSource
-    );
-
-    // Persist an improvement. Strictly greater, so a session keeps the best
-    // signal it has ever seen rather than flapping between request paths — the
-    // ChatGPT widget's calls carry a sandbox origin while the connector's do
-    // not, and both belong to the same session.
-    if (session && (!session.requestSource || resolved.tier > session.requestSource.tier)) {
-      session.requestSource = resolved;
-    }
-
+    // Pre-auth attribution is request-local only. Persist it only after
+    // bearer authentication and credential ownership checks.
+    const resolved = deriveRequestSource({ headers: req.headers, body: req.body });
     runWithRequestSource(resolved, () => next());
   });
 
@@ -867,6 +923,17 @@ const bearerAuthMiddleware: RequestHandler = (async (req: Request, res: Response
   }
 }) as RequestHandler;
 
+// Open the legacy stream before initialize, then let connect() reuse it once
+// clientInfo is available. Only public transport methods are used here.
+class InitializingSSETransport extends SSEServerTransport {
+  private started = false;
+  override async start(): Promise<void> {
+    if (this.started) return;
+    await super.start();
+    this.started = true;
+  }
+}
+
 // SSE Transport Handlers
 const setupSSERoutes = (app: Application, sessionManager: SessionManager): void => {
 
@@ -884,7 +951,7 @@ const setupSSERoutes = (app: Application, sessionManager: SessionManager): void 
     let sessionId: string | undefined;
 
     try {
-      transport = new SSEServerTransport("/sse/messages", res);
+      transport = new InitializingSSETransport("/sse/messages", res);
       sessionId = transport.sessionId;
       // Captured as a const so the closure below sees a non-optional string.
       const activeSessionId = sessionId;
@@ -902,8 +969,7 @@ const setupSSERoutes = (app: Application, sessionManager: SessionManager): void 
         sessionManager.remove(activeSessionId);
       };
 
-      const server = getServer(sessionManager.getSessionMap());
-      await server.connect(transport);
+      await transport.start();
       console.log(`Established SSE stream with session ID: ${sessionId}`);
     } catch (error: unknown) {
       console.error("Error establishing SSE stream:", error);
@@ -935,6 +1001,16 @@ const setupSSERoutes = (app: Application, sessionManager: SessionManager): void 
     }
 
     try {
+      const session = sessionManager.getSession(sessionId)!;
+      if (!session.serverReady) {
+        if (!isInitializeRequest(req.body)) {
+          res.status(400).json({ error: "Send initialize before using this SSE session." });
+          return;
+        }
+        session.profile = getMcpProfile(session.requestSource!.value);
+        session.serverReady = getServer(sessionManager.getSessionMap(), session.requestSource!.value).connect(transport);
+      }
+      await session.serverReady;
       sessionManager.updateActivity(sessionId);
       await transport.handlePostMessage(req, res, req.body);
     } catch (error: unknown) {
@@ -952,7 +1028,7 @@ const setupSSERoutes = (app: Application, sessionManager: SessionManager): void 
   // — which the SSE transport carries in a query string, and which therefore
   // lands in proxy and CDN access logs — was sufficient to drive the session.
   // It now requires a Bearer token that owns the named session.
-  app.get("/sse", mcpRateLimiter, bearerAuthMiddleware, sseHandler);
+  app.get("/sse", mcpRateLimiter, bearerAuthMiddleware, requireSessionOwnership(sessionManager), sseHandler);
   app.post(
     "/sse/messages",
     mcpRateLimiter,
@@ -987,34 +1063,46 @@ const secretsMatch = (a: string, b: string): boolean => {
  * Ordering matters: this must run *after* bearerAuthMiddleware so req.auth is
  * populated.
  *
- * Requests naming no session (initialize) or an unknown session (auto-recovery)
- * pass through — both paths establish ownership themselves.
+ * Recovery also checks the retained credential binding. Unknown sessions must
+ * initialize again instead of reconstructing their profile from an API key.
  */
 const requireSessionOwnership = (sessionManager: SessionManager): RequestHandler => {
   return (req: Request, res: Response, next): void => {
-    const sessionId =
-      (req.headers["mcp-session-id"] as string | undefined) ??
-      (typeof req.query.sessionId === "string" ? req.query.sessionId : undefined);
-
-    if (!sessionId) return next();
-
-    const session = sessionManager.getSession(sessionId);
-    if (!session) return next();
-
-    const token = req.auth?.token;
-    if (!token || !secretsMatch(session.apiKey, token)) {
-      console.warn(
-        `[Session] Rejecting request for session ${sessionId}: bearer token does not own this session`
-      );
-      res.status(403).json({
-        jsonrpc: "2.0",
-        error: { code: -32000, message: "Forbidden: session does not belong to this credential" },
-        id: null,
-      });
+    const headerId = req.headers["mcp-session-id"] as string | undefined;
+    const queryId = typeof req.query.sessionId === "string" ? req.query.sessionId : undefined;
+    if (headerId && queryId && headerId !== queryId) {
+      res.status(400).json({ error: "Conflicting session identifiers." });
       return;
     }
+    const sessionId = headerId ?? queryId;
 
-    return next();
+    const session = sessionId ? sessionManager.getSession(sessionId) : undefined;
+    const retired = sessionId && !session ? sessionManager.getRetired(sessionId) : undefined;
+    const token = req.auth?.token;
+    if (!token || (session && !secretsMatch(session.apiKey, token)) ||
+        (retired && !secretsMatch(retired.ownerHash, crypto.createHash("sha256").update(token).digest("hex")))) {
+      res.status(403).json({ jsonrpc: "2.0", error: { code: -32000, message: "Forbidden: session does not belong to this credential" }, id: null });
+      return;
+    }
+    const binding = session ?? retired;
+    let source = deriveRequestSource({ headers: req.headers, body: req.body }, binding?.requestSource);
+    // ChatGPT is sticky for an authenticated session, including conflicting
+    // equal-tier signals. Registry and API attribution use the same binding.
+    if (binding?.requestSource?.value === "chatgpt") source = binding.requestSource;
+    if (binding?.requiresInitialize || (binding?.profile && binding.profile !== getMcpProfile(source.value))) {
+      if (session && sessionId) {
+        session.requestSource = source;
+        session.requiresInitialize = true;
+        sessionManager.remove(sessionId);
+      } else if (retired) {
+        retired.requestSource = source;
+        retired.requiresInitialize = true;
+      }
+      res.status(404).json({ jsonrpc: "2.0", error: { code: -32000, message: "Session profile changed. Reconnect and send a new initialize request before continuing." }, id: req.body?.id ?? null });
+      return;
+    }
+    if (session) session.requestSource = source;
+    return runWithRequestSource(source, () => next());
   };
 };
 
@@ -1067,7 +1155,7 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
             // Origin header.
             sessionManager.add(
               sessionId,
-              { apiKey, eventStore, requestSource: currentRequestSource() },
+              { apiKey, eventStore, requestSource: currentRequestSource(), profile: getMcpProfile(currentRequestSource()!.value) },
               transport
             );
           }
@@ -1094,8 +1182,8 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
         return;
       } else if (req.auth && !isInitializeRequest(req.body)) {
         // Auto-recovery: request has a valid Bearer token but invalid/missing session ID.
-        // This handles clients that lost their session (e.g. server restart, timeout) but
-        // still have a valid API key. We create a new session transparently.
+        // Retained bindings allow transparent recovery after eviction/timeout.
+        // Unknown bindings (including process restarts) require fresh initialization.
         const recovered = await attemptSessionRecovery(req, res, sessionManager);
         if (!recovered) return; // Error response already sent by attemptSessionRecovery
         transport = recovered;
@@ -1297,7 +1385,7 @@ const setupHTTPRoutes = (app: Application, sessionManager: SessionManager): void
 };
 
 // Unified Server Creation
-const createUnifiedServer = (sessionManager: SessionManager, modes: string[]): Application => {
+export const createUnifiedServer = (sessionManager: SessionManager, modes: string[]): Application => {
   const app = createBaseApp(sessionManager);
   
   if (modes.includes('sse')) {
@@ -1426,4 +1514,4 @@ const main = (): void => {
   }
 };
 
-main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

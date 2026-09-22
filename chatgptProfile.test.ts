@@ -18,13 +18,13 @@ mock.module("node-fetch", () => ({
   },
 }));
 const { getServer } = await import("./server");
-const originalProfile = process.env.LOCAL_FALCON_MCP_PROFILE;
+const { runWithRequestSource } = await import("./requestSource");
 const active: Array<{ client: Client; server: ReturnType<typeof getServer> }> = [];
 
 async function connect(profile: string) {
-  process.env.LOCAL_FALCON_MCP_PROFILE = profile;
   // In-memory transports have no session ID; this is a fixture credential only.
-  const server = getServer(new Map([[undefined as any, { apiKey: "test-only" }]]));
+  const server = runWithRequestSource({ value: profile === "chatgpt" ? "chatgpt" : "claude", tier: 4 },
+    () => getServer(new Map([[undefined as any, { apiKey: "test-only" }]])));
   const client = new Client({ name: "arbitrary-client-name", version: "1" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
@@ -38,8 +38,6 @@ afterEach(async () => {
     await client.close();
     await server.close();
   }
-  if (originalProfile === undefined) delete process.env.LOCAL_FALCON_MCP_PROFILE;
-  else process.env.LOCAL_FALCON_MCP_PROFILE = originalProfile;
   requests.length = 0;
   responseBody = {};
   responseStatus = 200;
@@ -54,7 +52,7 @@ function textOf(result: any): string {
 }
 function payload(result: any): any { return JSON.parse(textOf(result)); }
 
-describe("deployment profile and actual MCP discovery", () => {
+describe("resolved source profile and actual MCP discovery", () => {
   test("normal retains all 60 tools and ChatGPT registers only its 57 tools", async () => {
     const normal = await connect("normal");
     const chatgpt = await connect("chatgpt");
@@ -91,12 +89,11 @@ describe("deployment profile and actual MCP discovery", () => {
     }
   });
 
-  test("profile is fixed when server is created and unknown deployment values fail closed", async () => {
+  test("profile is fixed for its connection, independently of concurrent request contexts", async () => {
     const client = await connect("chatgpt");
-    process.env.LOCAL_FALCON_MCP_PROFILE = "normal";
-    expect((await client.listTools()).tools).toHaveLength(57);
-    process.env.LOCAL_FALCON_MCP_PROFILE = "chatgtp";
-    expect(() => getServer(new Map())).toThrow(/profile/i);
+    await runWithRequestSource({ value: "claude", tier: 4 }, async () => {
+      expect((await client.listTools()).tools).toHaveLength(57);
+    });
   });
 });
 
@@ -219,3 +216,100 @@ describe("ChatGPT result and error boundary", () => {
   });
 });
 
+
+
+describe("authenticated HTTP session profiles", () => {
+  test("source selects actual registries, sticks through recovery, and rejects unsafe transitions/ownership", async () => {
+    const { SessionManager, createUnifiedServer } = await import("./index");
+    const manager = new SessionManager();
+    const listener = createUnifiedServer(manager, ["http"]).listen(0, "127.0.0.1");
+    await new Promise<void>(resolve => listener.once("listening", resolve));
+    const url = `http://127.0.0.1:${(listener.address() as any).port}/mcp`;
+    const send = (body: any, sid?: string, extra: Record<string, string> = {}) => fetch(url, {
+      method: "POST", headers: { authorization: "Bearer session-fixture", "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-protocol-version": "2025-03-26", ...(sid ? { "mcp-session-id": sid } : {}), ...extra }, body: JSON.stringify(body),
+    });
+    const init = (name: string) => send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name, version: "1" } } });
+    const list = { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} };
+    try {
+      responseBody = { success: true, data: {} };
+      const started = await init("ChatGPT");
+      expect(started.status).toBe(200);
+      const sid = started.headers.get("mcp-session-id")!;
+      await started.json();
+      expect((await (await send(list, sid)).json()).result.tools).toHaveLength(57);
+      // Conflicting platform signals cannot change this established session's billing attribution.
+      const call = { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "getLocalFalconKnowledgeBaseArticle", arguments: { articleId: "28" } } };
+      await (await send(call, sid, { origin: "https://claude.ai" })).json();
+      expect(requests.at(-1)).toContain("request_source=chatgpt");
+      manager.remove(sid);
+      const [recovered, concurrentRecovery] = await Promise.all([send(list, sid), send(list, sid)]);
+      expect((await concurrentRecovery.json()).result.tools).toHaveLength(57);
+      expect(recovered.status).toBe(200);
+      expect((await recovered.json()).result.tools).toHaveLength(57);
+      const newSid = recovered.headers.get("mcp-session-id")!;
+      const forbidden = await send({ ...call, params: { name: excluded[0], arguments: {} } }, newSid);
+      expect((await forbidden.json()).result.isError).toBe(true);
+      const normal = await init("Claude");
+      const normalSid = normal.headers.get("mcp-session-id")!;
+      await normal.json();
+      expect((await (await send(list, normalSid)).json()).result.tools).toHaveLength(60);
+      const wrongOwner = await send(list, normalSid, { authorization: "Bearer other-fixture", origin: "https://chatgpt.com" });
+      expect(wrongOwner.status).toBe(403);
+      expect(manager.getSession(normalSid)?.profile).toBe("normal");
+      const changed = await send(list, normalSid, { origin: "https://chatgpt.com" });
+      expect(changed.status).toBe(404);
+      expect(await changed.text()).toContain("initialize");
+      expect((await send(list, normalSid)).status).toBe(404);
+      const retiredNormal = await init("Claude");
+      const retiredId = retiredNormal.headers.get("mcp-session-id")!;
+      await retiredNormal.json();
+      manager.remove(retiredId);
+      expect((await send(list, retiredId, { origin: "https://chatgpt.com" })).status).toBe(404);
+      expect((await send(list, retiredId)).status).toBe(404);
+      expect((await send(list, sid, { authorization: "Bearer other-fixture" })).status).toBe(403);
+      expect((await send(list, "unknown-session")).status).toBe(404);
+    } finally {
+      await manager.cleanup();
+      listener.closeAllConnections();
+      await new Promise<void>(resolve => listener.close(() => resolve()));
+    }
+  });
+});
+
+
+test("legacy SSE waits for authenticated initialize attribution before registering tools", async () => {
+  const { SessionManager, createUnifiedServer } = await import("./index");
+  const manager = new SessionManager();
+  const listener = createUnifiedServer(manager, ["sse"]).listen(0, "127.0.0.1");
+  await new Promise<void>(resolve => listener.once("listening", resolve));
+  const base = `http://127.0.0.1:${(listener.address() as any).port}`;
+  const controller = new AbortController();
+  const decoder = new TextDecoder();
+  responseBody = { success: true, data: {} };
+  try {
+    const stream = await fetch(base + "/sse", { headers: { authorization: "Bearer sse-fixture" }, signal: controller.signal });
+    const reader = stream.body!.getReader();
+    const endpoint = decoder.decode((await reader.read()).value).match(/data: (.+)/)![1].trim();
+    const sid = new URL(endpoint, base).searchParams.get("sessionId")!;
+    expect(manager.getSession(sid)?.profile).toBeUndefined();
+    const conflicting = await fetch(base + endpoint, { method: "POST", headers: { authorization: "Bearer sse-fixture", "content-type": "application/json", "mcp-session-id": "different-session" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) });
+    expect(conflicting.status).toBe(400);
+    const post = (body: any, auth = "sse-fixture") => fetch(base + endpoint, { method: "POST", headers: { authorization: `Bearer ${auth}`, "content-type": "application/json" }, body: JSON.stringify(body) });
+    const init = { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "ChatGPT", version: "1" } } };
+    expect((await post(init, "wrong-owner")).status).toBe(403);
+    expect(manager.getSession(sid)?.profile).toBeUndefined();
+    expect((await post(init)).status).toBe(202);
+    await reader.read(); // initialize reply
+    expect(manager.getSession(sid)?.profile).toBe("chatgpt");
+    expect((await post({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })).status).toBe(202);
+    let text = "";
+    while (!text.includes("\n\n")) text += decoder.decode((await reader.read()).value);
+    const message = JSON.parse(text.match(/data: (.+)/)![1]);
+    expect(message.result.tools).toHaveLength(57);
+  } finally {
+    controller.abort();
+    await manager.cleanup();
+    listener.closeAllConnections();
+    await new Promise<void>(resolve => listener.close(() => resolve()));
+  }
+});

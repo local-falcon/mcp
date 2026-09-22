@@ -1,3 +1,4 @@
+import { getRequestSource } from "./requestSource.js";
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { getMcpProfile, CHATGPT_EXCLUDED_TOOLS, withProfilePolicy, withResourceProfilePolicy, filterKnowledgeBaseSearch, isBlockedArticle, normalizeArticleId, KB_UNAVAILABLE, textError, sanitizeAccountResponse } from "./chatgptPolicy.js";
 import { McpServer, ResourceTemplate, type ToolCallback } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -48,8 +49,8 @@ function readPackageVersion(): string {
 const VERSION = readPackageVersion();
 
 
-export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
-  const profile = getMcpProfile();
+export const getServer = (sessionMapping: Map<string, { apiKey: string }>, requestSource = getRequestSource()) => {
+  const profile = getMcpProfile(requestSource);
   const getApiKey = (ctx: any) => {
     const sessionId = ctx?.sessionId;
     const sessionHeaders = sessionMapping.get(sessionId)
@@ -70,7 +71,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>) => {
         sizes: ["any"],
       },
     ],
-    description: `Local Falcon is an AI-powered local search intelligence platform that monitors business visibility across AI search engines (ChatGPT, Gemini, Google AI Overviews, AI Mode) and traditional map platforms (Google Maps, Apple Maps). This MCP server provides tools to run scans, retrieve reports, manage campaigns, monitor Google Business Profiles, and analyze competitive positioning.
+    description: `Local Falcon is an AI visibility and local search intelligence platform that tracks business visibility across AI search platforms, Google Maps, and Apple Maps. This MCP server provides tools to run scans, retrieve reports, manage campaigns, monitor Google Business Profiles, and analyze competitive positioning.
 
 ## CORE CONCEPTS
 
@@ -310,7 +311,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
     );
   };
 
-  // Profile is trusted deployment configuration, fixed for this server/session.
+  // Profile is selected from authenticated request attribution and fixed for this server/session.
   // Excluded tools are never registered, so raw tools/call cannot bypass discovery.
   function registerTool<S extends z.ZodRawShape>(
     name: string, description: string, schema: S,
@@ -1227,7 +1228,7 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
       lat: z.coerce.number().min(-90).max(90).describe("The latitude of the center of the grid."),
       lng: z.coerce.number().min(-180).max(180).describe("The longitude of the center of the grid."),
       gridSize: z.string().describe("Expects 3, 5, 7, 9, 11, 13, or 15."),
-      radius: z.coerce.number().min(0.1).max(100).describe("The radius of the grid in meters. From 0.1 to 100."),
+      radius: z.coerce.number().min(0.1).max(100).describe("The radius of the grid, expressed in the selected measurement unit (mi or km)."),
       measurement: z.enum(['mi', 'km']).optional().describe("Expects 'mi' or 'km'."),
     },
     { title: "Generate Grid Coordinates", readOnlyHint: true, destructiveHint: false, openWorldHint: false },

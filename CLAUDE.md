@@ -2,10 +2,10 @@
 
 ## Project Overview
 
-This is the **Local Falcon MCP Server** (`@local-falcon/mcp`), a Model Context Protocol server that wraps the [Local Falcon API](https://docs.localfalcon.com). It enables AI agents to run geo-grid rank tracking scans, retrieve reports, manage campaigns, monitor Google Business Profiles, and analyze competitive positioning across Google Maps, Apple Maps, and AI search platforms.
+This is the **Local Falcon MCP Server** (`@local-falcon/mcp`), a Model Context Protocol server that wraps the [Local Falcon API](https://docs.localfalcon.com). It enables AI agents to run geo-grid rank tracking scans, retrieve reports, manage campaigns, monitor Google Business Profiles, and analyze competitive positioning across AI search platforms, Google Maps, and Apple Maps.
 
 **Package:** [`@local-falcon/mcp`](https://www.npmjs.com/package/@local-falcon/mcp) (npm)
-**Version:** 1.4.14
+**Version:** 1.4.15
 **License:** MIT
 **Runtime:** Node.js 18+
 **Language:** TypeScript (strict mode)
@@ -14,7 +14,7 @@ This is the **Local Falcon MCP Server** (`@local-falcon/mcp`), a Model Context P
 
 ```
 index.ts          → Entry point. Transport selection (STDIO, SSE, HTTP), session management, OAuth 2.1
-server.ts         → MCP tool registrations. Exports getServer() with deployment-selected tool registration
+server.ts         → MCP tool registrations. Exports getServer() with session-selected tool registration
 localfalcon.ts    → API client layer. All fetch functions, rate limiting, retry logic, timeout handling
 oauth/            → OAuth 2.1 authorization server (routes, provider, config, state/client stores)
 ```
@@ -268,13 +268,13 @@ Every registered tool declares readOnlyHint, openWorldHint, and destructiveHint 
 
 ## Trusted ChatGPT Profile
 
-See README.md deployment profiles for the canonical profile counts and deployment checklist. LOCAL_FALCON_MCP_PROFILE=chatgpt selects the dedicated ChatGPT tool set at the server deployment boundary; normal is the default. Never derive this setting from a request, client name, User-Agent, or model argument.
+See README.md deployment profiles for the canonical profile counts and deployment checklist. The same MCP endpoint selects the ChatGPT tool set for authenticated sessions identified as chatgpt by the existing requestSource.ts attribution; other clients receive the normal profile. Bind the profile after authentication/session ownership checks and preserve it through supported session recovery. Reuse the existing attribution rather than adding another detector, route, or profile environment variable.
 
 Only the three separately Stripe-metered On-Demand tools are excluded. Grid generation and the 2-existing-credit business search remain. ChatGPT KB search and direct retrieval share the hardcoded denylist 15, 16, 23, 37, 57, 81; articles 28, 50, and 58 remain accessible. Normal KB access is unchanged. ChatGPT failures are normalized, including HTTP-200 success:false responses, and account output cannot fall back to the whole raw account response.
 
 Existing-credit use and neutral entitlement information are allowed; purchase, checkout, Auto Recharge, upgrade promotion, and separate monetary charges are not. A neutral informational link to https://www.localfalcon.com/pricing is permitted. Do not add quote infrastructure, KB hashes/allowlists/CMS schema, billing changes, or unrelated refactors.
 
-**Release dependency:** Pia owns backend Auto Recharge isolation, including immediate and scheduled execution paths. This MCP profile and its sanitized responses do not prove that isolation. Release remains gated on that work. LF.app's neutral OAuth entitlement messages require separate review/deployment by Shaun/Pia. No production deployment is authorized by this implementation task.
+**Submission dependency:** Pia owns backend Auto Recharge isolation. The remaining scheduled-campaign protection in LF.api/LF.internal must be deployed and verified before final OpenAI submission. This MCP profile and its sanitized responses do not prove that isolation. LF.app's neutral OAuth entitlement messages require separate review/deployment by Shaun/Pia. No production deployment is authorized by this implementation task.
 
 ## Valid Enum Values
 
@@ -485,7 +485,7 @@ npm run docker:run
 | File | Purpose |
 |---|---|
 | `index.ts` | Entry point — transport selection, session management, Express app, OAuth routes |
-| `server.ts` | MCP server factory — `getServer()` with deployment-selected tool registrations |
+| `server.ts` | MCP server factory — `getServer()` with session-selected tool registrations |
 | `localfalcon.ts` | API client — fetch functions, rate limiter, retry logic, types |
 | `eventStore.ts` | Bounded resumability buffer — replaces the SDK's unbounded example store |
 | `requestSource.ts` | Resolves which client is calling; carries it in AsyncLocalStorage for `request_source` |

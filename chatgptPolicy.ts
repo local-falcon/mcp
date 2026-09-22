@@ -6,13 +6,9 @@ export type McpProfile = "normal" | "chatgpt";
 // clients unwrap envelopes, without changing normal clients or concurrent calls.
 const activeProfile = new AsyncLocalStorage<McpProfile>();
 
-/** Deployment configuration only. Never derive this from a request or client name. */
-export function getMcpProfile(): McpProfile {
-  const value = process.env.LOCAL_FALCON_MCP_PROFILE ?? "normal";
-  if (value !== "normal" && value !== "chatgpt") {
-    throw new Error("LOCAL_FALCON_MCP_PROFILE must be normal or chatgpt");
-  }
-  return value;
+/** Consume the existing resolved attribution; never detect clients here. */
+export function getMcpProfile(requestSource: string): McpProfile {
+  return requestSource === "chatgpt" ? "chatgpt" : "normal";
 }
 
 export const CHATGPT_EXCLUDED_TOOLS = new Set([

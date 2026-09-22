@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>An MCP (Model Context Protocol) server for the Local Falcon local SEO and AI Visibility platform</strong>
+  <strong>An MCP (Model Context Protocol) server for the Local Falcon AI visibility and local search intelligence platform</strong>
 </p>
 
 <p align="center">
@@ -19,9 +19,9 @@
 
 ---
 
-## Local SEO and AI Visibility Monitoring MCP Server
+## AI Visibility and Local Search Intelligence MCP Server
 
-An MCP (Model Context Protocol) server for the [Local Falcon platform](https://www.localfalcon.com/), implemented in TypeScript, using the official MCP SDK. This server exposes Local Falcon scanning, tracking, reporting, and connected Google Business Profile management to MCP clients.
+[Local Falcon](https://www.localfalcon.com/) is an AI visibility and local search intelligence platform that tracks business visibility across AI search platforms, Google Maps, and Apple Maps. This MCP server is implemented in TypeScript using the official MCP SDK and exposes Local Falcon scanning, tracking, reporting, and connected Google Business Profile management to MCP clients.
 
 ---
 
@@ -31,7 +31,7 @@ An MCP (Model Context Protocol) server for the [Local Falcon platform](https://w
 - **Interactive MCP Apps widget** — geo-grid heatmap with Google Maps, colored rank pins, and clickable detail panels
 - **OAuth 2.1** with PKCE, refresh token support, and dynamic client registration
 - **Explicit tool annotations** — `readOnlyHint`, `destructiveHint`, and `openWorldHint` describe each tool's effects and scope
-- **Multi-platform** — Google Maps, Apple Maps, ChatGPT, Gemini, Grok, Google AI Overviews, AI Mode
+- **Multi-platform** — Google Maps, Apple Maps, ChatGPT, Gemini, Google AI Overviews, AI Mode
 - **ChatGPT MCP connector compatible** — OAuth scope alignment, widget sandbox domain, structured content parsing
 - **HTML sanitizer** for AI scrape content displayed in the heatmap widget
 
@@ -169,7 +169,9 @@ The widget is built as a single-file HTML application using Vite and served as a
 
 ## Deployment profiles
 
-The normal profile exposes **60 tools**. A dedicated ChatGPT deployment exposes **57 tools**, selected by the trusted server environment setting `LOCAL_FALCON_MCP_PROFILE=chatgpt`. Leaving the setting unset or setting it to `normal` retains the normal profile. Profile selection does not use tool arguments, request parameters, client names, or User-Agent headers.
+The same `https://mcp.localfalcon.com/mcp` endpoint automatically exposes **57 tools** to authenticated sessions identified as ChatGPT and **60 tools** to other MCP clients. Profile selection reuses the existing request-source attribution in `requestSource.ts`; there is no separate endpoint, deployment profile variable, or additional client detector. The profile is bound to the authenticated session, and recognized ChatGPT API calls retain `request_source=chatgpt` downstream.
+
+Session profiles are bound after authentication and ownership checks. Established ChatGPT sessions retain their attribution when later signals are missing or weaker. A later normal-to-ChatGPT change requires a fresh initialization before more tools can run. Recovery retains the profile while its credential-bound record remains in memory (up to 24 hours, bounded by capacity); after a process restart or record expiry/eviction, clients must initialize again. Legacy SSE waits for initialization before registering its tools.
 
 The ChatGPT profile does not register `getLocalFalconGoogleBusinessLocations`, `getLocalFalconRankingAtCoordinate`, or `getLocalFalconKeywordAtCoordinate`, because these On-Demand tools record separately billable usage. The normal profile and On-Demand API retain those capabilities. `getLocalFalconGrid` remains available in both profiles, as does `searchForLocalFalconBusinessLocation`, which costs exactly **2 existing credits per successful search**.
 
@@ -177,11 +179,10 @@ The ChatGPT profile is an existing-account integration. It may use existing acco
 
 ### ChatGPT deployment checklist
 
-1. Provision a **separate deployment** with `LOCAL_FALCON_MCP_PROFILE=chatgpt`. Keep the existing general MCP deployment in normal mode.
-2. Configure the dedicated deployment's public URL and OAuth settings for that deployment. The OpenAI submission must point to its `/mcp` endpoint, not the normal endpoint shown in the general-client examples above.
-3. Verify authenticated `tools/list` on that exact endpoint against the expected profile before submission. Confirm that OAuth redirects and tool calls remain on the intended deployment.
-4. **Release gate:** Pia must complete and verify backend Auto Recharge isolation for immediate and scheduled credit-using operations before the ChatGPT deployment is released. MCP response filtering and profile selection do not themselves prevent backend charges.
-5. Shaun/Pia must review and deploy the separate LF.app OAuth entitlement wording changes. They are not deployed with the MCP service.
+1. Deploy the reviewed MCP code to the existing service and use the same `/mcp` URL for ChatGPT and other clients.
+2. Verify authenticated `tools/list` with ChatGPT-attributed and other-client sessions against the expected profiles. Confirm that the three excluded tools cannot be called directly from ChatGPT sessions.
+3. **Submission gate:** Pia must deploy and verify the remaining scheduled-campaign no-Auto-Recharge protection in LF.api/LF.internal before final OpenAI submission. MCP response filtering and profile selection do not themselves prove backend charge isolation.
+4. Shaun/Pia must review and deploy the separate LF.app OAuth entitlement wording changes. They are not deployed with the MCP service.
 
 These are deployment instructions, not a record of production changes. The implementation work does not change production infrastructure or deploy either application.
 
