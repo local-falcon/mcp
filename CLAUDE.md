@@ -36,6 +36,53 @@ oauth/            → OAuth 2.1 authorization server (routes, provider, config, 
 | Retry | Exponential backoff, 3 retries, 1s initial delay. Retries on network errors, timeouts, 5xx responses |
 | Timeout | 30s default (`DEFAULT_TIMEOUT_MS`), 60s for long operations (`LONG_OPERATION_TIMEOUT_MS`) |
 | JSON Parsing | `safeParseJson()` helper with error logging |
+| Attribution | `request_source` stamped on every API call — see below |
+
+### Request Source Attribution
+
+Every outgoing Local Falcon API call carries a `request_source` parameter naming the client
+that caused it, so usage can be attributed per integration instead of arriving as one
+undifferentiated stream from this server.
+
+**Applied at one choke point.** `applyRequestSource()` runs inside `fetchWithTimeout()`, which
+all 43 call sites funnel through, so a new endpoint cannot forget it. The value goes on the
+query string for every call and additionally into the body of the form-posting v2/`gbp`
+endpoints, so it is readable from either. `set()` rather than `append()` keeps it idempotent —
+`withRetry` re-invokes its callback with the same `FormData` instance. Scoped to hostname
+`api.localfalcon.com`, so `fetchImageAsBase64` image URLs and the `app.localfalcon.com` OAuth
+endpoints are untouched.
+
+**Carried in `AsyncLocalStorage`** (`requestSource.ts`), entered by one middleware in
+`createBaseApp`. The alternative was threading a parameter through ~100 client functions and
+all 60 tool handlers, each of which would additionally need the tool `extra`/`ctx` plumbed in.
+The context survives `await`, the rate limiter's queueing and the retry backoff timers.
+
+**Resolution is tiered, best signal wins.** Recognised clients collapse to a canonical label
+whichever signal reveals them; unrecognised callers report their literal Origin/Referer host
+(port dropped). Values are charset-restricted and length-capped — headers are attacker input.
+
+| Tier | Signal | Example value |
+|---|---|---|
+| 4 platform | Known host, `clientInfo.name` or User-Agent token | `chatgpt`, `claude` |
+| 3 domain | Origin, else Referer hostname | `app.partner.example` |
+| 2 clientName | MCP `clientInfo.name` from the initialize body | `some-agent` |
+| 1 userAgent | User-Agent product token | `curl` |
+| 0 fallback | `LOCAL_FALCON_REQUEST_SOURCE`, or `stdio` in STDIO mode | `stdio` |
+
+**Why tiers, and why ChatGPT needs them.** ChatGPT reaches this server two ways with different
+signals: the connector calls server-side with **no Origin header at all**, identifying itself
+only by `User-Agent: openai-mcp/1.0.0`, while the MCP App widget calls from an unpredictable
+`*.web-sandbox.oaiusercontent.com` sandbox — which, being a sandboxed iframe, may send the
+literal `Origin: null`. A host-only implementation would therefore miss ChatGPT's plugin on the
+path that matters and spread its widget traffic across a subdomain per session. Both paths
+resolve to `chatgpt`.
+
+Tiers also matter because the best signal rarely arrives on the request that opens a session:
+the connector's `initialize` carries `clientInfo` but no Origin, and the `GET /sse` that creates
+an SSE session precedes the `initialize` naming the client. `SessionData.requestSource` therefore
+remembers the best tier seen and is upgraded, never downgraded, so later calls with no
+identifying headers still report the right client. The resolved value is logged on session
+creation.
 
 ### Transport Modes
 
@@ -451,6 +498,7 @@ npm run docker:run
 | `server.ts` | MCP server factory — `getServer()` with all 60 tool registrations |
 | `localfalcon.ts` | API client — fetch functions, rate limiter, retry logic, types |
 | `eventStore.ts` | Bounded resumability buffer — replaces the SDK's unbounded example store |
+| `requestSource.ts` | Resolves which client is calling; carries it in AsyncLocalStorage for `request_source` |
 | `oauth/` | OAuth 2.1 implementation (authorization, tokens, PKCE, client registration) |
 | `package.json` | Package config, scripts, dependencies |
 | `manifest.json` | MCPB Desktop Extension manifest (v0.3 spec) — tools, icons, user_config |
