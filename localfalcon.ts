@@ -1,6 +1,9 @@
 import fetch from "node-fetch";
 import { rejectChatGptApiFailure } from "./chatgptPolicy.js";
 import { AbortController } from "abort-controller";
+// Attribution for outgoing API calls — resolved per inbound MCP request and
+// carried in async-local storage, so it needs no parameter threading here.
+import { REQUEST_SOURCE_PARAM, getRequestSource } from "./requestSource.js";
 
 export interface LocalFalconLocation {
   place_id: string;
@@ -232,6 +235,48 @@ function prefixFieldmaskForList(fieldmask: string, wrapperKey: string): string {
   return [...prefixedUserFields, ...PAGINATION_FIELDS].join(',');
 }
 
+// Hostname of the Local Falcon API, used to scope request_source stamping.
+// Both API_BASE and API_BASE_V2 live here; app.localfalcon.com (the OAuth
+// authorization host) and image URLs deliberately do not.
+const API_HOSTNAME = "api.localfalcon.com";
+
+/**
+ * Stamp the calling client onto an outgoing Local Falcon API request.
+ *
+ * Applied here rather than in each of the ~100 exported functions because every
+ * request in this module funnels through fetchWithTimeout, so this is the one
+ * place that cannot be forgotten when an endpoint is added.
+ *
+ * The value goes on the query string for every API call and additionally into
+ * the body of the form-posting v2/gbp endpoints, so the field is readable
+ * whether the server reads it from the query or the post body.
+ *
+ * Non-API hosts are left untouched: fetchImageAsBase64 passes arbitrary image
+ * URLs through this helper, and those must not carry our parameters.
+ *
+ * Exported for tests; fetchWithTimeout is the only production caller.
+ */
+export function applyRequestSource(url: string, options: { body?: unknown }): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return url;
+  }
+  if (parsed.hostname.toLowerCase() !== API_HOSTNAME) return url;
+
+  const source = getRequestSource();
+  if (!source) return url;
+
+  // set(), not append(): withRetry re-invokes its callback with the same
+  // FormData instance, so append would stack one duplicate field per retry.
+  if (options.body instanceof FormData) {
+    options.body.set(REQUEST_SOURCE_PARAM, source);
+  }
+  parsed.searchParams.set(REQUEST_SOURCE_PARAM, source);
+  return parsed.toString();
+}
+
 /**
  * Enhanced fetch with timeout and cancellation support
  * @param {string} url - The URL to fetch
@@ -243,13 +288,16 @@ async function fetchWithTimeout(url: string, options = {}, timeoutMs = DEFAULT_T
   const controller = new AbortController();
   const { signal } = controller;
 
+  // Attribute the call to the client that caused it — see requestSource.ts.
+  const target = applyRequestSource(url, options);
+
   // Create a timeout that will abort the request
   const timeout = setTimeout(() => {
     controller.abort();
   }, timeoutMs);
 
   try {
-    const response = await fetch(url, { ...options, signal });
+    const response = await fetch(target, { ...options, signal });
     clearTimeout(timeout);
     return response;
   } catch (error) {
