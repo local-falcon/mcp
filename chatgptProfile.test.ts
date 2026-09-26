@@ -313,3 +313,32 @@ test("legacy SSE waits for authenticated initialize attribution before registeri
     await new Promise<void>(resolve => listener.close(() => resolve()));
   }
 });
+
+describe("pending Scan Report resource", () => {
+  test("HTTP 202 preserves warnings and report identity for tool and resource", async () => {
+    const client = await connect("chatgpt");
+    responseStatus = 202;
+    responseBody = { success: true, data: [], field_mask_warnings: { exceptions: ["data_points"] } };
+    const reportKey = "494b540411352e4";
+    const report = payload(await client.callTool({ name: "getLocalFalconReport", arguments: { reportKey } }));
+    expect(report._mcp_status).toBe("processing");
+    expect(report.report_key).toBe(reportKey);
+    expect(report._mcp_note).toContain("same report_key");
+    expect(report._warnings).toEqual(["Unknown field in fieldmask: data_points"]);
+    const resource = await client.readResource({ uri: `localfalcon://reports/${reportKey}/data_points` });
+    const data = JSON.parse((resource.contents[0] as any).text);
+    expect(data).toMatchObject({ report_key: reportKey, _mcp_status: "processing" });
+    expect(data._mcp_note).toContain("processing");
+    expect(data).not.toHaveProperty("items");
+    expect(data).not.toHaveProperty("data_points");
+    expect(requests.every(url => url.includes(`/reports/${reportKey}`))).toBe(true);
+  });
+  test("completed resource retains its grid payload", async () => {
+    const client = await connect("normal");
+    const completed = { report_key: "494b540411352e4", platform: "gemini", keyword: "coffee", grid_size: 3, data_points: [{ lat: 41, lng: -81, rank: 2 }], places: {}, sources: [] };
+    responseBody = { success: true, data: completed };
+    const resource = await client.readResource({ uri: "localfalcon://reports/494b540411352e4/data_points" });
+    expect(JSON.parse((resource.contents[0] as any).text)).toEqual(completed);
+    expect(new URL(requests.at(-1)!).searchParams.get("fieldmask")).toContain("platform");
+  });
+});

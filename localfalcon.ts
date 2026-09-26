@@ -929,7 +929,9 @@ export async function fetchLocalFalconReport(apiKey: string, reportKey: string, 
     if (res.status === 202) {
       return {
         ...unwrapped,
-        _mcp_note: "This scan report is still processing. Wait 30-60 seconds and call getLocalFalconReport again with the same report_key."
+        report_key: cleanReportKey,
+        _mcp_status: "processing",
+        _mcp_note: "This scan report is still processing. Check getLocalFalconReport again later with the same report_key. Do NOT run another scan or resubmit this scan; that would consume credits again."
       };
     }
 
