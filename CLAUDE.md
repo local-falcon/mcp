@@ -5,7 +5,7 @@
 This is the **Local Falcon MCP Server** (`@local-falcon/mcp`), a Model Context Protocol server that wraps the [Local Falcon API](https://docs.localfalcon.com). It enables AI agents to run geo-grid rank tracking scans, retrieve reports, manage campaigns, monitor Google Business Profiles, and analyze competitive positioning across AI search platforms, Google Maps, and Apple Maps.
 
 **Package:** [`@local-falcon/mcp`](https://www.npmjs.com/package/@local-falcon/mcp) (npm)
-**Version:** 1.4.15
+**Version:** 1.4.16
 **License:** MIT
 **Runtime:** Node.js 18+
 **Language:** TypeScript (strict mode)
@@ -517,7 +517,7 @@ An interactive Google Maps widget that visualizes geo-grid scan data with colore
 | Source | `ui/geogrid-heatmap/` (index.html, main.ts, styles.css) |
 | Build | `npm run build:ui` → `dist/ui/geogrid-heatmap/index.html` (~230 KB single-file) |
 | Google Maps API Key | Set `GOOGLE_MAPS_API_KEY` env var at build time (GCP project `lf-mcp-apps`) |
-| Resource URI | `ui://reports/geogrid-heatmap` |
+| Resource URI | `ui://reports/geogrid-heatmap/v1.4.16` |
 | Linked Tool | `getLocalFalconReport` (via `registerAppTool` with `_meta.ui.resourceUri`) |
 | Data Resource | `localfalcon://reports/{report_key}/data_points` (fetches full grid data for the widget) |
 

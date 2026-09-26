@@ -1,5 +1,6 @@
 import { App } from "@modelcontextprotocol/ext-apps";
 import { marked } from "marked";
+import { loadReportGrid, unavailableMessage } from "./report-loader";
 
 // Google Maps API key — injected at build time by Vite, never in source
 declare const __GOOGLE_MAPS_API_KEY__: string;
@@ -918,8 +919,9 @@ function renderFallbackGrid(report: ScanReport, data: GridData) {
 
 // ── Map Rendering ────────────────────────────────────────────────────────────
 
-async function renderMap(report: ScanReport, data: GridData) {
+async function renderMap(report: ScanReport, data: GridData, signal?: AbortSignal) {
   await loadGoogleMaps();
+  if (signal?.aborted) return;
 
   const points = data.data_points || [];
 
@@ -1151,7 +1153,15 @@ async function renderMap(report: ScanReport, data: GridData) {
 
 // ── App Lifecycle ────────────────────────────────────────────────────────────
 
+let activeLoad: AbortController | undefined;
+
 app.ontoolresult = async (result: any) => {
+  activeLoad?.abort();
+  const controller = new AbortController();
+  activeLoad = controller;
+  const { signal } = controller;
+  loadingEl.classList.remove("hidden");
+  let reportKey = "this report";
   try {
     let reportData: any;
 
@@ -1214,42 +1224,24 @@ app.ontoolresult = async (result: any) => {
 
     scanReport = reportData as ScanReport;
     if (!scanReport?.report_key) {
-      const keys = reportData ? Object.keys(reportData).slice(0, 15).join(", ") : "null";
-      loadingEl.textContent = `No report_key found. Keys: [${keys}]`;
+      console.error("[geogrid] Report result is missing its report key");
+      loadingEl.textContent = "The report could not be loaded. Ask ChatGPT to retrieve the report again.";
       return;
     }
-
-    loadingEl.textContent = `Loading grid data for ${scanReport.report_key}...`;
+    reportKey = scanReport.report_key;
+    // A processing tool result avoids an immediate redundant read. The loader only
+    // reads this report resource, with bounded polling/retries and cancellation.
+    const loaded = await loadReportGrid(reportKey, reportData, {
+      read: (uri) => app.readServerResource({ uri }),
+      signal,
+      onState: ({ message }) => { loadingEl.textContent = message; },
+      onError: (error) => console.error("[geogrid] Resource read:", error),
+    });
+    if (signal.aborted || !loaded) return;
+    gridData = loaded as GridData;
+    // Resource metadata fills in a report that was still processing at tool time.
+    scanReport = { ...reportData, ...loaded, report_key: reportKey } as ScanReport;
     renderMetrics(scanReport);
-
-    const resourceUri = `localfalcon://reports/${scanReport.report_key}/data_points`;
-    const resourceResult = await app.readServerResource({ uri: resourceUri });
-
-    let rawData: any;
-    if (resourceResult?.contents) {
-      for (const content of resourceResult.contents) {
-        if (content.text) {
-          rawData = typeof content.text === "string" ? JSON.parse(content.text) : content.text;
-          break;
-        }
-      }
-    } else if (typeof resourceResult === "string") {
-      rawData = JSON.parse(resourceResult);
-    } else {
-      rawData = resourceResult;
-    }
-
-    gridData = rawData as GridData;
-
-    const topKeys = gridData ? Object.keys(gridData).join(", ") : "null";
-    const dpCount = gridData?.data_points?.length ?? "missing";
-    const placesCount = gridData?.places ? Object.keys(gridData.places).length : "missing";
-    console.log(`[geogrid] Resource data — keys: [${topKeys}], data_points: ${dpCount}, places: ${placesCount}`);
-
-    if (!gridData?.data_points || gridData.data_points.length === 0) {
-      loadingEl.textContent = `No data_points (keys: [${topKeys}]). Check console.`;
-      return;
-    }
 
     loadingEl.textContent = `Rendering ${gridData.data_points.length} points...`;
 
@@ -1258,9 +1250,10 @@ app.ontoolresult = async (result: any) => {
       console.log("[geogrid] Brand scan detected (all coords 0,0) — using CSS grid fallback");
       renderFallbackGrid(scanReport, gridData);
     } else {
-      await renderMap(scanReport, gridData);
+      await renderMap(scanReport, gridData, signal);
     }
 
+    if (signal.aborted) return;
     loadingEl.classList.add("hidden");
 
     // Tell host our preferred size — square map + metrics bar
@@ -1270,8 +1263,9 @@ app.ontoolresult = async (result: any) => {
       await app.sendSizeChanged({ width: w, height: w + metricsH });
     } catch { /* host may not support size negotiation */ }
   } catch (err: any) {
+    if (signal.aborted) return;
     loadingEl.classList.remove("hidden");
-    loadingEl.textContent = `Error: ${err.message || err}`;
+    loadingEl.textContent = unavailableMessage(reportKey);
     console.error("Geo-grid app error:", err);
   }
 };

@@ -330,11 +330,11 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
   }
 
   // Register the geo-grid heatmap as an MCP App resource
-  registerAppResource(server, "Geo-Grid Heatmap", "ui://reports/geogrid-heatmap", {}, async () => {
+  registerAppResource(server, "Geo-Grid Heatmap", "ui://reports/geogrid-heatmap/v1.4.16", {}, async () => {
     const html = fs.readFileSync(resolveGeogridHtml(), "utf-8");
     return {
       contents: [{
-        uri: "ui://reports/geogrid-heatmap",
+        uri: "ui://reports/geogrid-heatmap/v1.4.16",
         mimeType: "text/html;profile=mcp-app",
         text: html,
         _meta: {
@@ -401,13 +401,20 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
           }],
         };
       }
-      const fullReport = await fetchLocalFalconReport(apiKey, reportKey as string, "data_points,places,sources,version,place_id,ai_place_id");
+      const fullReport = await fetchLocalFalconReport(apiKey, reportKey as string, "data_points,places,sources,version,place_id,ai_place_id,report_key,keyword,platform,location,lat,lng,date,grid_size,radius,measurement,arp,atrp,solv,saiv,found_in,total_competitors,competition_solv,max_solv,opportunity_solv");
+      // Pending reports are a normal resource state, not incomplete grid data.
+      const resourceData = fullReport?._mcp_status === "processing" ? {
+        report_key: reportKey,
+        _mcp_status: "processing",
+        _mcp_note: fullReport._mcp_note,
+        ...(fullReport._warnings ? { _warnings: fullReport._warnings } : {}),
+      } : fullReport;
       return {
         _meta: {},
         contents: [{
           uri: uri.href,
           mimeType: "application/json",
-          text: JSON.stringify(fullReport),
+          text: JSON.stringify(resourceData),
         }],
       };
     })
@@ -478,9 +485,9 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       _meta: {
         ui: {
-          resourceUri: "ui://reports/geogrid-heatmap",
+          resourceUri: "ui://reports/geogrid-heatmap/v1.4.16",
         },
-        "openai/outputTemplate": "ui://reports/geogrid-heatmap",
+        "openai/outputTemplate": "ui://reports/geogrid-heatmap/v1.4.16",
         "openai/widgetDescription": "Interactive geo-grid showing local search rankings across a geographic area with color-coded position indicators",
       },
     },
@@ -2001,4 +2008,3 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
 
   return server;
 };
-
