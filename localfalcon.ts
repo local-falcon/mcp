@@ -3041,7 +3041,9 @@ export async function deleteGbpPost(
   placeId: string,
   postId: string
 ): Promise<any> {
-  // The API requires this literal confirmation token on destructive calls.
+  // The API requires this literal token on destructive calls. It is a wire-format
+  // detail, not the safeguard: human approval is enforced upstream by
+  // gbpConfirmation.ts before any token-bearing call in this block is reached.
   return gbpRequest(apiKey, "delete-post", {
     place_id: placeId,
     post_id: postId,
@@ -3194,6 +3196,7 @@ export async function replaceGbpServices(
   services: GbpServiceInput[]
 ): Promise<any> {
   // Wholesale replacement: anything absent from `services` is removed.
+  // Approval-gated upstream by gbpConfirmation.ts.
   return gbpRequest(apiKey, "replace-services", {
     place_id: placeId,
     services,
@@ -3245,7 +3248,8 @@ export async function updateGbpStatus(
   status: string,
   openingDate?: string
 ): Promise<any> {
-  // CLOSED_PERMANENTLY requires echoing the status back as confirmation.
+  // CLOSED_PERMANENTLY requires echoing the status back as confirmation. That
+  // status is approval-gated upstream by gbpConfirmation.ts; the others are not.
   return gbpRequest(apiKey, "update-status", {
     place_id: placeId,
     status,
@@ -3259,6 +3263,8 @@ export async function updateGbpAttributes(
   placeId: string,
   attributes: GbpAttributeInput[]
 ): Promise<any> {
+  // Approval-gated upstream by gbpConfirmation.ts: attributes set here cannot
+  // currently be removed through the API (issue #40).
   return gbpRequest(apiKey, "update-attributes", {
     place_id: placeId,
     attributes,

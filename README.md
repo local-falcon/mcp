@@ -290,6 +290,10 @@ Act on the **live** Google Business Profile behind a location, not on Local Falc
 * **manageLocalFalconGbpServices**: Adds, removes or wholesale-replaces services. `replace` overwrites the entire list.
 * **updateLocalFalconGbpProfile**: Updates core details, hours, open status or attributes. `CLOSED_PERMANENTLY` is effectively irreversible.
 
+#### Destructive GBP actions require the user's approval
+
+Deleting a post, media item, review reply or action link, wholesale-replacing services, setting attributes, and marking a profile `CLOSED_PERMANENTLY` are gated by the server before anything is sent to Google. In clients that support MCP elicitation, the server shows the user an approval dialog and proceeds only on an explicit accept. In other clients the tool first returns a `confirmation_required` preview describing the exact operation, with a single-use `confirmationToken` that expires after 10 minutes; the AI must show that preview to the user and call the tool again with identical arguments plus the token only after the user approves. A token issued for different arguments, already used, or expired is refused. The API's own literal confirmation tokens are still supplied by the server once approval is obtained.
+
 ## Skills
 
 This repo includes two AI skills under `skills/`:

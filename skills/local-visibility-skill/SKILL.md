@@ -18,7 +18,7 @@ When using connected tools, this skill targets the ChatGPT profile, an existing-
 - Scans, AI analysis, and scheduled campaigns may consume existing credits. Make requested settings and credit use clear; obtain confirmation only if the user has not already explicitly approved the action and settings; account balance alone is not an exact quote. AI analysis is optional and may add credits.
 - On insufficient credits, state that the action was not run. Use authoritative cost and balance only when returned; otherwise say: "Your existing Local Falcon credit balance is insufficient for this action, so it was not run."
 - KB15, KB16, KB23, KB37, KB57, and KB81 are unavailable through this integration, including direct article requests. Respect the neutral refusal without fetching the article elsewhere. KB28, KB50, and KB58 remain available.
-- Reuse existing reports and preserve the user's control over public GBP edits, deletions, replies, posts, and scheduled activity.
+- Reuse existing reports and preserve the user's control over public GBP edits, deletions, replies, posts, and scheduled activity. When a GBP tool returns `confirmation_required`, show its summary and warning to the user and call the tool again with identical arguments plus the `confirmationToken` only after they explicitly approve; never supply a token the user has not approved.
 
 ## Core Mission
 

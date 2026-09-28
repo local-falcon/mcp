@@ -88,6 +88,8 @@ The ChatGPT profile exposes 57 tools. The normal MCP profile additionally suppor
 | `manageLocalFalconGbpServices` | Manage GBP Services |
 | `updateLocalFalconGbpProfile` | Update GBP Profile |
 
+Destructive GBP actions (deleting a post, media item, review reply or action link; replacing the whole service list; setting attributes; marking a profile CLOSED_PERMANENTLY) are approval-gated by the server. If the client shows an approval dialog, the user answers it directly. Otherwise the tool returns `confirmation_required` with a summary, a warning and a single-use `confirmationToken`: show the summary and warning to the user, and only after they explicitly approve call the same tool again with identical arguments plus the token. Never supply a token the user has not approved.
+
 ---
 
 ## Optional AI Analysis Report

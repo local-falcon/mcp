@@ -102,12 +102,12 @@
     { "name": "getLocalFalconGbpAvailableActionTypes", "description": "Lists action link types the profile supports." },
     { "name": "searchLocalFalconGbpCategories", "description": "Searches Google's category taxonomy for gcid: identifiers." },
     { "name": "searchLocalFalconGbpChains", "description": "Searches Google's chain directory." },
-    { "name": "manageLocalFalconGbpPosts", "description": "Creates, updates or deletes a post. Writes live to Google." },
-    { "name": "manageLocalFalconGbpMedia", "description": "Adds, recategorises or deletes owner media. Writes live to Google." },
-    { "name": "manageLocalFalconGbpReviewReplies", "description": "Publishes or deletes public replies to reviews, singly or up to 50 at once." },
-    { "name": "manageLocalFalconGbpActionLinks", "description": "Adds, updates or removes action links." },
-    { "name": "manageLocalFalconGbpServices", "description": "Adds, removes or wholesale-replaces services. replace overwrites the entire list." },
-    { "name": "updateLocalFalconGbpProfile", "description": "Updates core details, hours, open status or attributes. CLOSED_PERMANENTLY is effectively irreversible." }
+    { "name": "manageLocalFalconGbpPosts", "description": "Creates, updates or deletes a post. Writes live to Google. Deletes require the user's approval." },
+    { "name": "manageLocalFalconGbpMedia", "description": "Adds, recategorises or deletes owner media. Writes live to Google. Deletes require the user's approval." },
+    { "name": "manageLocalFalconGbpReviewReplies", "description": "Publishes or deletes public replies to reviews, singly or up to 50 at once. Deletes require the user's approval." },
+    { "name": "manageLocalFalconGbpActionLinks", "description": "Adds, updates or removes action links. Removals require the user's approval." },
+    { "name": "manageLocalFalconGbpServices", "description": "Adds, removes or wholesale-replaces services. replace overwrites the entire list and requires the user's approval." },
+    { "name": "updateLocalFalconGbpProfile", "description": "Updates core details, hours, open status or attributes. CLOSED_PERMANENTLY is effectively irreversible; it and attribute changes require the user's approval." }
   ],
   "privacy_policies": [
     "https://www.localfalcon.com/privacy-policy"

@@ -1,6 +1,7 @@
 import { getRequestSource } from "./requestSource.js";
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { getMcpProfile, CHATGPT_EXCLUDED_TOOLS, withProfilePolicy, withResourceProfilePolicy, filterKnowledgeBaseSearch, isBlockedArticle, normalizeArticleId, KB_UNAVAILABLE, textError, sanitizeAccountResponse } from "./chatgptPolicy.js";
+import { createGbpConfirmationGate } from "./gbpConfirmation.js";
 import { McpServer, ResourceTemplate, type ToolCallback } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import dotenv from "dotenv";
@@ -268,7 +269,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
 ## OPERATIONAL RULES
 
 1. **Always check for existing data before running new scans.** Use listLocalFalconScanReports first. Scans cost credits.
-2. **Make settings and existing-credit use clear before scans, campaigns, AI Analysis, or business searches. Obtain confirmation if the user has not already explicitly approved the operation and settings; do not require a redundant second confirmation. Public/destructive GBP write confirmation requirements still apply.**
+2. **Make settings and existing-credit use clear before scans, campaigns, AI Analysis, or business searches. Obtain confirmation if the user has not already explicitly approved the operation and settings; do not require a redundant second confirmation. Destructive GBP writes (deletes, service replacement, attribute changes, CLOSED_PERMANENTLY) are gated by the server: the client either shows the user an approval dialog, or the tool returns confirmation_required with a confirmationToken — show that preview to the user and call again with identical arguments plus the token only after they explicitly approve.**
 3. **Always use fieldmasks** on get* and list* tools. Start narrow, expand only if needed.
 4. **Omit optional parameters entirely** when you don't have a useful value. Do not pass null or empty strings.
 5. **Don't chain excessive tool calls.** If a user asks about scan reports, fetch scan reports — don't also fetch campaigns, trends, competitors, guard reports, and reviews unless specifically needed.
@@ -328,6 +329,10 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
   ) {
     return registerAppTool(server, name, config, withProfilePolicy(profile, handler));
   }
+
+  // Human approval for the seven destructive GBP operations. One gate per
+  // server, i.e. per session, so its small token store dies with the session.
+  const gbpGate = createGbpConfirmationGate(server);
 
   // Register the geo-grid heatmap as an MCP App resource
   registerAppResource(server, "Geo-Grid Heatmap", "ui://reports/geogrid-heatmap/v1.4.16", {}, async () => {
@@ -1723,12 +1728,21 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
   // is per-tool and must reflect the most dangerous action available.
   //
   // The API requires a literal confirmation token on its destructive calls
-  // (DELETE_POST, REPLACE_SERVICES, ...). That is supplied by the client layer
-  // rather than asked of the model, so a delete cannot be half-specified.
+  // (DELETE_POST, REPLACE_SERVICES, ...). localfalcon.ts still supplies those
+  // tokens — they are a wire-format detail, and asking the model for them would
+  // let a delete be half-specified. The safeguard they were meant to provide is
+  // instead enforced here, for the seven gated operations, by gbpConfirmation.ts:
+  // an elicitation dialog when the client supports elicitation.form, otherwise a
+  // preview → argument-bound, single-use confirmationToken round trip. The gate
+  // runs before the client-layer call, so a declined or missing approval never
+  // reaches the API.
+
+  const GBP_CONFIRMATION_TOKEN = z.string().nullish().describe("Only for approval-gated actions (delete, replace, CLOSED_PERMANENTLY, attributes). Omit on the first call. If that call returns confirmation_required, show its summary to the user and, only after they explicitly approve, call again with identical arguments plus this token. Never invent one.");
+  const GBP_APPROVAL_NOTE = "requires the user's approval: the server either shows the user an approval dialog, or returns confirmation_required with a confirmationToken — show that preview to the user and call again with identical arguments plus the token only after they explicitly approve";
 
   registerTool(
     "manageLocalFalconGbpPosts",
-    "Creates, updates or deletes a post on a connected Google Business Profile. WRITES LIVE TO GOOGLE — always confirm with the user first. action='create' needs summary (and event/offer when topicType is EVENT/OFFER); action='update' needs postId; action='delete' needs postId and permanently removes the post. Use listLocalFalconGbpPosts to find postId values.",
+    `Creates, updates or deletes a post on a connected Google Business Profile. WRITES LIVE TO GOOGLE — act only on the user's explicit instruction. action='create' needs summary (and event/offer when topicType is EVENT/OFFER); action='update' needs postId; action='delete' needs postId, permanently removes the post and ${GBP_APPROVAL_NOTE}. Use listLocalFalconGbpPosts to find postId values.`,
     {
       action: z.enum(["create", "update", "delete"]).describe("Operation to perform."),
       placeId: z.string().describe(GBP_PLACE_ID),
@@ -1747,9 +1761,11 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
       offer: z.record(z.any()).nullish().describe("Offer details (coupon code, terms, redeem URL). Required when topicType is OFFER."),
       language: z.string().nullish().describe("Language code, 'create' only. Defaults to 'en'."),
       replace: z.string().nullish().describe("Comma-separated field names to write wholesale rather than merge, 'update' only."),
+      confirmationToken: GBP_CONFIRMATION_TOKEN,
     },
     { title: "Manage GBP Posts", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
-    async ({ action, placeId, postId, summary, topicType, callToAction, media, event, offer, language, replace }, ctx) => {
+    async (args, ctx) => {
+      const { action, placeId, postId, summary, topicType, callToAction, media, event, offer, language, replace } = args;
       const apiKey = getApiKey(ctx);
       if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       if ((action === "update" || action === "delete") && !postId) {
@@ -1776,6 +1792,8 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
           replace: replace ?? undefined,
         });
       } else {
+        const gate = await gbpGate.confirm({ tool: "manageLocalFalconGbpPosts", operation: "DELETE_POST", args, signal: ctx.signal });
+        if (!gate.approved) return gate.result;
         resp = await deleteGbpPost(apiKey, placeId, postId as string);
       }
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
@@ -1784,7 +1802,7 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
 
   registerTool(
     "manageLocalFalconGbpMedia",
-    "Adds, recategorises or deletes owner media on a connected Google Business Profile. WRITES LIVE TO GOOGLE — always confirm with the user first. action='create' needs mediaFormat, sourceUrl and category; action='update' needs mediaId and category (and cannot set COVER or PROFILE); action='delete' needs mediaId and permanently removes the item. Customer-uploaded media cannot be modified — see listLocalFalconGbpCustomerMedia.",
+    `Adds, recategorises or deletes owner media on a connected Google Business Profile. WRITES LIVE TO GOOGLE — act only on the user's explicit instruction. action='create' needs mediaFormat, sourceUrl and category; action='update' needs mediaId and category (and cannot set COVER or PROFILE); action='delete' needs mediaId, permanently removes the item and ${GBP_APPROVAL_NOTE}. Customer-uploaded media cannot be modified — see listLocalFalconGbpCustomerMedia.`,
     {
       action: z.enum(["create", "update", "delete"]).describe("Operation to perform."),
       placeId: z.string().describe(GBP_PLACE_ID),
@@ -1793,9 +1811,11 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
       sourceUrl: z.string().nullish().describe("Public URL Google can fetch the file from. Required for 'create'."),
       category: z.string().nullish().describe("Category, e.g. INTERIOR, EXTERIOR, LOGO, COVER, FOOD_AND_DRINK. Required for 'create' and 'update'. COVER and PROFILE are not valid for 'update'."),
       description: z.string().nullish().describe("Optional description, 'create' only. Cannot be changed afterwards."),
+      confirmationToken: GBP_CONFIRMATION_TOKEN,
     },
     { title: "Manage GBP Media", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
-    async ({ action, placeId, mediaId, mediaFormat, sourceUrl, category, description }, ctx) => {
+    async (args, ctx) => {
+      const { action, placeId, mediaId, mediaFormat, sourceUrl, category, description } = args;
       const apiKey = getApiKey(ctx);
       if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       if ((action === "update" || action === "delete") && !mediaId) {
@@ -1813,6 +1833,8 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
         }
         resp = await updateGbpMedia(apiKey, placeId, mediaId as string, category);
       } else {
+        const gate = await gbpGate.confirm({ tool: "manageLocalFalconGbpMedia", operation: "DELETE_MEDIA", args, signal: ctx.signal });
+        if (!gate.approved) return gate.result;
         resp = await deleteGbpMedia(apiKey, placeId, mediaId as string);
       }
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
@@ -1821,7 +1843,7 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
 
   registerTool(
     "manageLocalFalconGbpReviewReplies",
-    "Publishes or deletes owner replies to Google reviews on connected locations. WRITES LIVE TO GOOGLE and replies are publicly visible — always confirm the exact wording with the user first. action='reply' either replies to one review (reviewId + reply) or to up to 50 at once (replies array); action='delete' removes an existing reply from reviewId. Use listLocalFalconGbpReviews with unanswered=true to find reviews needing a response.",
+    `Publishes or deletes owner replies to Google reviews on connected locations. WRITES LIVE TO GOOGLE and replies are publicly visible — always confirm the exact wording with the user first. action='reply' either replies to one review (reviewId + reply) or to up to 50 at once (replies array); action='delete' removes an existing reply from reviewId and ${GBP_APPROVAL_NOTE}. Use listLocalFalconGbpReviews with unanswered=true to find reviews needing a response.`,
     {
       action: z.enum(["reply", "delete"]).describe("Operation to perform."),
       placeId: z.string().nullish().describe(GBP_PLACE_ID + " Required unless using the batch 'replies' array."),
@@ -1832,9 +1854,11 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
         review_id: z.string().describe("Review to reply to."),
         reply: z.string().describe("Reply text."),
       })).max(50).nullish().describe("Batch of up to 50 replies, used instead of placeId/reviewId/reply."),
+      confirmationToken: GBP_CONFIRMATION_TOKEN,
     },
     { title: "Manage GBP Review Replies", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
-    async ({ action, placeId, reviewId, reply, replies }, ctx) => {
+    async (args, ctx) => {
+      const { action, placeId, reviewId, reply, replies } = args;
       const apiKey = getApiKey(ctx);
       if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       let resp;
@@ -1853,6 +1877,8 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
         if (!placeId || !reviewId) {
           return { content: [{ type: "text", text: "placeId and reviewId are both required for action 'delete'." }] };
         }
+        const gate = await gbpGate.confirm({ tool: "manageLocalFalconGbpReviewReplies", operation: "DELETE_REPLY", args, signal: ctx.signal });
+        if (!gate.approved) return gate.result;
         resp = await deleteGbpReviewReply(apiKey, placeId, reviewId);
       }
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
@@ -1861,7 +1887,7 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
 
   registerTool(
     "manageLocalFalconGbpActionLinks",
-    "Adds, updates or removes action links (booking, ordering, appointment buttons) on a connected Google Business Profile. WRITES LIVE TO GOOGLE — always confirm with the user first. action='create' needs actionType; action='update' and action='delete' need linkId. Call getLocalFalconGbpAvailableActionTypes first to get a valid actionType, and listLocalFalconGbpActionLinks for linkId values.",
+    `Adds, updates or removes action links (booking, ordering, appointment buttons) on a connected Google Business Profile. WRITES LIVE TO GOOGLE — act only on the user's explicit instruction. action='create' needs actionType; action='update' and action='delete' need linkId; action='delete' removes the link and ${GBP_APPROVAL_NOTE}. Call getLocalFalconGbpAvailableActionTypes first to get a valid actionType, and listLocalFalconGbpActionLinks for linkId values.`,
     {
       action: z.enum(["create", "update", "delete"]).describe("Operation to perform."),
       placeId: z.string().describe(GBP_PLACE_ID),
@@ -1869,9 +1895,11 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
       actionType: z.string().nullish().describe("Action type, e.g. APPOINTMENT or FOOD_ORDERING. Required for 'create'. Use getLocalFalconGbpAvailableActionTypes to list valid values."),
       uri: z.string().nullish().describe("Destination URL for the button."),
       isPreferred: z.boolean().nullish().describe("Whether this is the preferred link for its type."),
+      confirmationToken: GBP_CONFIRMATION_TOKEN,
     },
     { title: "Manage GBP Action Links", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
-    async ({ action, placeId, linkId, actionType, uri, isPreferred }, ctx) => {
+    async (args, ctx) => {
+      const { action, placeId, linkId, actionType, uri, isPreferred } = args;
       const apiKey = getApiKey(ctx);
       if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       if ((action === "update" || action === "delete") && !linkId) {
@@ -1886,6 +1914,8 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
       } else if (action === "update") {
         resp = await updateGbpLink(apiKey, placeId, linkId as string, handleNullOrUndefined(uri), isPreferred ?? undefined);
       } else {
+        const gate = await gbpGate.confirm({ tool: "manageLocalFalconGbpActionLinks", operation: "DELETE_LINK", args, signal: ctx.signal });
+        if (!gate.approved) return gate.result;
         resp = await deleteGbpLink(apiKey, placeId, linkId as string);
       }
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
@@ -1894,7 +1924,7 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
 
   registerTool(
     "manageLocalFalconGbpServices",
-    "Adds, removes or wholesale-replaces the services on a connected Google Business Profile. WRITES LIVE TO GOOGLE — always confirm with the user first. action='add' appends services; action='remove' deletes the named services; action='replace' overwrites the ENTIRE service list, so anything omitted is removed — read listLocalFalconGbpServices first and only use 'replace' when the user explicitly wants a full rewrite.",
+    `Adds, removes or wholesale-replaces the services on a connected Google Business Profile. WRITES LIVE TO GOOGLE — act only on the user's explicit instruction. action='add' appends services; action='remove' deletes the named services; action='replace' overwrites the ENTIRE service list, so anything omitted is removed — read listLocalFalconGbpServices first, only use 'replace' when the user explicitly wants a full rewrite, and note that 'replace' ${GBP_APPROVAL_NOTE}.`,
     {
       action: z.enum(["add", "remove", "replace"]).describe("Operation to perform. 'replace' overwrites the whole list."),
       placeId: z.string().describe(GBP_PLACE_ID),
@@ -1905,9 +1935,11 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
         price: z.record(z.any()).nullish().describe("Optional price object."),
       })).nullish().describe("Services for 'add' and 'replace'. For 'replace' this must be the complete desired list."),
       names: z.array(z.string()).nullish().describe("Service names to remove, for action 'remove'."),
+      confirmationToken: GBP_CONFIRMATION_TOKEN,
     },
     { title: "Manage GBP Services", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
-    async ({ action, placeId, services, names }, ctx) => {
+    async (args, ctx) => {
+      const { action, placeId, services, names } = args;
       const apiKey = getApiKey(ctx);
       if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       let resp;
@@ -1926,6 +1958,10 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
           description: svc.description ?? undefined,
           price: svc.price ?? undefined,
         }));
+        if (action === "replace") {
+          const gate = await gbpGate.confirm({ tool: "manageLocalFalconGbpServices", operation: "REPLACE_SERVICES", args, signal: ctx.signal });
+          if (!gate.approved) return gate.result;
+        }
         resp = action === "add"
           ? await addGbpServices(apiKey, placeId, payload)
           : await replaceGbpServices(apiKey, placeId, payload);
@@ -1936,7 +1972,7 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
 
   registerTool(
     "updateLocalFalconGbpProfile",
-    "Updates the core details of a connected Google Business Profile. WRITES LIVE TO GOOGLE — always confirm with the user first. action='details' edits fields such as title, phone, website or categories (verify category gcid values with searchLocalFalconGbpCategories); action='hours' sets regular or special opening hours; action='status' sets OPEN, CLOSED_TEMPORARILY or CLOSED_PERMANENTLY; action='attributes' sets profile attributes (check permitted ones with getLocalFalconGbpAvailableAttributes). CLOSED_PERMANENTLY is effectively irreversible on Google — never set it without explicit user instruction.",
+    `Updates the core details of a connected Google Business Profile. WRITES LIVE TO GOOGLE — act only on the user's explicit instruction. action='details' edits fields such as title, phone, website or categories (verify category gcid values with searchLocalFalconGbpCategories); action='hours' sets regular or special opening hours; action='status' sets OPEN, CLOSED_TEMPORARILY or CLOSED_PERMANENTLY; action='attributes' sets profile attributes (check permitted ones with getLocalFalconGbpAvailableAttributes). CLOSED_PERMANENTLY is effectively irreversible on Google — never set it without explicit user instruction. Attributes set through the API currently cannot be removed through the API. Setting CLOSED_PERMANENTLY or attributes ${GBP_APPROVAL_NOTE}.`,
     {
       action: z.enum(["details", "hours", "status", "attributes"]).describe("Which part of the profile to update."),
       placeId: z.string().describe(GBP_PLACE_ID),
@@ -1959,9 +1995,11 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
       })).nullish().describe("For action 'attributes': attributes to set."),
       clear: z.string().nullish().describe("Comma-separated field names to clear. For 'hours' use 'regular' and/or 'special'."),
       replace: z.string().nullish().describe("Comma-separated field names to write wholesale rather than merge. For 'hours' use 'regular' and/or 'special'."),
+      confirmationToken: GBP_CONFIRMATION_TOKEN,
     },
     { title: "Update GBP Profile", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
-    async ({ action, placeId, updates, regular, special, status, openingDate, attributes, clear, replace }, ctx) => {
+    async (args, ctx) => {
+      const { action, placeId, updates, regular, special, status, openingDate, attributes, clear, replace } = args;
       const apiKey = getApiKey(ctx);
       if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       let resp;
@@ -1988,6 +2026,10 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
         if (!status) {
           return { content: [{ type: "text", text: "status is required for action 'status'." }] };
         }
+        if (status === "CLOSED_PERMANENTLY") {
+          const gate = await gbpGate.confirm({ tool: "updateLocalFalconGbpProfile", operation: "CLOSED_PERMANENTLY", args, signal: ctx.signal });
+          if (!gate.approved) return gate.result;
+        }
         resp = await updateGbpStatus(apiKey, placeId, status, handleNullOrUndefined(openingDate));
       } else {
         if (!attributes || attributes.length === 0) {
@@ -2000,6 +2042,8 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
           unset_values: attr.unset_values ?? undefined,
           uris: attr.uris ?? undefined,
         }));
+        const gate = await gbpGate.confirm({ tool: "updateLocalFalconGbpProfile", operation: "SET_ATTRIBUTES", args, signal: ctx.signal });
+        if (!gate.approved) return gate.result;
         resp = await updateGbpAttributes(apiKey, placeId, payload);
       }
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };

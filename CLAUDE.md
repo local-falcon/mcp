@@ -16,6 +16,7 @@ This is the **Local Falcon MCP Server** (`@local-falcon/mcp`), a Model Context P
 index.ts          → Entry point. Transport selection (STDIO, SSE, HTTP), session management, OAuth 2.1
 server.ts         → MCP tool registrations. Exports getServer() with session-selected tool registration
 localfalcon.ts    → API client layer. All fetch functions, rate limiting, retry logic, timeout handling
+gbpConfirmation.ts → Human approval gate for the seven destructive GBP writes (elicitation, else preview → single-use token)
 oauth/            → OAuth 2.1 authorization server (routes, provider, config, state/client stores)
 ```
 
@@ -246,10 +247,27 @@ Writes (6) — action-driven, all `{ destructiveHint: true }` because each group
 in `localfalcon.ts` flattens objects and arrays into that shape, so tool schemas accept
 ordinary objects/arrays and callers never build bracket keys by hand.
 
-**Confirmation tokens.** The API requires literal tokens on destructive calls
-(`DELETE_POST`, `DELETE_MEDIA`, `DELETE_LINK`, `DELETE_REPLY`, `REPLACE_SERVICES`,
-`SET_ATTRIBUTES`, and `CLOSED_PERMANENTLY` for status). The client layer supplies these,
-so a destructive call cannot be half-specified by the model.
+**Confirmation tokens and human approval.** The API requires literal tokens on destructive
+calls (`DELETE_POST`, `DELETE_MEDIA`, `DELETE_LINK`, `DELETE_REPLY`, `REPLACE_SERVICES`,
+`SET_ATTRIBUTES`, and `CLOSED_PERMANENTLY` for status). `localfalcon.ts` still supplies
+these — they are a wire-format detail, and asking the model for them would let a delete be
+half-specified — but on their own they left the model able to satisfy the API's gate with
+no human involved. `gbpConfirmation.ts` therefore enforces approval for exactly those seven
+operations before the client-layer call is made:
+
+| Client | Gate |
+|---|---|
+| Declares `elicitation.form` (Claude Desktop/Code, VS Code, Cursor, Inspector) | `server.server.elicitInput()` shows the user an approval dialog; the call proceeds only on `accept` with `confirm: true`. A failed dialog (timeout, transport, schema) returns "nothing changed" with **no** fallback token, so the model cannot self-approve where a hard gate exists. |
+| No elicitation (ChatGPT today) | The tool returns `confirmation_required` with a summary, warning and a `confirmationToken` bound to a SHA-256 of the arguments. The identical call plus the token performs the action. Tokens are single-use, expire after 10 min, and live in a ≤20-entry per-session map (dropped on recovery/eviction; a fresh preview is issued). |
+
+Every write-tool schema carries `confirmationToken` (Zod v3 strips unknown keys, so it must
+be declared). Gate results never set `isError` or `success:false`, so `withProfilePolicy`
+passes them through unchanged on the ChatGPT profile. The elicitation is sent via
+`server.server.elicitInput()` and never `ctx.sendRequest()`: with `enableJsonResponse: true`
+a request tagged to the tool call's own response is never written, whereas an untagged one
+rides the standalone GET stream. The dialog timeout defaults to 120 s
+(`GBP_CONFIRM_TIMEOUT_MS`). Ungated actions (create, update, reply, add/remove services,
+OPEN/CLOSED_TEMPORARILY) run as before.
 
 **camelCase exception.** `getLocalFalconGbpProfile` and `getLocalFalconGbpGoogleUpdates`
 return Google's own resource unchanged, so their response fields are camelCase. Every
@@ -487,6 +505,7 @@ npm run docker:run
 | `index.ts` | Entry point — transport selection, session management, Express app, OAuth routes |
 | `server.ts` | MCP server factory — `getServer()` with session-selected tool registrations |
 | `localfalcon.ts` | API client — fetch functions, rate limiter, retry logic, types |
+| `gbpConfirmation.ts` | Human approval gate for destructive GBP writes — elicitation dialog, else preview → single-use argument-bound token |
 | `eventStore.ts` | Bounded resumability buffer — replaces the SDK's unbounded example store |
 | `requestSource.ts` | Resolves which client is calling; carries it in AsyncLocalStorage for `request_source` |
 | `oauth/` | OAuth 2.1 implementation (authorization, tokens, PKCE, client registration) |
