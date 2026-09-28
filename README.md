@@ -47,7 +47,7 @@
 
 OAuth is the recommended way to connect to the Local Falcon MCP server. It provides a secure, token-based authentication flow — no API key management required. You'll be redirected to Local Falcon to authorize access, and tokens are handled automatically.
 
-1. Set the URL to `https://mcp.localfalcon.com/mcp`
+1. Set the URL to `https://mcp.localfalcon.com`
 2. Set **Authentication** to **OAuth**
 3. Leave **Client ID** and **Client Secret** empty — the server handles client registration automatically
 4. Connect and authorize when redirected to Local Falcon
@@ -56,7 +56,7 @@ OAuth is the recommended way to connect to the Local Falcon MCP server. It provi
 
 If your MCP client does not support OAuth, you can use your Local Falcon API key as a Bearer token.
 
-1. Set the URL to `https://mcp.localfalcon.com/mcp`
+1. Set the URL to `https://mcp.localfalcon.com`
 2. Set **Authentication** to **Bearer Token**
 3. Enter your Local Falcon API key as the token value
 
@@ -65,7 +65,7 @@ If your MCP client does not support OAuth, you can use your Local Falcon API key
 If your MCP client does not support OAuth or Bearer Token authentication, you can pass your API key directly in the URL:
 
 ```
-https://mcp.localfalcon.com/mcp?local_falcon_api_key=INSERT_YOUR_API_KEY_HERE
+https://mcp.localfalcon.com/?local_falcon_api_key=INSERT_YOUR_API_KEY_HERE
 ```
 
 ---
@@ -81,7 +81,7 @@ For MCP clients that use `mcp-remote` (all platforms):
       "command": "npx",
       "args": [
         "mcp-remote",
-        "https://mcp.localfalcon.com/mcp?local_falcon_api_key=INSERT_YOUR_API_KEY_HERE"
+        "https://mcp.localfalcon.com/?local_falcon_api_key=INSERT_YOUR_API_KEY_HERE"
       ]
     }
   }
@@ -90,7 +90,7 @@ For MCP clients that use `mcp-remote` (all platforms):
 
 ## Running via Remote (SSE — Legacy)
 
-**The /sse endpoint is considered legacy and will be removed in a future version. Use the /mcp endpoint instead.**
+**The /sse endpoint is considered legacy and will be removed in a future version. Use `https://mcp.localfalcon.com` (Streamable HTTP) instead.**
 
 ```json
 {
@@ -169,7 +169,7 @@ The widget is built as a single-file HTML application using Vite and served as a
 
 ## Deployment profiles
 
-The same `https://mcp.localfalcon.com/mcp` endpoint automatically exposes **57 tools** to authenticated sessions identified as ChatGPT and **60 tools** to other MCP clients. Profile selection reuses the existing request-source attribution in `requestSource.ts`; there is no separate endpoint, deployment profile variable, or additional client detector. The profile is bound to the authenticated session, and recognized ChatGPT API calls retain `request_source=chatgpt` downstream.
+The same `https://mcp.localfalcon.com` endpoint automatically exposes **57 tools** to authenticated sessions identified as ChatGPT and **60 tools** to other MCP clients. Profile selection reuses the existing request-source attribution in `requestSource.ts`; there is no separate endpoint, deployment profile variable, or additional client detector. The profile is bound to the authenticated session, and recognized ChatGPT API calls retain `request_source=chatgpt` downstream.
 
 Session profiles are bound after authentication and ownership checks. Established ChatGPT sessions retain their attribution when later signals are missing or weaker. A later normal-to-ChatGPT change requires a fresh initialization before more tools can run. Recovery retains the profile while its credential-bound record remains in memory (up to 24 hours, bounded by capacity); after a process restart or record expiry/eviction, clients must initialize again. Legacy SSE waits for initialization before registering its tools.
 
@@ -179,7 +179,7 @@ The ChatGPT profile is an existing-account integration. It may use existing acco
 
 ### ChatGPT deployment checklist
 
-1. Deploy the reviewed MCP code to the existing service and use the same `/mcp` URL for ChatGPT and other clients.
+1. Deploy the reviewed MCP code to the existing service and use the same `https://mcp.localfalcon.com` URL for ChatGPT and other clients.
 2. Verify authenticated `tools/list` with ChatGPT-attributed and other-client sessions against the expected profiles. Confirm that the three excluded tools cannot be called directly from ChatGPT sessions.
 3. **Submission gate:** Pia must deploy and verify the remaining scheduled-campaign no-Auto-Recharge protection in LF.api/LF.internal before final OpenAI submission. MCP response filtering and profile selection do not themselves prove backend charge isolation.
 4. Shaun/Pia must review and deploy the separate LF.app OAuth entitlement wording changes. They are not deployed with the MCP service.
