@@ -1,273 +1,85 @@
 # AI Platforms Deep Dive
 
-Extended reference on how each AI platform handles local business queries and how to optimize for each.
+Reference for interpreting local-business visibility across AI platforms. Product interfaces and source/provider behavior can change. Use actual report evidence rather than assuming a fixed architecture or provider hierarchy.
 
----
+## Platform Comparison
 
-## Platform Comparison Overview
+| Platform | What to examine | Tracked by Local Falcon |
+|----------|-----------------|-------------------------|
+| Google AI Overviews | Business mentions, cited pages, and local results accompanying summaries | Yes |
+| Google AI Mode | Mentions and citations across conversational searches | Yes |
+| Google Gemini | Local recommendations and cited evidence when available | Yes |
+| ChatGPT | Business mentions and sources cited in actual reports | Yes |
+| Perplexity | Source-linked answers for optional educational comparison | No; awareness only |
 
-| Platform | Data Sources | Update Frequency | Local Pack Display | Tracked by Local Falcon |
-|----------|--------------|------------------|-------------------|------------------------|
-| Google AI Overviews | GBP, web, reviews, third-party sites | Real-time | Mobile: Embedded / Desktop: Below | ✅ Yes |
-| Google AI Mode | GBP, web, reviews, third-party sites | Real-time | Map at end only | ✅ Yes |
-| Google Gemini | Training data + live web | Mixed | May redirect to Search/Maps | ✅ Yes |
-| ChatGPT | Bing, Foursquare, Yelp, BBB | Real-time web search | Mapbox-powered | ✅ Yes |
-| Grok | X/Twitter + web search | Real-time | Varies | ✅ Yes |
-| Perplexity | Multi-source web search | Real-time | Inline citations | ❌ Not tracked |
+## Google AI Overviews
 
----
+### Appearance and Sources
 
-## Google AI Overviews (GAIO) - Extended
+Whether an AI Overview appears depends on query intent, location, and the search experience. Layouts can differ by device and change over time; do not assume a map is always embedded or always separate.
 
-### Trigger Conditions
-- Shows for ~97% of hybrid-intent queries
-- Only ~7% of pure local searches
-- Google determines when it's "additive" to user experience
+AI Overviews frequently cite third-party publishers as well as business websites. Organic rankings alone do not establish whether a source will be cited. Inspect actual report citations, identify the sources mentioning competitors, and compare the information those sources provide.
 
-### Citation Sources (Research Data)
-- **60% from third-party publishers:** Reddit (7.4%), Yelp, Quora, Thumbtack, HomeGuide, industry forums
-- **40% from individual business sites:** Direct website content
-- **Only 33% from top 10 organic:** Being in traditional top 10 doesn't guarantee AIO citation
-- **46% from outside top 50:** Sites you've never heard of may be cited
+### Practical Analysis
 
-### Mobile vs Desktop Behavior (CRITICAL)
+- Keep GBP categories, hours, service information, and contact details accurate.
+- Review recurring customer themes and respond constructively to feedback.
+- Evaluate relevant third-party publishers, local media, directories, and industry resources based on actual citations and market relevance.
+- Keep business identity and contact information consistent across relevant listings.
+- Make local services and locations clear on the website; use appropriate structured data that reflects the visible content.
 
-**Mobile Experience:**
-```
-┌─────────────────────────────┐
-│   AI Overview Response      │
-│                             │
-│ [Small Map + 3 GBP Listings]│  ← Local Pack INSIDE AI response
-│                             │
-│   More AI text...           │
-└─────────────────────────────┘
-│   Traditional results...    │
-```
+AI-generated result interfaces can reduce clicks to traditional organic listings. Assess mentions, qualified traffic, calls, and leads together rather than relying on rankings or click-through rate alone.
 
-**Desktop Experience:**
-```
-┌─────────────────────────────┐
-│   AI Overview Response      │
-│                             │
-│   Natural language prose    │  ← Businesses mentioned in text
-│   mentioning businesses...  │
-│                             │
-└─────────────────────────────┘
-┌─────────────────────────────┐
-│   Traditional Local Pack    │  ← Separate element below
-│   [Map + 3 listings]        │
-└─────────────────────────────┘
-│   Organic results...        │
-```
+## Google AI Mode
 
-### Optimization Priorities
-1. **Google Business Profile:** Primary structured data (32% weight)
-2. **Review keywords:** AI extracts themes from review text
-3. **Third-party mentions:** Get cited on Reddit, Yelp, Quora, industry sites
-4. **NAP consistency:** Must match across all directories
-5. **Structured data:** LocalBusiness schema on website
+AI Mode offers conversational search, while AI Overviews provide summaries within a search experience. Result formats, local maps, and available features vary; avoid universal claims that a particular layout always appears or that all other discovery paths disappear.
 
-### CTR Impact
-- CTR drops 34.5% when AI Overview present
-- Users often get answer without clicking
-- Strategy: Be IN the AI Overview, not competing below it
+Query fan-out explores multiple related searches and sub-questions before assembling a response. This makes clear service descriptions, useful local information, and relevant third-party references useful areas to examine.
 
----
+### Practical Analysis
 
-## Google AI Mode - Extended
+- Compare mentions across related customer questions and locations.
+- Inspect citations to identify which sources support the response.
+- Review GBP accuracy alongside website content and competitor mentions.
+- Write clear, useful explanations of services and common customer questions.
+- Do not treat one favorable answer as proof of consistent visibility.
 
-### Fundamental Difference
-AI Overviews = **Supplement** traditional results
-AI Mode = **Replace** traditional results entirely
+## Google Gemini
 
-**If you're not cited in AI Mode, you're invisible.** There are no backup organic results.
+Gemini is Google's AI assistant, distinct from Google Search interfaces. Its local responses depend on the question and features available in the session. It may offer educational advice, local recommendations, or links to further information.
 
-### Query Processing
-1. User enters query
-2. Google issues up to **16 simultaneous searches** (query fan-out)
-3. Breaks query into logical sub-questions
-4. Searches each sub-query across sources
-5. Gemini synthesizes comprehensive answer
-6. Much longer/deeper than AI Overviews
+Compare actual mentions and cited evidence where available. Maintain accurate business information and useful service content, but do not assume that strong Maps rankings transfer directly to Gemini or promise inclusion in model training data.
 
-### Local Pack Transformation
-- Traditional 3-pack visual **disappears entirely**
-- Map appears at **end of response** instead
-- GBP data still heavily influences the response
-- Interactions open GBP panel (if mentioned)
+## ChatGPT
 
-### Unique AI Mode Features
-- **Conversational:** Follow-up questions maintain context
-- **Multimodal:** Voice input, image/PDF input
-- **Agentic:** Can find reservations, check availability, even CALL businesses for pricing
-- **Personalized:** Uses search history, Gmail, Photos (if opted in)
+Public recommendation sources and connected account access are different. Source/provider behavior can change. When Local Falcon report citations are available, inspect the actual sources present in the report rather than assuming a fixed provider hierarchy.
 
-### Optimization Strategy
-- All GBP optimization from AI Overviews applies
-- Content must be clear enough for AI extraction
-- Focus on being THE definitive answer for category
-- Consider voice-readability (AI may speak answers)
+The Local Falcon integration can access an authorized Google Business Profile through its connected GBP tools. This does not establish which providers or sources a public recommendation uses.
 
----
+### Sources to Consider in Context
 
-## Google Gemini (Standalone) - Extended
+| Source type | Practical consideration |
+|-------------|-------------------------|
+| Bing Places and Foursquare | Keep relevant business listings accurate where available |
+| Yelp, BBB, and TripAdvisor | Review applicable profiles and customer feedback for the business's industry |
+| Editorial lists and local media | Examine credible coverage and actual mentions of the business or competitors |
+| Industry directories and authoritative third-party pages | Prioritize relevance, accuracy, and evidence from report citations |
+| Business website | Clearly explain services, location, hours, and contact details |
 
-### Product Positioning
-"Gemini is the brain; AI Mode is its application in Search."
+This is a set of sources to investigate, not a ranked provider list. No listing guarantees a mention. Use competitor comparisons and repeated observations across relevant queries to decide what to improve.
 
-Gemini is Google's full AI assistant platform - not primarily a search tool.
+## Perplexity (Awareness Only)
 
-### How It Handles Local Queries
-- Can browse web in real-time
-- May **redirect** users to Search or Maps for local queries
-- Pulls from training data + live browsing
-- Less search-focused, more task-oriented
+Local Falcon does not currently track Perplexity. This optional educational section illustrates how source-linked answers can be evaluated; do not offer Local Falcon scans or SAIV tracking for it.
 
-### When Users Get Local Results
-- Direct "find me a plumber" → May redirect to Search
-- Conversational "what should I look for in a plumber?" → General advice
-- Specific "is ABC Plumbing any good?" → May search for reviews/info
+When reviewing an answer, inspect the citations actually present. Check whether the source supports the claim, whether business details are current, and whether the cited material is relevant to the user's location and question. Do not assume a fixed set of preferred publishers or a minimum word count for inclusion.
 
-### Optimization Approach
-- Ensure business info widely cited on authoritative sources
-- Focus on being in training data (Wikipedia, major publications)
-- Less direct optimization path than Search products
-- Brand mentions in content Gemini would index
+## Cross-Platform Strategy
 
----
-
-## ChatGPT - Extended
-
-### Critical Architecture Insight
-**ChatGPT does NOT access Google at all.**
-
-This is the most misunderstood aspect of ChatGPT local optimization. Businesses optimized only for Google may be invisible to ChatGPT.
-
-### Data Source Hierarchy
-
-| Source | Function | Priority |
-|--------|----------|----------|
-| **Bing Places for Business** | Primary structured local data | Claim immediately |
-| **Foursquare** | major source of name, address, photos, ratings | Critical |
-| **Mapbox** | Powers visual map output | Indirect |
-| **Yelp** | Trusted review source | High |
-| **BBB** | Trust/verification signal | High |
-| **TripAdvisor** | Especially for hospitality | High |
-| **Editorial Lists** | Eater, Time Out, local "best of" | Very influential |
-
-### How Bing Integration Works
-1. ChatGPT runs Bing search in real-time
-2. Scans top 20-30 web results
-3. Selects content based on **its own criteria** (not Bing's rankings)
-4. Uses Bing for 92% of live web searches
-5. Small overlap between Bing rankings and what ChatGPT actually cites
-
-### Optimization Checklist
-- [ ] Claim Bing Places for Business
-- [ ] Claim/update Foursquare listing (name, hours, photos, categories)
-- [ ] Keep Yelp profile active with responses
-- [ ] BBB accreditation if applicable
-- [ ] TripAdvisor for restaurants/hotels
-- [ ] Pursue editorial "best of" list features
-- [ ] NAP consistency across ALL directories (not just Google ecosystem)
-
----
-
-## Grok - Extended
-
-### Unique Data Access
-Grok has exclusive real-time access to X/Twitter public posts. No other major LLM has this.
-
-### How It Processes Queries
-1. Analyzes query intent
-2. Decides: search X posts AND/OR web search
-3. If X: Analyzes relevant posts, trends, sentiment
-4. If web: Standard search synthesis
-5. Often combines both for local queries
-
-### X/Twitter Data Influence
-- Your tweets become part of potential answers
-- Customer mentions of your business matter
-- Local community engagement signals relevance
-- Real-time sentiment affects recommendations
-- Trending local topics can trigger visibility
-
-### Potential Issues
-- X data can be messy, inaccurate, or biased
-- Grok may pick up and repeat misinformation
-- Negative viral tweets can impact recommendations
-- Less structured than traditional business directories
-
-### Optimization Strategy
-1. **Active X presence:** Regular posts about your business, industry, community
-2. **Community engagement:** Reply to local conversations, retweet relevant content
-3. **Customer encouragement:** Ask satisfied customers to mention you on X
-4. **Brand monitoring:** Track mentions, respond to both positive and negative
-5. **Standard web presence:** Grok also searches web, so traditional optimization still matters
-
-### Industries Where X Matters Most
-- Restaurants/bars (heavy X/Twitter user base)
-- Entertainment venues
-- News-adjacent businesses
-- Tech-forward brands
-- Anything targeting younger demographics
-
----
-
-## Perplexity AI - Extended (Awareness Only)
-
-**Note:** Local Falcon does not currently track Perplexity. Included for strategic awareness.
-
-### How It Differs
-- "Answer engine" vs. "chat assistant"
-- Shows **exactly** which sources it cites (numbered inline)
-- Users can click directly to source
-- Smaller, more selective index than Google
-- Heavily favors established, high-authority content
-
-### What Gets Cited
-- Wikipedia and government sites
-- Expert blogs and industry publications
-- Reddit threads and YouTube transcripts
-- Original research and comprehensive guides
-- Well-structured how-to content
-- Niche forums with expert discussions
-
-### What Gets Skipped
-- Thin content (< 500 words on a topic)
-- Promotional/sales-focused material
-- Outdated information
-- Paywalled content
-- Low-authority domains
-
-### Optimization Approach
-1. NAP consistency across directories (foundational)
-2. Active profiles on Google Business, Yelp, industry directories
-3. Customer reviews on Google, Trustpilot, G2
-4. Presence on Reddit, relevant forums, YouTube
-5. Comprehensive, well-structured content (expert guides)
-6. Original research in your industry
-
----
-
-## Cross-Platform Strategy Summary
-
-### Must-Do for All Platforms
-1. **NAP Consistency:** Name, Address, Phone must match everywhere
-2. **Claim all profiles:** GBP, Bing Places, Foursquare, Yelp, BBB, TripAdvisor
-3. **Active review management:** Generate reviews, respond to all
-4. **Structured data:** LocalBusiness schema on website
-
-### Platform-Specific Priorities
-
-| If optimizing for... | Focus on... |
-|---------------------|-------------|
-| Google AI Overviews | GBP, reviews with keywords, Reddit/Yelp mentions |
-| Google AI Mode | Same as above + voice-readable content |
-| ChatGPT | Bing Places, Foursquare (critical), editorial lists |
-| Grok | X/Twitter presence, community engagement, brand monitoring |
-| Perplexity | Expert content, Reddit presence, comprehensive guides |
-
----
-
-*For tracking your SAIV across these platforms, use Local Falcon's AI Visibility scans.*
+- Preserve the distinction between SoLV for map visibility and SAIV for AI mentions.
+- Maintain accurate GBP and other relevant business profiles.
+- Compare customer review themes and competitor strengths in the local market.
+- Create useful, clear service and location information.
+- Inspect actual report citations before recommending a particular publisher or directory.
+- Compare equivalent keywords, locations, dates, and scan configurations when evaluating change.
+- Use Local Falcon AI Visibility scans for the supported tracked platforms above; Perplexity remains educational awareness only.

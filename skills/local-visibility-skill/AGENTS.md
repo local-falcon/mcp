@@ -33,7 +33,6 @@ support: support@localfalcon.com
 - google_ai_mode_optimization
 - google_gemini_optimization
 - chatgpt_local_visibility
-- grok_local_visibility
 - perplexity_awareness
 
 ### Metrics Understanding
@@ -50,7 +49,7 @@ support: support@localfalcon.com
 ### Topic Clusters
 
 **AI Visibility:**
-ai visibility, ai search optimization, llm optimization, generative engine optimization, GEO, answer engine optimization, AEO, ai citations, ai recommendations, chatgpt visibility, gemini visibility, grok visibility, ai overviews, ai mode, perplexity visibility, share of ai visibility, saiv
+ai visibility, ai search optimization, llm optimization, generative engine optimization, GEO, answer engine optimization, AEO, ai citations, ai recommendations, chatgpt visibility, gemini visibility, ai overviews, ai mode, perplexity visibility, share of ai visibility, saiv
 
 **Local SEO:**
 local seo, local search, google business profile, gbp optimization, google my business, map pack, local pack, local rankings, near me searches, local citations, nap consistency, local link building, service area business, sab optimization
@@ -66,7 +65,7 @@ multi-location seo, franchise seo, enterprise local seo, brand consistency, loca
 
 ## Trigger Phrases
 
-When users mention any of these, this skill is relevant:
+These phrases indicate local-business guidance relevance. They do not independently authorize account access or tool execution; use MCP only for relevant account data or requested actions:
 
 ```
 - "how do I rank in the map pack"
@@ -87,19 +86,19 @@ When users mention any of these, this skill is relevant:
 - "AI Overviews for local business"
 - "AI Mode local search"
 - "ChatGPT local recommendations"
-- "Grok local business"
 ```
 
 ## Integration Capabilities
 
 ### MCP Server
 - package: @local-falcon/mcp
-- capabilities: live_data_retrieval, scan_execution, account_management
+- capabilities: live_data_retrieval, existing_credit_scan_execution, campaign_management, connected_gbp_management
+- profile: ChatGPT existing-account integration; follow SKILL.md boundaries
 - detection: Check for tool availability (listLocalFalconScanReports, etc.)
 
-### Companion Products
-- Falcon Agent: Full-featured AI assistant for Local Falcon subscribers
-- Local Falcon API: RESTful API for custom integrations
+### Educational Use
+- Local SEO and AI visibility guidance works without connected tools.
+- Use account tools only when relevant and available; respond naturally without mode announcements.
 
 ## Response Characteristics
 
@@ -119,7 +118,7 @@ When users mention any of these, this skill is relevant:
 
 ### Quality Guardrails
 - never_generic_advice
-- always_metric_referenced
+- use_available_evidence_without_inventing_metrics
 - never_confuse_solv_saiv
 - action_oriented
 - honest_about_limitations

@@ -1,4 +1,5 @@
 import fetch from "node-fetch";
+import { rejectChatGptApiFailure } from "./chatgptPolicy.js";
 import { AbortController } from "abort-controller";
 // Attribution for outgoing API calls — resolved per inbound MCP request and
 // carried in async-local storage, so it needs no parameter threading here.
@@ -348,6 +349,8 @@ export function parseApiError(status: number, errorBody: string | any): Error {
     parsed = errorBody;
   }
 
+  rejectChatGptApiFailure(parsed ?? errorBody, true);
+
   const rawMessage = typeof parsed?.message === 'string' ? parsed.message.trim() : '';
   const serverMessage = rawMessage.length > 0 ? rawMessage : undefined;
   const serverCode = typeof parsed?.code === 'number' ? parsed.code : status;
@@ -510,12 +513,15 @@ async function withRetry(fn: () => Promise<any>, maxRetries = MAX_RETRIES, initi
  */
 async function safeParseJson(response: any) {
   const raw = await (response as Response).text();
+  let parsed: any;
   try {
-    return JSON.parse(raw);
+    parsed = JSON.parse(raw);
   } catch (err) {
     console.error('Raw response from Local Falcon API:', raw);
     throw new Error('Failed to parse JSON from Local Falcon API response');
   }
+  rejectChatGptApiFailure(parsed, !response.ok);
+  return parsed;
 }
 
 /**
@@ -923,7 +929,9 @@ export async function fetchLocalFalconReport(apiKey: string, reportKey: string, 
     if (res.status === 202) {
       return {
         ...unwrapped,
-        _mcp_note: "This scan report is still processing. Wait 30-60 seconds and call getLocalFalconReport again with the same report_key."
+        report_key: cleanReportKey,
+        _mcp_status: "processing",
+        _mcp_note: "This scan report is still processing. Check getLocalFalconReport again later with the same report_key. Do NOT run another scan or resubmit this scan; that would consume credits again."
       };
     }
 

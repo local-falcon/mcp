@@ -8,14 +8,14 @@ Copy and customize these prompts to get expert-level local SEO and AI visibility
 
 ### AI Visibility Assessment
 ```
-Assess my business's AI visibility across ChatGPT, Google AI Mode, Gemini, and Grok.
+Assess my business's AI visibility across ChatGPT, Google AI Mode, Gemini, and Google AI Overviews.
 
 Business: [BUSINESS NAME]
 Location: [CITY, STATE]
 Primary Services: [SERVICES]
 
 I want to understand:
-1. Current SAIV (Share of AI Visibility) estimate
+1. Current SAIV (Share of AI Visibility) from available reports, or how to measure it if no reports are available
 2. Which authoritative sources AI platforms cite for my industry
 3. Gaps in my online presence that limit AI mentions
 4. Content and citation strategy to improve AI visibility
@@ -24,14 +24,14 @@ I want to understand:
 
 ### Platform-Specific Optimization
 ```
-Help me optimize specifically for [PLATFORM: ChatGPT / AI Mode / Gemini / Grok].
+Help me optimize specifically for [PLATFORM: ChatGPT / AI Mode / Gemini / Google AI Overviews].
 
 My business: [BUSINESS NAME]
 Industry: [INDUSTRY]
 Current online presence: [LIST KEY PROFILES - Yelp, Foursquare, etc.]
 
 What specific actions should I take to increase my visibility on this platform?
-Focus on the unique data sources and ranking factors for this specific AI.
+Focus on sources present in actual reports when available; distinguish evidence from assumptions about the platform.
 ```
 
 ### AI vs Maps Strategy
@@ -308,12 +308,12 @@ What does this tell me and what should I do?
 ```
 My scan shows contradictory metrics:
 
-- ARP: [GOOD VALUE like 4.2]
-- SoLV: [LOW VALUE like 8%]
+- ARP: [ARP VALUE]
+- SoLV: [SoLV VALUE]%
 
 Or alternatively:
-- ATRP: [POOR VALUE like 12]
-- Found In: [HIGH VALUE like 45/49]
+- ATRP: [ATRP VALUE]
+- Found In: [POINTS FOUND / TOTAL POINTS]
 
 Help me understand what this pattern means and what it tells me about my optimization priorities.
 ```
@@ -359,7 +359,7 @@ What's the most likely cause if it's underperforming?
 
 ### Be Specific About Goals
 - "Improve rankings" is vague
-- "Increase SoLV from 15% to 30% within 90 days" is actionable
+- "Increase SoLV from 15% to 30% within 90 days" is an illustrative measurable goal, not a universal target or promised outcome; choose targets using market evidence
 
 ### Ask for Priorities
 - Always ask for prioritized recommendations
@@ -373,4 +373,4 @@ What's the most likely cause if it's underperforming?
 
 ---
 
-*For live data analysis using these prompts, connect the Local Falcon MCP server or use Falcon Agent.*
+*Use these prompts with supplied business context and reports, or with relevant connected Local Falcon tools when available.*
