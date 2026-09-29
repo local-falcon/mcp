@@ -1,6 +1,9 @@
 import crypto from "crypto";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { ErrorCode, McpError, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Human confirmation gate for destructive Google Business Profile writes
@@ -15,21 +18,33 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 //
 // Two paths, chosen by what the connected client can do:
 //
-//   1. Elicitation (hard gate). If the client declared `elicitation.form` in its
-//      initialize capabilities, the server asks the client to show the user an
-//      approval dialog and only proceeds on an explicit accept. The model never
-//      sees or answers the dialog. If the dialog fails (timeout, transport,
-//      schema error) the call ends with nothing changed and NO fallback token —
-//      handing one out here would let the model self-approve in precisely the
-//      environment where a hard gate exists.
+//   1. Elicitation dialog (hard gate). If the client declared `elicitation.form`
+//      in its initialize capabilities, the server asks the client to show the
+//      user an approval dialog and proceeds only on an explicit accept. The
+//      model never sees or answers the dialog.
 //
-//   2. Preview → token (visibility gate). Clients that cannot show a dialog get
-//      a preview describing the exact operation plus a server-minted
-//      confirmationToken bound to a hash of the arguments. The tool must be
-//      called again with identical arguments and the token. Tokens are
-//      single-use, expire after DEFAULT_TOKEN_TTL_MS, and live in a small
+//   2. Preview → token (in-conversation confirm step). Clients that cannot show
+//      a dialog get a preview describing the exact operation plus a
+//      server-minted confirmationToken bound to a hash of the arguments. The
+//      tool must be called again with identical arguments and the token. Tokens
+//      are single-use, expire after DEFAULT_TOKEN_TTL_MS, and live in a small
 //      per-session map, so a stale or altered request can never be approved
 //      "half-specified".
+//
+// Path 1 falls back to path 2 when the dialog goes unanswered for the elicit
+// timeout, or the request fails. Advertising elicitation does not guarantee the
+// request can be delivered: on 2026-09-28 the claude.ai connector proxy in front
+// of Claude Code passed the client's elicitation capability through to staging
+// but never relayed the server's request, so every destructive call there hung
+// until the client gave up. Refusing in that case would make those actions
+// unusable; falling back keeps the model-mediated confirm step. No answer is
+// never treated as approval: the SDK cancels the dialog request on timeout
+// (notifications/cancelled), a late accept lands on a request id the server has
+// already forgotten, and by then this call has already returned the preview.
+//
+// The timeout is short on the remote transports, where a proxy may sit in the
+// path, and longer on STDIO, where delivery is one pipe and a human needs time
+// to read the summary. GBP_CONFIRM_TIMEOUT_MS overrides both.
 //
 // Transport note: the elicitation is sent via server.server.elicitInput(),
 // never via ctx.sendRequest(). The latter tags the request with
@@ -39,6 +54,8 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 //
 // Results never throw and never carry `success:false` or `isError`, so the
 // ChatGPT profile wrapper (chatgptPolicy.ts) passes them through untouched.
+// Every decision is logged to stderr as "[gbp-confirm] ..." so two clients that
+// behave differently can be compared from the server logs alone.
 
 export type GbpConfirmOperation =
   | "DELETE_POST"
@@ -50,12 +67,13 @@ export type GbpConfirmOperation =
   | "SET_ATTRIBUTES";
 
 /** The slice of McpServer the gate needs. `McpServer` satisfies it via `.server`. */
-export type GateServer = { server: Pick<Server, "getClientCapabilities" | "elicitInput"> };
+export type GateServer = { server: Pick<Server, "getClientCapabilities" | "elicitInput" | "transport"> };
 
 export interface GateOptions {
   /** Clock, injectable for expiry tests. */
   now?: () => number;
   tokenTtlMs?: number;
+  /** Fixed dialog timeout; otherwise GBP_CONFIRM_TIMEOUT_MS, else the per-transport default. */
   elicitTimeoutMs?: number;
   maxTokens?: number;
   mintToken?: () => string;
@@ -72,17 +90,19 @@ export interface GateRequest {
 export type GateOutcome = { approved: true } | { approved: false; result: CallToolResult };
 
 export const DEFAULT_TOKEN_TTL_MS = 10 * 60_000;
-export const DEFAULT_ELICIT_TIMEOUT_MS = 120_000;
+/** HTTP/SSE: a connector proxy may advertise elicitation it cannot deliver, so give up fast. */
+export const DEFAULT_REMOTE_ELICIT_TIMEOUT_MS = 10_000;
+/** STDIO and in-process: delivery is guaranteed, so leave time to read and click. */
+export const DEFAULT_LOCAL_ELICIT_TIMEOUT_MS = 45_000;
 export const MAX_PENDING_TOKENS = 20;
 
 export const CANCELLED_TEXT =
   "Cancelled by the user. Nothing was changed on the Google Business Profile. Do not retry unless the user asks again.";
-export const UNAVAILABLE_TEXT =
-  "Could not obtain the user's confirmation (the approval prompt timed out or failed). Nothing was changed. Ask the user to try again.";
 export const PREVIEW_INSTRUCTIONS =
   "Show the summary and warning to the user and wait for their explicit approval. Only after the user approves, call this tool again with exactly the same arguments plus this confirmationToken. Never approve on the user's behalf. If the user declines, do not call again.";
 
 type TokenRejection = "unknown" | "expired" | "mismatch";
+type PromptFallback = "timed_out" | "failed";
 
 const REJECTION_NOTE: Record<TokenRejection, string> = {
   unknown: "not recognised (already used, or issued to a different session)",
@@ -217,13 +237,28 @@ function sha256(text: string): string {
   return crypto.createHash("sha256").update(text).digest("hex");
 }
 
-function resolveElicitTimeout(): number {
-  const raw = Number(process.env.GBP_CONFIRM_TIMEOUT_MS);
-  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_ELICIT_TIMEOUT_MS;
+/** HTTP and legacy SSE: a connector proxy may sit between us and the client. */
+export function isRemoteTransport(transport: Transport | undefined): boolean {
+  return transport instanceof StreamableHTTPServerTransport || transport instanceof SSEServerTransport;
+}
+
+function transportKind(transport: Transport | undefined): string {
+  if (transport instanceof StreamableHTTPServerTransport) return "streamable-http";
+  if (transport instanceof SSEServerTransport) return "sse";
+  return transport ? transport.constructor?.name ?? "unknown" : "none";
+}
+
+function isRequestTimeout(error: unknown): boolean {
+  return error instanceof McpError && error.code === ErrorCode.RequestTimeout;
 }
 
 function textResult(text: string): CallToolResult {
   return { content: [{ type: "text", text }] };
+}
+
+function log(message: string): void {
+  // stderr only: in STDIO mode stdout is the protocol channel.
+  console.error(`[gbp-confirm] ${message}`);
 }
 
 // ── Gate ────────────────────────────────────────────────────────────────────
@@ -231,11 +266,17 @@ function textResult(text: string): CallToolResult {
 export function createGbpConfirmationGate(gateServer: GateServer, options: GateOptions = {}) {
   const now = options.now ?? Date.now;
   const tokenTtlMs = options.tokenTtlMs ?? DEFAULT_TOKEN_TTL_MS;
-  const elicitTimeoutMs = options.elicitTimeoutMs ?? resolveElicitTimeout();
   const maxTokens = options.maxTokens ?? MAX_PENDING_TOKENS;
   const mintToken = options.mintToken ?? (() => crypto.randomBytes(16).toString("hex"));
   // Insertion-ordered, so the first key is always the oldest entry.
   const pending = new Map<string, PendingToken>();
+
+  function resolveElicitTimeout(): number {
+    if (options.elicitTimeoutMs !== undefined) return options.elicitTimeoutMs;
+    const raw = Number(process.env.GBP_CONFIRM_TIMEOUT_MS);
+    if (Number.isFinite(raw) && raw > 0) return raw;
+    return isRemoteTransport(gateServer.server.transport) ? DEFAULT_REMOTE_ELICIT_TIMEOUT_MS : DEFAULT_LOCAL_ELICIT_TIMEOUT_MS;
+  }
 
   function pruneExpired(): void {
     const current = now();
@@ -266,11 +307,13 @@ export function createGbpConfirmationGate(gateServer: GateServer, options: GateO
     return { approved: false, result: textResult(CANCELLED_TEXT) };
   }
 
-  function unavailable(): GateOutcome {
-    return { approved: false, result: textResult(UNAVAILABLE_TEXT) };
-  }
-
-  function preview(req: GateRequest, description: OperationDescription, token: string, rejected?: TokenRejection): GateOutcome {
+  function preview(
+    req: GateRequest,
+    description: OperationDescription,
+    token: string,
+    rejected?: TokenRejection,
+    fallback?: { reason: PromptFallback; timeoutMs: number },
+  ): GateOutcome {
     const payload: Record<string, unknown> = {
       confirmation_required: true,
       changed: false,
@@ -287,10 +330,17 @@ export function createGbpConfirmationGate(gateServer: GateServer, options: GateO
       payload.previous_token = rejected;
       payload.note = `The supplied confirmationToken was ${REJECTION_NOTE[rejected]}; a new token was issued. Nothing was changed.`;
     }
+    if (fallback) {
+      payload.approval_prompt = fallback.reason;
+      payload.approval_prompt_note = fallback.reason === "timed_out"
+        ? `The client advertised an approval dialog but did not answer it within ${Math.round(fallback.timeoutMs / 1000)} s, so nothing was changed. Confirm with the user in the conversation instead, then call again with the confirmationToken.`
+        : "The client advertised an approval dialog but it failed, so nothing was changed. Confirm with the user in the conversation instead, then call again with the confirmationToken.";
+    }
     return { approved: false, result: textResult(JSON.stringify(payload, null, 2)) };
   }
 
   async function confirm(req: GateRequest): Promise<GateOutcome> {
+    const label = `${req.operation} via ${req.tool}`;
     const { confirmationToken: rawToken, ...rest } = req.args;
     const token = typeof rawToken === "string" && rawToken.trim() ? rawToken.trim() : undefined;
     const hash = sha256(stableStringify({ tool: req.tool, operation: req.operation, args: rest }));
@@ -304,16 +354,25 @@ export function createGbpConfirmationGate(gateServer: GateServer, options: GateO
       if (!entry) rejected = "unknown";
       else if (entry.expiresAt <= now()) rejected = "expired";
       else if (entry.hash !== hash) rejected = "mismatch";
-      else return { approved: true };
+      else {
+        log(`${label}: confirmationToken accepted`);
+        return { approved: true };
+      }
+      log(`${label}: confirmationToken rejected (${rejected})`);
     }
 
     if (req.signal?.aborted) return cancelled();
 
     const description = describeGbpOperation(req.operation, rest);
+    let fallback: { reason: PromptFallback; timeoutMs: number } | undefined;
 
     if (clientSupportsFormElicitation()) {
       // A bad token on an elicitation-capable client is simply ignored: the
-      // human is asked. No token is ever minted on this path.
+      // human is asked. A token is minted on this path only if the dialog
+      // itself goes unanswered or fails.
+      const timeoutMs = resolveElicitTimeout();
+      const started = now();
+      log(`${label}: approval dialog sent over ${transportKind(gateServer.server.transport)} transport; waiting up to ${timeoutMs} ms`);
       try {
         const result = await gateServer.server.elicitInput(
           {
@@ -332,18 +391,25 @@ export function createGbpConfirmationGate(gateServer: GateServer, options: GateO
               required: ["confirm"],
             },
           },
-          { timeout: elicitTimeoutMs, signal: req.signal },
+          { timeout: timeoutMs, signal: req.signal },
         );
-        return result.action === "accept" && result.content?.confirm === true ? { approved: true } : cancelled();
+        const approved = result.action === "accept" && result.content?.confirm === true;
+        log(`${label}: dialog answered "${result.action}"${result.action === "accept" ? ` confirm=${String(result.content?.confirm)}` : ""} after ${now() - started} ms; ${approved ? "approved" : "cancelled"}`);
+        return approved ? { approved: true } : cancelled();
       } catch (error) {
-        if (req.signal?.aborted) return cancelled();
-        // stderr only: in STDIO mode stdout is the protocol channel.
-        console.error(`[gbp-confirm] approval prompt failed for ${req.operation}:`, error instanceof Error ? error.message : error);
-        return unavailable();
+        if (req.signal?.aborted) {
+          log(`${label}: tool call cancelled by the client while the dialog was open`);
+          return cancelled();
+        }
+        fallback = { reason: isRequestTimeout(error) ? "timed_out" : "failed", timeoutMs };
+        log(fallback.reason === "timed_out"
+          ? `${label}: dialog unanswered after ${now() - started} ms; falling back to a confirmation token`
+          : `${label}: dialog failed (${error instanceof Error ? error.message : String(error)}); falling back to a confirmation token`);
       }
     }
 
-    return preview(req, description, mint(hash, req.operation), rejected);
+    log(`${label}: preview issued with a confirmation token`);
+    return preview(req, description, mint(hash, req.operation), rejected, fallback);
   }
 
   return { confirm };

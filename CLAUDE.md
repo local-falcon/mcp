@@ -257,7 +257,7 @@ operations before the client-layer call is made:
 
 | Client | Gate |
 |---|---|
-| Declares `elicitation.form` (Claude Desktop/Code, VS Code, Cursor, Inspector) | `server.server.elicitInput()` shows the user an approval dialog; the call proceeds only on `accept` with `confirm: true`. A failed dialog (timeout, transport, schema) returns "nothing changed" with **no** fallback token, so the model cannot self-approve where a hard gate exists. |
+| Declares `elicitation.form` (Claude Desktop/Code, VS Code, Cursor, Inspector) | `server.server.elicitInput()` shows the user an approval dialog; the call proceeds only on `accept` with `confirm: true`. If the dialog is unanswered for the elicit timeout, or the request fails, the SDK cancels it and the gate falls back to the token row below, marking the preview `approval_prompt: timed_out|failed`. No answer is never approval. Needed because the claude.ai connector proxy in front of Claude Code advertises elicitation but never delivers the request (observed on staging 2026-09-28). |
 | No elicitation (ChatGPT today) | The tool returns `confirmation_required` with a summary, warning and a `confirmationToken` bound to a SHA-256 of the arguments. The identical call plus the token performs the action. Tokens are single-use, expire after 10 min, and live in a ≤20-entry per-session map (dropped on recovery/eviction; a fresh preview is issued). |
 
 Every write-tool schema carries `confirmationToken` (Zod v3 strips unknown keys, so it must
@@ -265,8 +265,11 @@ be declared). Gate results never set `isError` or `success:false`, so `withProfi
 passes them through unchanged on the ChatGPT profile. The elicitation is sent via
 `server.server.elicitInput()` and never `ctx.sendRequest()`: with `enableJsonResponse: true`
 a request tagged to the tool call's own response is never written, whereas an untagged one
-rides the standalone GET stream. The dialog timeout defaults to 120 s
-(`GBP_CONFIRM_TIMEOUT_MS`). Ungated actions (create, update, reply, add/remove services,
+rides the standalone GET stream. The dialog timeout defaults to 10 s on the HTTP/SSE
+transports and 45 s on STDIO; `GBP_CONFIRM_TIMEOUT_MS` overrides both. Each session's
+negotiated `elicitation` capability is logged at initialize (`[session] initialized by …`)
+and every gate decision as `[gbp-confirm] …`, so two clients that behave differently can be
+compared from the logs. Ungated actions (create, update, reply, add/remove services,
 OPEN/CLOSED_TEMPORARILY) run as before.
 
 **camelCase exception.** `getLocalFalconGbpProfile` and `getLocalFalconGbpGoogleUpdates`

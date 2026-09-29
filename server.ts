@@ -281,6 +281,17 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
   { capabilities: { extensions: { "io.modelcontextprotocol/ui": {} } } as any }
   );
 
+  // Log what each client negotiated. Elicitation support decides which approval
+  // path gbpConfirmation.ts takes, and some connector routes advertise it
+  // without being able to deliver the dialog — this is the line to compare when
+  // a destructive GBP call behaves differently across two clients. stderr only:
+  // in STDIO mode stdout is the protocol channel.
+  server.server.oninitialized = () => {
+    const client = server.server.getClientVersion();
+    const capabilities = server.server.getClientCapabilities();
+    console.error(`[session] initialized by ${client?.name ?? "unknown client"}${client?.version ? " " + client.version : ""} (request_source=${requestSource}); elicitation=${JSON.stringify(capabilities?.elicitation ?? null)}`);
+  };
+
   // ── MCP Apps: Geo-Grid Heatmap ─────────────────────────────────────────────
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
@@ -1733,7 +1744,8 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
   // let a delete be half-specified. The safeguard they were meant to provide is
   // instead enforced here, for the seven gated operations, by gbpConfirmation.ts:
   // an elicitation dialog when the client supports elicitation.form, otherwise a
-  // preview → argument-bound, single-use confirmationToken round trip. The gate
+  // preview → argument-bound, single-use confirmationToken round trip (also the
+  // fallback when a dialog goes unanswered: no answer is never approval). The gate
   // runs before the client-layer call, so a declined or missing approval never
   // reaches the API.
 

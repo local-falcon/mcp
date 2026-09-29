@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { ElicitRequestSchema, type ElicitResult } from "@modelcontextprotocol/sdk/types.js";
+import { ElicitRequestSchema, ErrorCode, McpError, type ElicitResult } from "@modelcontextprotocol/sdk/types.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { GateServer, GbpConfirmOperation } from "./gbpConfirmation";
 
 // External I/O is replaced at the HTTP boundary. No test can reach a paid API.
@@ -28,7 +29,7 @@ mock.module("node-fetch", () => ({
 }));
 const { getServer } = await import("./server");
 const { runWithRequestSource } = await import("./requestSource");
-const { createGbpConfirmationGate, describeGbpOperation, stableStringify, CANCELLED_TEXT, UNAVAILABLE_TEXT } = await import("./gbpConfirmation");
+const { createGbpConfirmationGate, describeGbpOperation, stableStringify, isRemoteTransport, CANCELLED_TEXT, DEFAULT_LOCAL_ELICIT_TIMEOUT_MS, DEFAULT_REMOTE_ELICIT_TIMEOUT_MS } = await import("./gbpConfirmation");
 
 type ElicitHandler = (params: any) => ElicitResult | Promise<ElicitResult>;
 const active: Array<{ client: Client; server: ReturnType<typeof getServer> }> = [];
@@ -57,6 +58,7 @@ afterEach(async () => {
   requests.length = 0;
   responseBody = { success: true };
   responseStatus = 200;
+  delete process.env.GBP_CONFIRM_TIMEOUT_MS;
 });
 
 function textOf(result: any): string {
@@ -133,13 +135,45 @@ describe("clients that support form elicitation get a hard human gate", () => {
     expect(requests).toHaveLength(1);
   });
 
-  test("a failed dialog changes nothing and does NOT fall back to a token", async () => {
+  test("a failed dialog falls back to a token preview without approving anything", async () => {
     const client = await connect("normal", { capability: { form: {} }, handler: () => { throw new Error("dialog exploded"); } });
     const result: any = await client.callTool({ name: "manageLocalFalconGbpPosts", arguments: DELETE_POST });
     expect(requests).toHaveLength(0);
-    expect(textOf(result)).toBe(UNAVAILABLE_TEXT);
-    expect(textOf(result)).not.toContain("confirmationToken");
+    const preview = payload(result);
+    expect(preview).toMatchObject({ confirmation_required: true, changed: false, approval_prompt: "failed" });
+    expect(preview.approval_prompt_note).toContain("Confirm with the user in the conversation");
+    expect(preview.confirmationToken).toMatch(/^[a-f0-9]{32}$/);
     expect(result.isError).toBeUndefined();
+    await client.callTool({ name: "manageLocalFalconGbpPosts", arguments: { ...DELETE_POST, confirmationToken: preview.confirmationToken } });
+    expect(requests).toHaveLength(1);
+    expect(requests[0].fields.confirm).toBe("DELETE_POST");
+  });
+
+  test("an unanswered dialog falls back to a token after the timeout, and a late answer cannot approve", async () => {
+    process.env.GBP_CONFIRM_TIMEOUT_MS = "200";
+    let invoked = 0;
+    const client = await connect("normal", { capability: { form: {} }, handler: async () => {
+      invoked++;
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      return accept();
+    } });
+    const started = Date.now();
+    const result: any = await client.callTool({ name: "manageLocalFalconGbpPosts", arguments: DELETE_POST });
+    expect(Date.now() - started).toBeLessThan(650);
+    expect(invoked).toBe(1);
+    const preview = payload(result);
+    expect(preview).toMatchObject({ confirmation_required: true, changed: false, approval_prompt: "timed_out" });
+    expect(preview.approval_prompt_note).toContain("did not answer it within");
+    expect(preview.confirmationToken).toMatch(/^[a-f0-9]{32}$/);
+    expect(result.isError).toBeUndefined();
+    expect(requests).toHaveLength(0);
+    // The human's late "accept" resolves after the server has already cancelled
+    // the dialog request and returned the preview: it must not reach the API.
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    expect(requests).toHaveLength(0);
+    await client.callTool({ name: "manageLocalFalconGbpPosts", arguments: { ...DELETE_POST, confirmationToken: preview.confirmationToken } });
+    expect(requests).toHaveLength(1);
+    expect(requests[0].fields.confirm).toBe("DELETE_POST");
   });
 
   test("a fabricated confirmationToken is ignored and the human is still asked", async () => {
@@ -328,6 +362,37 @@ describe("gate internals", () => {
     expect(outcome.approved).toBe(true);
     expect(received.options).toEqual({ timeout: 4321, signal: controller.signal });
     expect(received.params.requestedSchema.properties.confirm.default).toBe(false);
+  });
+
+  test("a timed-out or failed dialog is reported on the fallback preview, whose token then works", async () => {
+    const timedOut = createGbpConfirmationGate(
+      fakeServer({ elicitation: { form: {} } }, async () => { throw new McpError(ErrorCode.RequestTimeout, "Request timed out"); }),
+      { elicitTimeoutMs: 10 },
+    );
+    const late: any = await timedOut.confirm(request());
+    expect(late.approved).toBe(false);
+    expect(JSON.parse(late.result.content[0].text)).toMatchObject({ confirmation_required: true, approval_prompt: "timed_out" });
+    const failed = createGbpConfirmationGate(fakeServer({ elicitation: { form: {} } }, async () => { throw new Error("boom"); }));
+    const broken: any = await failed.confirm(request());
+    expect(JSON.parse(broken.result.content[0].text)).toMatchObject({ confirmation_required: true, approval_prompt: "failed" });
+    expect((await failed.confirm(request({ confirmationToken: tokenOf(broken) }))).approved).toBe(true);
+  });
+
+  test("the dialog timeout is short on remote transports, longer locally, and env-overridable", async () => {
+    const seen: number[] = [];
+    const server = fakeServer({ elicitation: { form: {} } }, async (_params: any, options: any) => { seen.push(options.timeout); return accept(); });
+    const gate = createGbpConfirmationGate(server);
+    await gate.confirm(request());
+    expect(seen.at(-1)).toBe(DEFAULT_LOCAL_ELICIT_TIMEOUT_MS);
+    (server.server as any).transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    await gate.confirm(request());
+    expect(seen.at(-1)).toBe(DEFAULT_REMOTE_ELICIT_TIMEOUT_MS);
+    process.env.GBP_CONFIRM_TIMEOUT_MS = "777";
+    await gate.confirm(request());
+    expect(seen.at(-1)).toBe(777);
+    expect(DEFAULT_REMOTE_ELICIT_TIMEOUT_MS).toBeLessThan(DEFAULT_LOCAL_ELICIT_TIMEOUT_MS);
+    expect(isRemoteTransport(undefined)).toBe(false);
+    expect(isRemoteTransport(InMemoryTransport.createLinkedPair()[1])).toBe(false);
   });
 
   test("stableStringify sorts keys, keeps array order and drops null/undefined/empty at every depth", () => {
