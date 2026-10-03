@@ -1,4 +1,5 @@
 import { getRequestSource } from "./requestSource.js";
+import { reportFetchFieldmask, splitReportResult, REPORT_WIDGET_META_KEY } from "./reportPayload.js";
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { getMcpProfile, CHATGPT_EXCLUDED_TOOLS, withProfilePolicy, withResourceProfilePolicy, filterKnowledgeBaseSearch, isBlockedArticle, normalizeArticleId, KB_UNAVAILABLE, textError, sanitizeAccountResponse } from "./chatgptPolicy.js";
 import { McpServer, ResourceTemplate, type ToolCallback } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -329,12 +330,12 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
     return registerAppTool(server, name, config, withProfilePolicy(profile, handler));
   }
 
-  // Register the geo-grid heatmap as an MCP App resource
-  registerAppResource(server, "Geo-Grid Heatmap", "ui://reports/geogrid-heatmap/v1.4.16", {}, async () => {
+  // Version the changed HTML to refresh host caches; retain the previous URI.
+  const registerGeogridResource = (uiUri: string) => registerAppResource(server, "Geo-Grid Heatmap", uiUri, {}, async () => {
     const html = fs.readFileSync(resolveGeogridHtml(), "utf-8");
     return {
       contents: [{
-        uri: "ui://reports/geogrid-heatmap/v1.4.16",
+        uri: uiUri,
         mimeType: "text/html;profile=mcp-app",
         text: html,
         _meta: {
@@ -382,6 +383,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       }],
     };
   });
+  for (const uiUri of ["ui://reports/geogrid-heatmap/v1.4.17", "ui://reports/geogrid-heatmap/v1.4.16"]) registerGeogridResource(uiUri);
 
   // Data points resource — provides full grid data to the heatmap widget
   server.resource(
@@ -485,19 +487,27 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       _meta: {
         ui: {
-          resourceUri: "ui://reports/geogrid-heatmap/v1.4.16",
+          resourceUri: "ui://reports/geogrid-heatmap/v1.4.17",
+          visibility: ["model", "app"],
         },
-        "openai/outputTemplate": "ui://reports/geogrid-heatmap/v1.4.16",
+        "openai/outputTemplate": "ui://reports/geogrid-heatmap/v1.4.17",
+        "openai/widgetAccessible": true,
         "openai/widgetDescription": "Interactive geo-grid showing local search rankings across a geographic area with color-coded position indicators",
       },
     },
     async ({ reportKey, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
-        return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+        return { isError: true, content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconReport(apiKey, reportKey, handleNullOrUndefined(fieldmask));
-      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+      // One account-authenticated read supplies both channels. The model keeps
+      // its requested fieldmask; the full grid travels only in result metadata.
+      const resp = await fetchLocalFalconReport(apiKey, reportKey, reportFetchFieldmask(fieldmask), true);
+      const { model, widget } = splitReportResult(resp, fieldmask);
+      return {
+        content: [{ type: "text", text: JSON.stringify(model, null, 2) }],
+        _meta: { [REPORT_WIDGET_META_KEY]: widget },
+      };
     },
   );
 
