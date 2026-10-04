@@ -79,13 +79,22 @@ describe("resolved source profile and actual MCP discovery", () => {
   test("both profiles use semantic annotations independently of data provenance", async () => {
     for (const profile of ["normal", "chatgpt"]) {
       const tools = (await (await connect(profile)).listTools()).tools;
-      for (const name of [...rejected, "getLocalFalconGbpProfile", "listLocalFalconGbpReviews", "getLocalFalconGrid"]) {
+      for (const name of [...rejected, "getLocalFalconGrid", "getLocalFalconGbpGoogleUpdates", "getLocalFalconGbpVerificationStatus", "getLocalFalconGbpPerformanceMetrics", "searchLocalFalconGbpCategories", "getLocalFalconGbpAvailableAttributes", "getLocalFalconGbpAvailableActionTypes"]) {
         expect(tools.find(t => t.name === name)?.annotations).toMatchObject({ readOnlyHint: true, openWorldHint: false, destructiveHint: false });
+      }
+      // These reads inspect independently controlled public Google profile content.
+      // An OAuth connection authorizes access; it does not close that external world.
+      for (const name of ["getLocalFalconGbpProfile", "getLocalFalconGbpAttributes", "listLocalFalconGbpServices", "listLocalFalconGbpPosts", "listLocalFalconGbpMedia", "listLocalFalconGbpCustomerMedia", "listLocalFalconGbpReviews", "listLocalFalconGbpActionLinks"]) {
+        expect(tools.find(t => t.name === name)?.annotations).toMatchObject({ readOnlyHint: true, openWorldHint: true, destructiveHint: false });
       }
       expect(tools.find(t => t.name === "searchLocalFalconGbpChains")?.annotations?.openWorldHint).toBe(true);
       expect(tools.find(t => t.name === "updateLocalFalconCampaign")?.annotations?.destructiveHint).toBe(true);
-      expect(tools.find(t => t.name === "manageLocalFalconGbpPosts")?.annotations).toMatchObject({ readOnlyHint: false, openWorldHint: true, destructiveHint: true });
+      for (const name of ["updateLocalFalconGbpProfile", "manageLocalFalconGbpPosts", "manageLocalFalconGbpMedia", "manageLocalFalconGbpReviewReplies", "manageLocalFalconGbpActionLinks", "manageLocalFalconGbpServices"]) {
+        expect(tools.find(t => t.name === name)?.annotations).toMatchObject({ readOnlyHint: false, openWorldHint: true, destructiveHint: true });
+      }
+      expect(tools.find(t => t.name === "resumeFalconGuardProtection")?.annotations).toMatchObject({ readOnlyHint: false, openWorldHint: false, destructiveHint: true });
       for (const tool of tools) for (const key of ["readOnlyHint", "openWorldHint", "destructiveHint"]) expect(typeof tool.annotations?.[key]).toBe("boolean");
+      expect(requests).toHaveLength(0);
     }
   });
 
@@ -94,6 +103,35 @@ describe("resolved source profile and actual MCP discovery", () => {
     await runWithRequestSource({ value: "claude", tier: 4 }, async () => {
       expect((await client.listTools()).tools).toHaveLength(57);
     });
+  });
+
+  test("both hosts receive the same bounded geo-grid CSP and existing UI resource", async () => {
+    const connectDomains = ["https://maps.googleapis.com", "https://mapsresources-pa.googleapis.com", "https://csi.gstatic.com"];
+    const resourceDomains = [
+      "https://maps.googleapis.com", "https://mapsresources-pa.googleapis.com",
+      "https://maps.gstatic.com", "https://fonts.gstatic.com", "https://fonts.googleapis.com", "https://csi.gstatic.com",
+      "https://lh3.googleusercontent.com", "https://lh4.googleusercontent.com", "https://lh5.googleusercontent.com", "https://lh6.googleusercontent.com",
+      "https://images.openai.com", "https://fastly.4sqi.net",
+    ];
+    for (const profile of ["normal", "chatgpt"]) {
+      const client = await connect(profile);
+      const resource = await client.readResource({ uri: "ui://reports/geogrid-heatmap/v1.4.16" });
+      expect(resource.contents).toHaveLength(1);
+      const html = resource.contents[0];
+      expect(html.uri).toBe("ui://reports/geogrid-heatmap/v1.4.16");
+      expect(html.mimeType).toBe("text/html;profile=mcp-app");
+      const meta = html._meta as any;
+      expect(meta.ui.domain).toBe("82abe0bc24d93c63b15c80a760135490.claudemcpcontent.com");
+      expect(meta.ui.csp).toEqual({ connectDomains, resourceDomains });
+      expect(meta["openai/widgetCSP"]).toEqual({ connect_domains: connectDomains, resource_domains: resourceDomains });
+      for (const domain of [...connectDomains, ...resourceDomains]) {
+        expect(domain.startsWith("https://")).toBe(true);
+        expect(domain).not.toContain("*");
+        expect(domain).not.toContain("amazonaws.com");
+      }
+    }
+    // This is the registered UI HTML read, never a report-data resource/API read.
+    expect(requests).toHaveLength(0);
   });
 });
 
