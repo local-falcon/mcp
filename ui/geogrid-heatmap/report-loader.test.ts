@@ -122,9 +122,9 @@ test("decoder rejects cross-report metadata and never lets stale success overrid
 
 // Executes the production event/refresh wiring. A resource read throws the exact
 // reviewer error; any added mutation fails immediately at the host boundary.
-async function widgetHarness(responses: unknown[] = [], support = true, globals: any = {}, mapWait?: Promise<void>) {
+async function widgetHarness(responses: unknown[] = [], support = true, globals: any = {}, mapWait?: Promise<void>, duringConnect?: (app: any) => Promise<void>) {
   const source = await Bun.file(new URL("./main.ts", import.meta.url)).text();
-  const lifecycle = source.slice(source.indexOf("let activeLoad:"), source.indexOf("await app.connect();"));
+  const lifecycle = source.slice(source.indexOf("let activeLoad:"), duringConnect ? undefined : source.indexOf("await app.connect();"));
   const js = new Bun.Transpiler({ loader: "ts" }).transformSync(lifecycle);
   const element = () => ({ textContent: "", innerHTML: "", style: {}, offsetWidth: 500, offsetHeight: 40, classList: { hidden: false, add() { this.hidden = true; }, remove() { this.hidden = false; } } });
   const loading = element(); const rendered: any[] = [], metrics: any[] = [], reads: string[] = [], calls: any[] = [];
@@ -140,9 +140,10 @@ async function widgetHarness(responses: unknown[] = [], support = true, globals:
       const response = responses.shift() ?? tool(pending);
       if (response instanceof Error) throw response;
       return response;
-    }, sendSizeChanged: async () => {},
+    }, sendSizeChanged: async () => {}, connect: async () => duringConnect?.(app),
   };
-  new Function("app", "loadingEl", "loadReportGrid", "reportFromToolResult", "reportModelData", "isPermissionError", "unavailableMessage", "renderMetrics", "renderMap", "renderFallbackGrid", "allZeroCoords", "mapContainerEl", "metricsPanelEl", "detailPanelEl", "console", "document", "window",
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  await new AsyncFunction("app", "loadingEl", "loadReportGrid", "reportFromToolResult", "reportModelData", "isPermissionError", "unavailableMessage", "renderMetrics", "renderMap", "renderFallbackGrid", "allZeroCoords", "mapContainerEl", "metricsPanelEl", "detailPanelEl", "console", "document", "window",
     `let scanReport, gridData, map, currentOutsideClickHandler, detailJustOpened; ${js}`)(
     app, loading, (key: string, initial: unknown, options: any) => loadReportGrid(key, initial, { ...options, wait: async () => {} }), reportFromToolResult, reportModelData, isPermissionError, unavailableMessage,
     (report: any) => metrics.push(report), async (report: any, grid: any, signal: AbortSignal) => { if (mapWait) await mapWait; if (!signal.aborted) rendered.push({ report, grid, kind: "map" }); },
@@ -225,6 +226,147 @@ test("unmount and report switch cancel obsolete rendering", async () => {
   await pendingLoad;
   expect(switched.rendered.map(item => item.report.report_key)).toEqual(["other"]);
   expect(switched.reads).toEqual([]);
+});
+
+test("direct Apps events for an old report cannot render or poll after input switches", async () => {
+  const nextKey = "fedcba987654321";
+  const widget = await widgetHarness();
+  widget.app.ontoolinput({ arguments: { reportKey: key } });
+  await widget.app.ontoolresult(tool(completed));
+  widget.app.ontoolinput({ arguments: { reportKey: nextKey } });
+  await widget.app.ontoolresult(tool(completed));
+  await widget.app.ontoolresult(tool(pending));
+  expect(widget.rendered.map(item => item.report.report_key)).toEqual([key]);
+  expect(widget.calls).toEqual([]);
+  expect(widget.loading.classList.hidden).toBe(false);
+  await widget.app.ontoolresult(tool({ ...completed, report_key: nextKey }));
+  expect(widget.rendered.map(item => item.report.report_key)).toEqual([key, nextKey]);
+  expect(widget.reads).toEqual([]);
+});
+
+test("late OpenAI globals cannot replace the current report using stale tool input", async () => {
+  const nextKey = "fedcba987654321";
+  const widget = await widgetHarness([], false, { toolInput: { reportKey: key } });
+  widget.app.ontoolinput({ arguments: { reportKey: key } });
+  await widget.app.ontoolresult(tool(completed));
+  widget.app.ontoolinput({ arguments: { reportKey: nextKey } });
+  await widget.app.ontoolresult(tool({ ...completed, report_key: nextKey }));
+  await widget.listeners["openai:set_globals"]({ detail: { globals: { toolResponseMetadata: { call_tool_result: tool(completed) } } } });
+  expect(widget.rendered.map(item => item.report.report_key)).toEqual([key, nextKey]);
+  expect(widget.loading.classList.hidden).toBe(true);
+  expect(widget.calls).toEqual([]);
+});
+
+test("stale full OpenAI globals cannot override a newer Apps input", async () => {
+  const nextKey = "fedcba987654321";
+  const widget = await widgetHarness([], false);
+  widget.app.ontoolinput({ arguments: { reportKey: key } });
+  await widget.app.ontoolresult(tool(completed));
+  widget.app.ontoolinput({ arguments: { reportKey: nextKey } });
+  await widget.app.ontoolresult(tool({ ...completed, report_key: nextKey }));
+  await widget.listeners["openai:set_globals"]({ detail: { globals: { toolInput: { reportKey: key }, toolResponseMetadata: { call_tool_result: tool(completed) } } } });
+  expect(widget.rendered.map(item => item.report.report_key)).toEqual([key, nextKey]);
+  expect(widget.loading.classList.hidden).toBe(true);
+});
+
+test("OpenAI-only explicit input updates cancel old report events without requiring Apps input", async () => {
+  const nextKey = "fedcba987654321";
+  const widget = await widgetHarness([], false);
+  await widget.listeners["openai:set_globals"]({ detail: { globals: { toolInput: { reportKey: key }, toolResponseMetadata: { call_tool_result: tool(completed) } } } });
+  await widget.listeners["openai:set_globals"]({ detail: { globals: { toolInput: { reportKey: nextKey } } } });
+  await widget.app.ontoolresult(tool(completed));
+  expect(widget.rendered.map(item => item.report.report_key)).toEqual([key]);
+  await widget.listeners["openai:set_globals"]({ detail: { globals: { toolResponseMetadata: { call_tool_result: tool({ ...completed, report_key: nextKey }) } } } });
+  expect(widget.rendered.map(item => item.report.report_key)).toEqual([key, nextKey]);
+});
+
+test("identity-free echoes from a cancelled refresh cannot stop the new report", async () => {
+  const nextKey = "fedcba987654321";
+  const widget = await widgetHarness();
+  const finish = new Map<string, (value: any) => void>();
+  widget.app.callServerTool = async (params: any) => {
+    expect(params.name).toBe("getLocalFalconReport");
+    widget.calls.push({ params });
+    return new Promise(resolve => finish.set(params.arguments.reportKey, resolve));
+  };
+  widget.app.ontoolinput({ arguments: { reportKey: key } });
+  const oldLoad = widget.app.ontoolresult(tool(pending));
+  await Promise.resolve();
+  widget.app.ontoolinput({ arguments: { reportKey: nextKey } });
+  const currentLoad = widget.app.ontoolresult(tool({ ...pending, report_key: nextKey }));
+  await Promise.resolve();
+  const failure = { isError: true, content: [{ type: "text", text: "Authentication failed" }] };
+  await widget.app.ontoolresult(failure);
+  await widget.listeners["openai:set_globals"]({ detail: { globals: { toolOutput: failure } } });
+  expect(widget.loading.textContent).toContain(nextKey);
+  expect(widget.loading.textContent).toContain("still processing");
+  finish.get(key)!(failure);
+  await oldLoad;
+  finish.get(nextKey)!(tool({ ...completed, report_key: nextKey }));
+  await currentLoad;
+  expect(widget.rendered.map(item => item.report.report_key)).toEqual([nextKey]);
+  expect(widget.loading.classList.hidden).toBe(true);
+  expect(widget.calls.map(call => call.params.arguments.reportKey)).toEqual([key, nextKey]);
+  expect(widget.reads).toEqual([]);
+});
+
+test("a late anonymous echo after old refresh settlement cannot abort the current refresh", async () => {
+  const nextKey = "fedcba987654321";
+  const widget = await widgetHarness();
+  const finish = new Map<string, (value: any) => void>();
+  widget.app.callServerTool = async (params: any) => {
+    widget.calls.push({ params });
+    return new Promise(resolve => finish.set(params.arguments.reportKey, resolve));
+  };
+  widget.app.ontoolinput({ arguments: { reportKey: key } });
+  const oldLoad = widget.app.ontoolresult(tool(pending));
+  await Promise.resolve();
+  widget.app.ontoolinput({ arguments: { reportKey: nextKey } });
+  const currentLoad = widget.app.ontoolresult(tool({ ...pending, report_key: nextKey }));
+  await Promise.resolve();
+  const failure = { isError: true, content: [{ type: "text", text: "Authentication failed" }] };
+  finish.get(key)!(failure);
+  await oldLoad;
+  await widget.app.ontoolresult(failure);
+  await widget.listeners["openai:set_globals"]({ detail: { globals: { toolOutput: failure } } });
+  expect(widget.loading.textContent).toContain("still processing");
+  finish.get(nextKey)!(tool({ ...completed, report_key: nextKey }));
+  await currentLoad;
+  expect(widget.rendered.map(item => item.report.report_key)).toEqual([nextKey]);
+  expect(widget.calls.map(call => call.params.arguments.reportKey)).toEqual([key, nextKey]);
+  expect(widget.reads).toEqual([]);
+});
+
+test("an ignored stale event during connect cannot suppress the valid initial globals", async () => {
+  const nextKey = "fedcba987654321";
+  const next = { ...completed, report_key: nextKey };
+  const widget = await widgetHarness([], false, { toolInput: { reportKey: nextKey }, toolResponseMetadata: { call_tool_result: tool(next) } }, undefined, async app => {
+    app.ontoolinput({ arguments: { reportKey: nextKey } });
+    await app.ontoolresult(tool(completed));
+  });
+  await Promise.resolve();
+  expect(widget.rendered.map(item => item.report.report_key)).toEqual([nextKey]);
+  expect(widget.reads).toEqual([]);
+  expect(widget.calls).toEqual([]);
+});
+
+test("accepted results for the previous input cannot suppress current bootstrap globals", async () => {
+  const nextKey = "fedcba987654321";
+  const next = { ...completed, report_key: nextKey };
+  for (const previousFailed of [false, true]) {
+    const widget = await widgetHarness([], false, { toolInput: { reportKey: nextKey }, toolResponseMetadata: { call_tool_result: tool(next) } }, undefined, async app => {
+      app.ontoolinput({ arguments: { reportKey: key } });
+      await app.ontoolresult(previousFailed
+        ? { isError: true, content: [{ type: "text", text: "Report temporarily unavailable" }] }
+        : tool(completed));
+      app.ontoolinput({ arguments: { reportKey: nextKey } });
+    });
+    await Promise.resolve();
+    expect(widget.rendered.map(item => item.report.report_key)).toEqual(previousFailed ? [nextKey] : [key, nextKey]);
+    expect(widget.loading.classList.hidden).toBe(true);
+    expect(widget.reads).toEqual([]);
+    expect(widget.calls).toEqual([]);
+  }
 });
 
 test("processing in a host without refresh stays friendly without technical errors or resources/read", async () => {

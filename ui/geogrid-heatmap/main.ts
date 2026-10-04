@@ -1163,6 +1163,8 @@ const refreshBudgets = new Map<string, RefreshBudget>();
 let polling = false;
 let rendering = false;
 let expectedToolKey: string | undefined;
+let receivedAppsInput = false;
+const inFlightRefreshes = new Set<AbortSignal>();
 
 function clearReportView() {
   scanReport = null;
@@ -1184,10 +1186,18 @@ function clearReportView() {
   detailJustOpened = false;
 }
 
-async function receiveReportResult(result: any, toolResponseMetadata?: any) {
-  receivedToolResult = true;
+async function receiveReportResult(result: any, toolResponseMetadata?: any, expectedKey = expectedToolKey) {
   const reportData = reportFromToolResult(result, toolResponseMetadata);
   const reportKey = reportData?.report_key;
+  // A cancelled tools/call can still be echoed as a host notification. Once
+  // current input identifies another report, ignore that obsolete result.
+  // Hosts without input notifications may still render their first result.
+  if (expectedKey && reportKey && reportKey !== expectedKey) return;
+  // Anonymous host echoes cannot be assigned to a refresh request. Its promise
+  // owns the authoritative response, including access failures. This also
+  // covers late echoes after an obsolete request has already settled.
+  if ((!reportKey || typeof reportKey !== "string") && inFlightRefreshes.size) return;
+  receivedToolResult = true;
   if (typeof reportKey !== "string" || !reportKey) {
     const errorReportKey = expectedToolKey ?? activeReportKey ?? "this report";
     const denied = isPermissionError(reportData);
@@ -1235,10 +1245,15 @@ async function receiveReportResult(result: any, toolResponseMetadata?: any) {
     const loaded = await loadReportGrid(reportKey, reportData, {
       // No general executor: refresh can only read this exact report, using a
       // lean model mask. The server returns full widget data separately in _meta.
-      refresh: supportsRefresh ? (_key, refreshSignal) => app.callServerTool({
-        name: "getLocalFalconReport",
-        arguments: { reportKey, fieldmask: "report_key" },
-      }, { signal: refreshSignal }) : undefined,
+      refresh: supportsRefresh ? async (_key, refreshSignal) => {
+        inFlightRefreshes.add(refreshSignal);
+        try {
+          return await app.callServerTool({
+            name: "getLocalFalconReport",
+            arguments: { reportKey, fieldmask: "report_key" },
+          }, { signal: refreshSignal });
+        } finally { inFlightRefreshes.delete(refreshSignal); }
+      } : undefined,
       budget,
       signal,
       onState: ({ message }) => { loadingEl.textContent = message; },
@@ -1285,14 +1300,25 @@ function matchingOpenAiMetadata(result: any) {
       JSON.stringify(reportModelData(result)) === JSON.stringify(reportModelData(original))) return openai?.toolResponseMetadata;
   return undefined;
 }
-app.ontoolinput = (params: any) => {
-  expectedToolKey = typeof params.arguments?.reportKey === "string" ? params.arguments.reportKey : undefined;
+function receiveToolInput(args: any) {
+  const nextKey = typeof args?.reportKey === "string" ? args.reportKey : undefined;
+  // Initial globals must still hydrate the selected report when a different
+  // report (or its error) was accepted earlier during app.connect().
+  if (nextKey !== expectedToolKey) receivedToolResult = false;
+  expectedToolKey = nextKey;
   if (expectedToolKey && activeReportKey && expectedToolKey !== activeReportKey) {
     activeLoad?.abort();
     polling = false;
     rendering = false;
+    activeReportKey = undefined;
     clearReportView();
+    loadingEl.classList.remove("hidden");
+    loadingEl.textContent = `Loading report ${expectedToolKey}...`;
   }
+}
+app.ontoolinput = (params: any) => {
+  receivedAppsInput = true;
+  receiveToolInput(params.arguments);
 };
 app.ontoolresult = (result: any) => receiveReportResult(result, matchingOpenAiMetadata(result));
 app.onteardown = async () => {
@@ -1305,17 +1331,22 @@ function receiveOpenAiResult(output: any, metadata: any, toolInput?: any) {
   const original = metadata?.call_tool_result ?? metadata?.mcp_tool_result ??
     (metadata?.content || metadata?.isError ? metadata : undefined);
   const result = output ?? original;
-  const expectedKey = toolInput?.reportKey ?? expectedToolKey;
+  // An explicit Apps input is more recent than retained OpenAI globals.
+  const expectedKey = expectedToolKey ?? toolInput?.reportKey;
   const report = reportFromToolResult(result, metadata);
   if (expectedKey && report?.report_key && expectedKey !== report.report_key) {
-    return receiveReportResult({ report_key: expectedKey, _widget_error: "malformed" });
+    return;
   }
-  return receiveReportResult(result, metadata);
+  return receiveReportResult(result, metadata, expectedKey);
 }
 window.addEventListener("openai:set_globals", (event: Event) => {
   const globals = (event as CustomEvent).detail?.globals;
   // Theme/layout-only globals must not replay a stale result.
-  if (!globals || !("toolOutput" in globals || "toolResponseMetadata" in globals)) return;
+  if (!globals) return;
+  // Once Apps input is available it owns report selection; an old full globals
+  // update must not move it backwards. OpenAI-only hosts still use globals.
+  if ("toolInput" in globals && !receivedAppsInput) receiveToolInput(globals.toolInput);
+  if (!("toolOutput" in globals || "toolResponseMetadata" in globals)) return;
   const openai = (window as any).openai;
   const output = "toolOutput" in globals ? globals.toolOutput :
     "toolResponseMetadata" in globals ? undefined : openai?.toolOutput;

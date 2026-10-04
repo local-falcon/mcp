@@ -2,6 +2,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { reportFromToolResult } from "./ui/geogrid-heatmap/report-loader";
+import { projectReportFields } from "./reportPayload";
 
 // External I/O is replaced at the HTTP boundary. No test can reach a paid API.
 let responseBody: unknown = {};
@@ -15,7 +16,7 @@ mock.module("node-fetch", () => ({
     requestHeaders.push(options.headers);
     const denied = denyOtherAccount && options.headers.Authorization !== "Bearer owner-fixture-key";
     const status = denied ? 403 : responseStatus;
-    const body = denied ? { success: false, message: "This resource belongs to a different account", data: { private_report: "must-not-be-delivered" } } : responseBody;
+    const body = denied ? { success: false, message: "This resource belongs to a different account", data: { private_report: "must-not-be-delivered" } } : typeof responseBody === "function" ? responseBody(String(url)) : responseBody;
     return {
       ok: status >= 200 && status < 300,
       status,
@@ -391,6 +392,29 @@ describe("inline Scan Report widget delivery", () => {
     }
     const resources = (await client.listResources()).resources;
     for (const version of ["1.4.17", "1.4.16"]) expect(resources.some(resource => resource.uri === `ui://reports/geogrid-heatmap/v${version}`)).toBe(true);
+  });
+
+  test("SDK serializes backend-style partial masks without changing hidden grid arrays", async () => {
+    const full = { ...completed, location: { name: null, address: "Main Street" }, data_points: [{ lat: 41, lng: -81 }, { lat: 42, lng: -82, rank: 2 }] };
+    responseBody = (url: string) => ({ success: true, data: projectReportFields(full, new URL(url).searchParams.get("fieldmask")!), field_mask_warnings: { exceptions: ["location.name", "sources"] } });
+    for (const profile of ["normal", "chatgpt"]) {
+      const result = await (await connect(profile)).callTool({ name: "getLocalFalconReport", arguments: { reportKey, fieldmask: "location.name,data_points.*.rank" } });
+      expect(payload(result)).toEqual({ data_points: { "1": { rank: 2 } }, _warnings: ["Unknown field in fieldmask: location.name"] });
+      const widget: any = result._meta?.["localfalcon/report"];
+      expect(widget.data_points).toEqual(full.data_points);
+      expect(Array.isArray(widget.data_points)).toBe(true);
+      expect(widget.location).toEqual(full.location);
+      expect(widget._warnings).toHaveLength(2);
+      expect(result.structuredContent).toBeUndefined();
+    }
+    expect(requests).toHaveLength(2);
+    for (const url of requests) {
+      const mask = new URL(url).searchParams.get("fieldmask")!;
+      expect(mask.split(",")).toContain("location.name");
+      expect(mask.split(",")).toContain("location");
+      expect(mask.split(",")).toContain("data_points.*.rank");
+      expect(mask.split(",")).toContain("data_points");
+    }
   });
 
   test("AI point results, AI identifiers and citations survive serialization for drill-down", async () => {
