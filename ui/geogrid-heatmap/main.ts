@@ -1,6 +1,6 @@
 import { App } from "@modelcontextprotocol/ext-apps";
 import { marked } from "marked";
-import { loadReportGrid, unavailableMessage } from "./report-loader";
+import { loadReportGrid, reportFromToolResult, reportModelData, isPermissionError, unavailableMessage, type RefreshBudget } from "./report-loader";
 
 // Google Maps API key — injected at build time by Vite, never in source
 declare const __GOOGLE_MAPS_API_KEY__: string;
@@ -1154,109 +1154,122 @@ async function renderMap(report: ScanReport, data: GridData, signal?: AbortSigna
 // ── App Lifecycle ────────────────────────────────────────────────────────────
 
 let activeLoad: AbortController | undefined;
+let activeReportKey: string | undefined;
+let renderedReportKey: string | undefined;
+let receivedToolResult = false;
+// Keep budgets for the lifetime of this widget, including repeated host events
+// and report switches. Host notifications must never restart polling forever.
+const refreshBudgets = new Map<string, RefreshBudget>();
+let polling = false;
+let rendering = false;
+let expectedToolKey: string | undefined;
+let receivedAppsInput = false;
+const inFlightRefreshes = new Set<AbortSignal>();
 
-app.ontoolresult = async (result: any) => {
+function clearReportView() {
+  scanReport = null;
+  gridData = null;
+  map = null;
+  renderedReportKey = undefined;
+  mapContainerEl.innerHTML = "";
+  metricsPanelEl.innerHTML = "";
+  detailPanelEl.classList.add("hidden");
+  if (currentOutsideClickHandler) {
+    document.removeEventListener("click", currentOutsideClickHandler);
+    currentOutsideClickHandler = null;
+  }
+  document.querySelectorAll(".distance-banner").forEach(element => element.remove());
+  const wrapper = document.getElementById("map-wrapper");
+  if (wrapper) { wrapper.style.height = ""; wrapper.style.paddingBottom = ""; }
+  mapContainerEl.style.position = "";
+  mapContainerEl.style.pointerEvents = "";
+  detailJustOpened = false;
+}
+
+async function receiveReportResult(result: any, toolResponseMetadata?: any, expectedKey = expectedToolKey) {
+  const reportData = reportFromToolResult(result, toolResponseMetadata);
+  const reportKey = reportData?.report_key;
+  // A cancelled tools/call can still be echoed as a host notification. Once
+  // current input identifies another report, ignore that obsolete result.
+  // Hosts without input notifications may still render their first result.
+  if (expectedKey && reportKey && reportKey !== expectedKey) return;
+  // Anonymous host echoes cannot be assigned to a refresh request. Its promise
+  // owns the authoritative response, including access failures. This also
+  // covers late echoes after an obsolete request has already settled.
+  if ((!reportKey || typeof reportKey !== "string") && inFlightRefreshes.size) return;
+  receivedToolResult = true;
+  if (typeof reportKey !== "string" || !reportKey) {
+    const errorReportKey = expectedToolKey ?? activeReportKey ?? "this report";
+    const denied = isPermissionError(reportData);
+    const toolFailure = reportData?._widget_error === "tool" || reportData?.error || reportData?._mcp_status === "unavailable";
+    const message = denied
+      ? "This report cannot be accessed with the current connection. Ask your assistant to check report access."
+      : toolFailure ? unavailableMessage(errorReportKey)
+        : "The report response could not be understood. Ask your assistant to retrieve the report again.";
+    // Hosts may echo a failed tools/call notification before its request rejects.
+    // Record that terminal failure before aborting the request so later pending
+    // notifications cannot revive futile refresh attempts for the same report.
+    if (errorReportKey !== "this report" && (denied || toolFailure)) {
+      const budget = refreshBudgets.get(errorReportKey) ?? { checks: 0, retries: 0 };
+      budget.stopped = true;
+      budget.terminalState = { kind: denied ? "unauthorized" : "unavailable", message };
+      refreshBudgets.set(errorReportKey, budget);
+    }
+    activeLoad?.abort();
+    polling = false;
+    activeReportKey = undefined;
+    clearReportView();
+    loadingEl.classList.remove("hidden");
+    loadingEl.textContent = message;
+    return;
+  }
+  const completedResult = reportData?._mcp_status !== "processing" && !reportData._widget_error && !reportData.error &&
+    Array.isArray(reportData.data_points) && reportData.data_points.length > 0;
+  if (activeReportKey === reportKey) {
+    if (reportData?._mcp_status === "processing" && (polling || renderedReportKey === reportKey)) return;
+    if (completedResult && (rendering || renderedReportKey === reportKey)) return;
+  }
   activeLoad?.abort();
   const controller = new AbortController();
   activeLoad = controller;
+  activeReportKey = reportKey;
   const { signal } = controller;
+  clearReportView();
   loadingEl.classList.remove("hidden");
-  let reportKey = "this report";
+  const budget = refreshBudgets.get(reportKey) ?? { checks: 0, retries: 0 };
+  refreshBudgets.set(reportKey, budget);
+  polling = reportData?._mcp_status === "processing";
+  rendering = completedResult;
   try {
-    let reportData: any;
-
-    // STRATEGY: Try structuredContent first (ChatGPT's clean single-encoded path),
-    // then content[] array (Claude/ChatGPT double-encoded), then fallbacks.
-    // This order avoids the double-encoding problem entirely when structuredContent exists.
-
-    // Tier 0: ChatGPT structuredContent.text — clean single-encoded JSON (preferred)
-    if (typeof result?.structuredContent?.text === "string") {
-      try {
-        reportData = JSON.parse(result.structuredContent.text);
-        console.log("[geogrid] Parsed via structuredContent.text");
-      } catch { /* fall through */ }
-    }
-
-    // Tier 1: MCP content blocks array (Claude's standard path)
-    if (!reportData) {
-      const content = result?.content;
-      if (Array.isArray(content)) {
-        for (const block of content) {
-          if (block?.type === "text" && block.text) {
-            try { reportData = JSON.parse(block.text); console.log("[geogrid] Parsed via content[].text"); } catch { reportData = block.text; }
-            break;
-          }
-        }
-      }
-    }
-
-    // Tier 2: Simple { text: "json string" } wrapper
-    if (!reportData && typeof result?.text === "string") {
-      try { reportData = JSON.parse(result.text); console.log("[geogrid] Parsed via result.text"); } catch { reportData = result.text; }
-    }
-
-    // Tier 3: result.data or raw result
-    if (!reportData) {
-      if (typeof result?.data === "string") {
-        try { reportData = JSON.parse(result.data); } catch { reportData = result.data; }
-      } else if (result?.data) {
-        reportData = result.data;
-      } else {
-        reportData = result;
-      }
-      console.log("[geogrid] Parsed via fallback tier");
-    }
-
-    if (Array.isArray(reportData)) {
-      reportData = reportData[0];
-    }
-
-    // Unwrap double-encoded {text: "json string"} envelope (ChatGPT content[0].text is double-wrapped)
-    if (reportData && !reportData.report_key && typeof reportData.text === "string") {
-      try {
-        const inner = JSON.parse(reportData.text);
-        if (inner && typeof inner === "object") { reportData = inner; console.log("[geogrid] Unwrapped double-encoded text envelope"); }
-      } catch { /* leave as-is */ }
-    }
-
-    console.log("[geogrid] Final reportData keys:", reportData ? Object.keys(reportData).join(", ") : "null");
-    console.log("[geogrid] report_key:", reportData?.report_key || "MISSING");
-
-    scanReport = reportData as ScanReport;
-    if (!scanReport?.report_key) {
-      console.error("[geogrid] Report result is missing its report key");
-      loadingEl.textContent = "The report could not be loaded. Ask ChatGPT to retrieve the report again.";
-      return;
-    }
-    reportKey = scanReport.report_key;
-    // A processing tool result avoids an immediate redundant read. The loader only
-    // reads this report resource, with bounded polling/retries and cancellation.
+    const supportsRefresh = !!app.getHostCapabilities()?.serverTools;
     const loaded = await loadReportGrid(reportKey, reportData, {
-      read: (uri) => app.readServerResource({ uri }),
+      // No general executor: refresh can only read this exact report, using a
+      // lean model mask. The server returns full widget data separately in _meta.
+      refresh: supportsRefresh ? async (_key, refreshSignal) => {
+        inFlightRefreshes.add(refreshSignal);
+        try {
+          return await app.callServerTool({
+            name: "getLocalFalconReport",
+            arguments: { reportKey, fieldmask: "report_key" },
+          }, { signal: refreshSignal });
+        } finally { inFlightRefreshes.delete(refreshSignal); }
+      } : undefined,
+      budget,
       signal,
       onState: ({ message }) => { loadingEl.textContent = message; },
-      onError: (error) => console.error("[geogrid] Resource read:", error),
+      onError: (error) => console.error("[geogrid] Read-only report refresh:", error),
     });
     if (signal.aborted || !loaded) return;
+    rendering = true;
     gridData = loaded as GridData;
-    // Resource metadata fills in a report that was still processing at tool time.
-    scanReport = { ...reportData, ...loaded, report_key: reportKey } as ScanReport;
+    scanReport = loaded as ScanReport;
     renderMetrics(scanReport);
-
     loadingEl.textContent = `Rendering ${gridData.data_points.length} points...`;
-
-    // Brand scans have all data points at 0,0 — render CSS grid fallback instead of Google Maps
-    if (allZeroCoords(gridData.data_points)) {
-      console.log("[geogrid] Brand scan detected (all coords 0,0) — using CSS grid fallback");
-      renderFallbackGrid(scanReport, gridData);
-    } else {
-      await renderMap(scanReport, gridData, signal);
-    }
-
+    if (allZeroCoords(gridData.data_points)) renderFallbackGrid(scanReport, gridData);
+    else await renderMap(scanReport, gridData, signal);
     if (signal.aborted) return;
+    renderedReportKey = reportKey;
     loadingEl.classList.add("hidden");
-
-    // Tell host our preferred size — square map + metrics bar
     try {
       const w = mapContainerEl.offsetWidth || 500;
       const metricsH = metricsPanelEl.offsetHeight || 40;
@@ -1267,8 +1280,83 @@ app.ontoolresult = async (result: any) => {
     loadingEl.classList.remove("hidden");
     loadingEl.textContent = unavailableMessage(reportKey);
     console.error("Geo-grid app error:", err);
+  } finally {
+    if (activeLoad === controller) { polling = false; rendering = false; }
   }
+}
+
+// MCP Apps delivers content/structuredContent via ontoolresult. ChatGPT also
+// provides result-level metadata through its canonical toolResponseMetadata.
+// Only combine globals with an event if both identify the same report.
+function matchingOpenAiMetadata(result: any) {
+  const openai = (window as any).openai;
+  const eventKey = reportFromToolResult(result)?.report_key;
+  const globalReport = reportFromToolResult(openai?.toolOutput, openai?.toolResponseMetadata);
+  if (eventKey) return globalReport?.report_key === eventKey ? openai?.toolResponseMetadata : undefined;
+  // A lean model fieldmask may omit identity. The current tool input then
+  // supplies identity, and the canonical original result must match this event.
+  const original = openai?.toolResponseMetadata?.call_tool_result ?? openai?.toolResponseMetadata?.mcp_tool_result;
+  if (expectedToolKey && globalReport?.report_key === expectedToolKey &&
+      JSON.stringify(reportModelData(result)) === JSON.stringify(reportModelData(original))) return openai?.toolResponseMetadata;
+  return undefined;
+}
+function receiveToolInput(args: any) {
+  const nextKey = typeof args?.reportKey === "string" ? args.reportKey : undefined;
+  // Initial globals must still hydrate the selected report when a different
+  // report (or its error) was accepted earlier during app.connect().
+  if (nextKey !== expectedToolKey) receivedToolResult = false;
+  expectedToolKey = nextKey;
+  if (expectedToolKey && activeReportKey && expectedToolKey !== activeReportKey) {
+    activeLoad?.abort();
+    polling = false;
+    rendering = false;
+    activeReportKey = undefined;
+    clearReportView();
+    loadingEl.classList.remove("hidden");
+    loadingEl.textContent = `Loading report ${expectedToolKey}...`;
+  }
+}
+app.ontoolinput = (params: any) => {
+  receivedAppsInput = true;
+  receiveToolInput(params.arguments);
 };
+app.ontoolresult = (result: any) => receiveReportResult(result, matchingOpenAiMetadata(result));
+app.onteardown = async () => {
+  activeLoad?.abort();
+  polling = false;
+  return {};
+};
+window.addEventListener("pagehide", () => activeLoad?.abort());
+function receiveOpenAiResult(output: any, metadata: any, toolInput?: any) {
+  const original = metadata?.call_tool_result ?? metadata?.mcp_tool_result ??
+    (metadata?.content || metadata?.isError ? metadata : undefined);
+  const result = output ?? original;
+  // An explicit Apps input is more recent than retained OpenAI globals.
+  const expectedKey = expectedToolKey ?? toolInput?.reportKey;
+  const report = reportFromToolResult(result, metadata);
+  if (expectedKey && report?.report_key && expectedKey !== report.report_key) {
+    return;
+  }
+  return receiveReportResult(result, metadata, expectedKey);
+}
+window.addEventListener("openai:set_globals", (event: Event) => {
+  const globals = (event as CustomEvent).detail?.globals;
+  // Theme/layout-only globals must not replay a stale result.
+  if (!globals) return;
+  // Once Apps input is available it owns report selection; an old full globals
+  // update must not move it backwards. OpenAI-only hosts still use globals.
+  if ("toolInput" in globals && !receivedAppsInput) receiveToolInput(globals.toolInput);
+  if (!("toolOutput" in globals || "toolResponseMetadata" in globals)) return;
+  const openai = (window as any).openai;
+  const output = "toolOutput" in globals ? globals.toolOutput :
+    "toolResponseMetadata" in globals ? undefined : openai?.toolOutput;
+  const metadata = "toolResponseMetadata" in globals ? globals.toolResponseMetadata : openai?.toolResponseMetadata;
+  return receiveOpenAiResult(output, metadata, globals.toolInput ?? openai?.toolInput);
+});
 
 await app.connect();
-loadingEl.textContent = "Connected. Waiting for scan report...";
+if (!receivedToolResult) {
+  const openai = (window as any).openai;
+  if (openai?.toolOutput || openai?.toolResponseMetadata) void receiveOpenAiResult(openai.toolOutput, openai.toolResponseMetadata, openai.toolInput);
+  else loadingEl.textContent = "Connected. Waiting for scan report...";
+}

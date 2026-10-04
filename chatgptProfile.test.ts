@@ -1,19 +1,27 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { reportFromToolResult } from "./ui/geogrid-heatmap/report-loader";
+import { projectReportFields } from "./reportPayload";
 
 // External I/O is replaced at the HTTP boundary. No test can reach a paid API.
 let responseBody: unknown = {};
 let responseStatus = 200;
 const requests: string[] = [];
+const requestHeaders: Array<Record<string, string>> = [];
+let denyOtherAccount = false;
 mock.module("node-fetch", () => ({
-  default: async (url: unknown) => {
+  default: async (url: unknown, options: any) => {
     requests.push(String(url));
+    requestHeaders.push(options.headers);
+    const denied = denyOtherAccount && options.headers.Authorization !== "Bearer owner-fixture-key";
+    const status = denied ? 403 : responseStatus;
+    const body = denied ? { success: false, message: "This resource belongs to a different account", data: { private_report: "must-not-be-delivered" } } : typeof responseBody === "function" ? responseBody(String(url)) : responseBody;
     return {
-      ok: responseStatus >= 200 && responseStatus < 300,
-      status: responseStatus,
-      json: async () => responseBody,
-      text: async () => JSON.stringify(responseBody),
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => body,
+      text: async () => JSON.stringify(body),
     };
   },
 }));
@@ -21,10 +29,10 @@ const { getServer } = await import("./server");
 const { runWithRequestSource } = await import("./requestSource");
 const active: Array<{ client: Client; server: ReturnType<typeof getServer> }> = [];
 
-async function connect(profile: string) {
+async function connect(profile: string, apiKey: string | null = "test-only") {
   // In-memory transports have no session ID; this is a fixture credential only.
   const server = runWithRequestSource({ value: profile === "chatgpt" ? "chatgpt" : "claude", tier: 4 },
-    () => getServer(new Map([[undefined as any, { apiKey: "test-only" }]])));
+    () => getServer(new Map(apiKey === null ? [] : [[undefined as any, { apiKey }]])));
   const client = new Client({ name: "arbitrary-client-name", version: "1" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
@@ -39,6 +47,8 @@ afterEach(async () => {
     await server.close();
   }
   requests.length = 0;
+  requestHeaders.length = 0;
+  denyOtherAccount = false;
   responseBody = {};
   responseStatus = 200;
 });
@@ -340,5 +350,174 @@ describe("pending Scan Report resource", () => {
     const resource = await client.readResource({ uri: "localfalcon://reports/494b540411352e4/data_points" });
     expect(JSON.parse((resource.contents[0] as any).text)).toEqual(completed);
     expect(new URL(requests.at(-1)!).searchParams.get("fieldmask")).toContain("platform");
+  });
+});
+
+describe("inline Scan Report widget delivery", () => {
+  const reportKey = "abc123def456789";
+  const completed = {
+    report_key: reportKey, platform: "google", keyword: "coffee", grid_size: 3,
+    place_id: "ChIJtarget", location: { name: "Target", address: "Main Street" },
+    arp: 2, atrp: 2, solv: 100,
+    data_points: [{ lat: 41, lng: -81, rank: 2, results: ["ChIJtarget"] }],
+    places: { ChIJtarget: { name: "Target", rank: 2, solv: 100 } }, sources: [],
+  };
+
+  test("SDK result delivery preserves widget-only grid and lean model content on both profiles", async () => {
+    for (const profile of ["normal", "chatgpt"]) {
+      const client = await connect(profile);
+      responseBody = { success: true, data: completed };
+      const result = await client.callTool({ name: "getLocalFalconReport", arguments: { reportKey, fieldmask: "report_key,arp,location.name" } });
+      expect(result._meta?.["localfalcon/report"]).toEqual(completed);
+      expect(reportFromToolResult(JSON.parse(JSON.stringify(result)))).toEqual(completed);
+      // ChatGPT's canonical global channel is also decoded by the actual widget helper.
+      expect(reportFromToolResult(payload(result), { call_tool_result: result })).toEqual(completed);
+      expect(payload(result)).toEqual({ report_key: reportKey, arp: 2, location: { name: "Target" } });
+      expect(result.structuredContent).toBeUndefined();
+      expect(textOf(result)).not.toContain("data_points");
+      expect(textOf(result)).not.toContain("Main Street");
+    }
+    expect(requests).toHaveLength(2); // One backend request per tool call, no resource request.
+  });
+
+  test("only the read-only report tool is explicitly widget accessible", async () => {
+    const client = await connect("chatgpt");
+    const tools = (await client.listTools()).tools;
+    const report = tools.find(tool => tool.name === "getLocalFalconReport")!;
+    expect(report._meta?.ui).toMatchObject({ resourceUri: "ui://reports/geogrid-heatmap/v1.4.17", visibility: ["model", "app"] });
+    expect(report._meta?.["openai/outputTemplate"]).toBe("ui://reports/geogrid-heatmap/v1.4.17");
+    expect(report._meta?.["openai/widgetAccessible"]).toBe(true);
+    for (const tool of tools.filter(tool => tool.name !== report.name)) {
+      expect(tool._meta?.["openai/widgetAccessible"]).not.toBe(true);
+    }
+    const resources = (await client.listResources()).resources;
+    for (const version of ["1.4.17", "1.4.16"]) expect(resources.some(resource => resource.uri === `ui://reports/geogrid-heatmap/v${version}`)).toBe(true);
+  });
+
+  test("SDK serializes backend-style partial masks without changing hidden grid arrays", async () => {
+    const full = { ...completed, location: { name: null, address: "Main Street" }, data_points: [{ lat: 41, lng: -81 }, { lat: 42, lng: -82, rank: 2 }] };
+    responseBody = (url: string) => ({ success: true, data: projectReportFields(full, new URL(url).searchParams.get("fieldmask")!), field_mask_warnings: { exceptions: ["location.name", "sources"] } });
+    for (const profile of ["normal", "chatgpt"]) {
+      const result = await (await connect(profile)).callTool({ name: "getLocalFalconReport", arguments: { reportKey, fieldmask: "location.name,data_points.*.rank" } });
+      expect(payload(result)).toEqual({ data_points: { "1": { rank: 2 } }, _warnings: ["Unknown field in fieldmask: location.name"] });
+      const widget: any = result._meta?.["localfalcon/report"];
+      expect(widget.data_points).toEqual(full.data_points);
+      expect(Array.isArray(widget.data_points)).toBe(true);
+      expect(widget.location).toEqual(full.location);
+      expect(widget._warnings).toHaveLength(2);
+      expect(result.structuredContent).toBeUndefined();
+    }
+    expect(requests).toHaveLength(2);
+    for (const url of requests) {
+      const mask = new URL(url).searchParams.get("fieldmask")!;
+      expect(mask.split(",")).toContain("location.name");
+      expect(mask.split(",")).toContain("location");
+      expect(mask.split(",")).toContain("data_points.*.rank");
+      expect(mask.split(",")).toContain("data_points");
+    }
+  });
+
+  test("AI point results, AI identifiers and citations survive serialization for drill-down", async () => {
+    const ai = { ...completed, platform: "gemini", ai_place_id: "AI-target-hash", saiv: 100,
+      data_points: [{ lat: 41, lng: -81, rank: false, results: [{ rank: 1, place_id: "AI-target-hash", name: "Target" }], scrape: "**Target** is nearby [1]", sources: [{ title: "Citation", subtitle: "example.test", link: "https://example.test/citation" }] }],
+      places: { "AI-target-hash": { name: "Target", saiv: 100 } }, sources: [{ href: "https://example.test/citation", index: 1 }] };
+    responseBody = { success: true, data: ai };
+    const result = await (await connect("chatgpt")).callTool({ name: "getLocalFalconReport", arguments: { reportKey, fieldmask: "report_key,saiv" } });
+    const decoded = reportFromToolResult(JSON.parse(JSON.stringify(result)));
+    expect(decoded).toEqual(ai);
+    expect(decoded.data_points[0].scrape).toBe("**Target** is nearby [1]");
+    expect(decoded.data_points[0].sources).toEqual(ai.data_points[0].sources);
+    expect(payload(result)).toEqual({ report_key: reportKey, saiv: 100 });
+    expect(requests).toHaveLength(1);
+  });
+
+  test("processing result keeps its key and explicit state in both channels with a lean mask", async () => {
+    responseStatus = 202;
+    responseBody = { success: true, data: [] };
+    const result = await (await connect("chatgpt")).callTool({ name: "getLocalFalconReport", arguments: { reportKey, fieldmask: "arp" } });
+    expect(payload(result)).toMatchObject({ report_key: reportKey, _mcp_status: "processing" });
+    expect(reportFromToolResult(result)).toEqual(payload(result));
+    expect(reportFromToolResult(result)).not.toHaveProperty("data_points");
+  });
+
+  test("account-bound read rejects cross-account report access in both profiles and every channel", async () => {
+    denyOtherAccount = true;
+    responseBody = { success: true, data: completed };
+    for (const profile of ["normal", "chatgpt"]) {
+      const owner = await connect(profile, "owner-fixture-key");
+      const other = await connect(profile, "other-fixture-key");
+      expect((await owner.callTool({ name: "getLocalFalconReport", arguments: { reportKey, fieldmask: "arp" } }))._meta?.["localfalcon/report"]).toEqual(completed);
+      const denied = await other.callTool({ name: "getLocalFalconReport", arguments: { reportKey, fieldmask: "arp" } });
+      expect(denied.isError).toBe(true);
+      expect(denied._meta?.["localfalcon/report"]).toBeUndefined();
+      expect(JSON.stringify(denied)).not.toContain("must-not-be-delivered");
+      expect(JSON.stringify(denied)).not.toContain("other-fixture-key");
+    }
+    expect(requestHeaders.map(headers => headers.Authorization)).toEqual(["Bearer owner-fixture-key", "Bearer other-fixture-key", "Bearer owner-fixture-key", "Bearer other-fixture-key"]);
+    expect(requests).toHaveLength(4); // A 403 is terminal, never retried.
+  });
+
+  test("HTTP 200 application denial cannot become inline data after its error fields are masked", async () => {
+    responseBody = { code: 403, success: false, message: "Access denied", data: completed };
+    for (const profile of ["normal", "chatgpt"]) {
+      const result = await (await connect(profile)).callTool({ name: "getLocalFalconReport", arguments: { reportKey, fieldmask: "arp" } });
+      expect(result.isError).toBe(true);
+      expect(result._meta?.["localfalcon/report"]).toBeUndefined();
+      expect(JSON.stringify(result)).not.toContain("ChIJtarget");
+    }
+  });
+
+  test("credentials and upstream authentication parameters never enter report result channels", async () => {
+    const credential = "fixture-credential-never-to-widget";
+    responseBody = { success: true, parameters: { key: credential, oauth_token: "fixture-oauth-token" }, api_key: credential, data: completed };
+    const result = await (await connect("chatgpt", credential)).callTool({ name: "getLocalFalconReport", arguments: { reportKey, fieldmask: "arp" } });
+    expect(JSON.stringify(result)).not.toContain(credential);
+    expect(JSON.stringify(result)).not.toContain("fixture-oauth-token");
+    expect(requestHeaders[0].Authorization).toBe(`Bearer ${credential}`);
+    expect(new URL(requests[0]).searchParams.has("key")).toBe(false);
+  });
+
+  test("malformed completed responses are errors, never a made-up processing state", async () => {
+    for (const data of [null, "malformed", []]) {
+      responseBody = { success: true, data };
+      const result = await (await connect("chatgpt")).callTool({ name: "getLocalFalconReport", arguments: { reportKey, fieldmask: "arp" } });
+      expect(result.isError).toBe(true);
+      expect(result._meta?.["localfalcon/report"]).toBeUndefined();
+      expect(textOf(result)).not.toContain("still processing");
+    }
+  });
+
+  test("missing credentials yield an explicit error without fetching or delivering widget data", async () => {
+    const original = process.env.LOCAL_FALCON_API_KEY;
+    delete process.env.LOCAL_FALCON_API_KEY;
+    try {
+      for (const profile of ["normal", "chatgpt"]) {
+        const result = await (await connect(profile, null)).callTool({ name: "getLocalFalconReport", arguments: { reportKey } });
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toContain("Missing LOCAL_FALCON_API_KEY");
+        expect(result._meta?.["localfalcon/report"]).toBeUndefined();
+      }
+      expect(requests).toHaveLength(0);
+    } finally {
+      if (original === undefined) delete process.env.LOCAL_FALCON_API_KEY;
+      else process.env.LOCAL_FALCON_API_KEY = original;
+    }
+  });
+
+  test("dense inline payload preserves every point/result without expanding model content", async () => {
+    for (const gridSize of [3, 21]) {
+      const places = Object.fromEntries(Array.from({ length: 100 }, (_, i) => [`ChIJ${i}`, { name: `Business ${i}`, address: `${i} Main Street`, lat: 41, lng: -81, rating: 4.7, reviews: 150, phone: "555-0100", url: "https://example.test/business", arp: 10, atrp: 12, solv: 30 }]));
+      const dense = { ...completed, grid_size: gridSize, places, data_points: Array.from({ length: gridSize ** 2 }, (_, i) => ({ lat: 41 + i / 1000, lng: -81 - i / 1000, rank: 2, results: Array.from({ length: 20 }, (_, rank) => ({ rank: rank + 1, place_id: `ChIJ${(i + rank) % 100}`, name: `Business ${(i + rank) % 100}`, distance: "0.5" })) })) };
+      responseBody = { success: true, data: dense };
+      const result = await (await connect("chatgpt")).callTool({ name: "getLocalFalconReport", arguments: { reportKey, fieldmask: "report_key,arp" } });
+      const decoded = reportFromToolResult(result);
+      expect(decoded.data_points).toHaveLength(gridSize ** 2);
+      expect(decoded.data_points.at(-1).results).toHaveLength(20);
+      expect(decoded.places).toEqual(places);
+      expect(payload(result)).toEqual({ report_key: reportKey, arp: 2 });
+      const bytes = { gridSize, model: Buffer.byteLength(textOf(result)), widget: Buffer.byteLength(JSON.stringify(result._meta)), total: Buffer.byteLength(JSON.stringify(result)) };
+      console.info("Synthetic inline report payload bytes:", JSON.stringify(bytes));
+    }
+    expect(requests).toHaveLength(2);
   });
 });
