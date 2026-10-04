@@ -1194,9 +1194,11 @@ async function receiveReportResult(result: any, toolResponseMetadata?: any, expe
   // Hosts without input notifications may still render their first result.
   if (expectedKey && reportKey && reportKey !== expectedKey) return;
   // Anonymous host echoes cannot be assigned to a refresh request. Its promise
-  // owns the authoritative response, including access failures. This also
-  // covers late echoes after an obsolete request has already settled.
-  if ((!reportKey || typeof reportKey !== "string") && inFlightRefreshes.size) return;
+  // owns the authoritative response, including access failures. A late echo
+  // after settlement also cannot replace a verified current completed result,
+  // including while its map is rendering. Identified errors still apply.
+  if ((!reportKey || typeof reportKey !== "string") &&
+      (inFlightRefreshes.size || rendering || renderedReportKey)) return;
   receivedToolResult = true;
   if (typeof reportKey !== "string" || !reportKey) {
     const errorReportKey = expectedToolKey ?? activeReportKey ?? "this report";

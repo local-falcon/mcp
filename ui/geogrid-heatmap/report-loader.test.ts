@@ -310,6 +310,54 @@ test("identity-free echoes from a cancelled refresh cannot stop the new report",
   expect(widget.reads).toEqual([]);
 });
 
+test("anonymous old-refresh echoes cannot clear a completed current report after settlement", async () => {
+  for (const channel of ["apps", "openai"]) {
+    const nextKey = "fedcba987654321";
+    const widget = await widgetHarness();
+    let finish!: (value: any) => void;
+    widget.app.callServerTool = async (params: any) => {
+      widget.calls.push({ params });
+      return new Promise(resolve => { finish = resolve; });
+    };
+    widget.app.ontoolinput({ arguments: { reportKey: key } });
+    const oldLoad = widget.app.ontoolresult(tool(pending));
+    await Promise.resolve();
+    widget.app.ontoolinput({ arguments: { reportKey: nextKey } });
+    await widget.app.ontoolresult(tool({ ...completed, report_key: nextKey }));
+    const failure = { isError: true, content: [{ type: "text", text: "Authentication failed" }] };
+    finish(failure);
+    await oldLoad;
+    if (channel === "apps") await widget.app.ontoolresult(failure);
+    else await widget.listeners["openai:set_globals"]({ detail: { globals: { toolOutput: failure } } });
+    expect(widget.loading.classList.hidden).toBe(true);
+    expect(widget.loading.textContent).not.toContain("cannot be accessed");
+    expect(widget.rendered.map(item => item.report.report_key)).toEqual([nextKey]);
+    expect(widget.calls).toHaveLength(1);
+    expect(widget.reads).toEqual([]);
+  }
+});
+
+test("anonymous errors cannot interrupt completed rendering but identified current errors still apply", async () => {
+  let release!: () => void;
+  const wait = new Promise<void>(resolve => { release = resolve; });
+  const widget = await widgetHarness([], true, {}, wait);
+  widget.app.ontoolinput({ arguments: { reportKey: key } });
+  const currentLoad = widget.app.ontoolresult(tool(completed));
+  await Promise.resolve();
+  const failure = { isError: true, content: [{ type: "text", text: "Authentication failed" }] };
+  await widget.app.ontoolresult(failure);
+  await widget.listeners["openai:set_globals"]({ detail: { globals: { toolOutput: failure } } });
+  release();
+  await currentLoad;
+  expect(widget.rendered).toHaveLength(1);
+  expect(widget.loading.classList.hidden).toBe(true);
+  await widget.app.ontoolresult(tool({ report_key: key, error: "Authentication failed" }));
+  expect(widget.loading.classList.hidden).toBe(false);
+  expect(widget.loading.textContent).toContain("cannot be accessed");
+  expect(widget.calls).toEqual([]);
+  expect(widget.reads).toEqual([]);
+});
+
 test("a late anonymous echo after old refresh settlement cannot abort the current refresh", async () => {
   const nextKey = "fedcba987654321";
   const widget = await widgetHarness();
