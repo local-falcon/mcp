@@ -261,7 +261,8 @@ const IMG_DOMAIN_EXACT = new Set([
 function isAllowedImgDomain(src: string): boolean {
   try {
     const url = new URL(src);
-    if (url.protocol !== "https:") return false;
+    // CSP origins allow the default HTTPS port only (URL normalizes :443).
+    if (url.protocol !== "https:" || url.port) return false;
     const hostname = url.hostname.toLowerCase();
     return IMG_DOMAIN_EXACT.has(hostname);
   } catch {

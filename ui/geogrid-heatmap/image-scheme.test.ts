@@ -16,9 +16,12 @@ const isAllowedImage: (src: string) => boolean = runInNewContext(
 
 test("scrape images use HTTPS to match the widget's resource CSP", () => {
   expect(isAllowedImage("https://images.openai.com/example.png")).toBe(true);
+  expect(isAllowedImage("https://images.openai.com:443/example.png")).toBe(true);
   expect(isAllowedImage("https://lh3.googleusercontent.com/example.png")).toBe(true);
   for (const src of [
     "http://images.openai.com/example.png",
+    "https://images.openai.com:8443/example.png",
+    "https://lh3.googleusercontent.com:444/example.png",
     "ftp://images.openai.com/example.png",
     "blob:https://images.openai.com/example",
     "javascript:alert(1)",
