@@ -30,8 +30,12 @@ function inlineReport(value: any): any {
 export function reportFromToolResult(result: any, toolResponseMetadata?: any): any {
   const original = toolResponseMetadata?.call_tool_result ?? toolResponseMetadata?.mcp_tool_result ??
     (toolResponseMetadata?.content || toolResponseMetadata?.isError ? toolResponseMetadata : undefined);
-  const report = reportModelData(result) ?? reportModelData(original);
   const failed = result?.isError ? result : original?.isError ? original : undefined;
+  // A failed event must not borrow identity from retained successful globals.
+  // Otherwise an obsolete anonymous error could be misassigned to the current
+  // report and bypass the lifecycle's stale-event guard.
+  const report = reportModelData(failed ?? result) ??
+    (!failed ? reportModelData(original) : undefined);
   if (failed) return { ...report, error: failed.content?.find((block: any) => block.type === "text")?.text ?? report?.error, _widget_error: "tool" };
   const inline = inlineReport(result) ?? inlineReport(toolResponseMetadata);
   if (inline !== undefined) {

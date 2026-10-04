@@ -324,6 +324,8 @@ test("anonymous old-refresh echoes cannot clear a completed current report after
     await Promise.resolve();
     widget.app.ontoolinput({ arguments: { reportKey: nextKey } });
     await widget.app.ontoolresult(tool({ ...completed, report_key: nextKey }));
+    // OpenAI retains the successful current result when only toolOutput changes.
+    widget.window.openai.toolResponseMetadata = { call_tool_result: tool({ ...completed, report_key: nextKey }) };
     const failure = { isError: true, content: [{ type: "text", text: "Authentication failed" }] };
     finish(failure);
     await oldLoad;
@@ -335,6 +337,16 @@ test("anonymous old-refresh echoes cannot clear a completed current report after
     expect(widget.calls).toHaveLength(1);
     expect(widget.reads).toEqual([]);
   }
+});
+
+test("anonymous failures cannot borrow report identity from retained successful metadata", () => {
+  const failure = { isError: true, content: [{ type: "text", text: "Authentication failed" }] };
+  const decoded = reportFromToolResult(failure, { call_tool_result: tool(completed) });
+  expect(decoded.report_key).toBeUndefined();
+  expect(decoded._widget_error).toBe("tool");
+  expect(decoded.error).toBe("Authentication failed");
+  expect(reportFromToolResult({ report_key: key }, { call_tool_result: failure }).report_key).toBeUndefined();
+  expect(reportFromToolResult(undefined, { call_tool_result: { ...failure, content: [{ type: "text", text: JSON.stringify({ report_key: key, error: "Authentication failed" }) }] } }).report_key).toBe(key);
 });
 
 test("anonymous errors cannot interrupt completed rendering but identified current errors still apply", async () => {
