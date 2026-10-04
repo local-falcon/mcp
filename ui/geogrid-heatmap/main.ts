@@ -223,8 +223,8 @@ function escapeHtml(s: string): string {
 }
 
 // ── HTML Sanitizer (allowlist-based, DOM-native) ─────────────────────────────
-// Strips all tags/attributes not explicitly allowed. Enforces image domain allowlist.
-// Built from S3 audit of 7,345 scrape payloads across 5 AI platforms.
+// Strips all tags/attributes not explicitly allowed. Enforces the exact HTTPS
+// image origins declared in the widget resource CSP.
 
 const ALLOWED_TAGS = new Set([
   "a", "blockquote", "br", "code", "del", "em",
@@ -242,27 +242,28 @@ const ALLOWED_ATTRS: Record<string, Set<string>> = {
   th: new Set(["style"]),
 };
 
-// Domains allowed in <img src>. Wildcards match any subdomain.
-const IMG_DOMAIN_WILDCARDS = [
-  ".gstatic.com",
-  ".googleapis.com",
-  ".googleusercontent.com",
-  ".google.com",
-  ".amazonaws.com",
-];
+// Keep these exact hosts aligned with server.ts resourceDomains/widgetCSP.
 const IMG_DOMAIN_EXACT = new Set([
+  "maps.googleapis.com",
+  "mapsresources-pa.googleapis.com",
+  "maps.gstatic.com",
+  "fonts.gstatic.com",
+  "fonts.googleapis.com",
+  "csi.gstatic.com",
+  "lh3.googleusercontent.com",
+  "lh4.googleusercontent.com",
+  "lh5.googleusercontent.com",
+  "lh6.googleusercontent.com",
   "images.openai.com",
   "fastly.4sqi.net",
 ]);
 
 function isAllowedImgDomain(src: string): boolean {
   try {
-    const hostname = new URL(src).hostname.toLowerCase();
-    if (IMG_DOMAIN_EXACT.has(hostname)) return true;
-    for (const suffix of IMG_DOMAIN_WILDCARDS) {
-      if (hostname === suffix.slice(1) || hostname.endsWith(suffix)) return true;
-    }
-    return false;
+    const url = new URL(src);
+    if (url.protocol !== "https:") return false;
+    const hostname = url.hostname.toLowerCase();
+    return IMG_DOMAIN_EXACT.has(hostname);
   } catch {
     return false; // malformed URL — strip it
   }
