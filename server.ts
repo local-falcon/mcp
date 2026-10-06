@@ -343,18 +343,22 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
             csp: {
               connectDomains: [
                 "https://maps.googleapis.com",
-                "https://*.googleapis.com",
-                "https://*.google.com",
+                "https://mapsresources-pa.googleapis.com",
+                "https://csi.gstatic.com",
               ],
               resourceDomains: [
                 "https://maps.googleapis.com",
-                "https://*.googleapis.com",
-                "https://*.gstatic.com",
-                "https://*.google.com",
-                "https://*.googleusercontent.com",
+                "https://mapsresources-pa.googleapis.com",
+                "https://maps.gstatic.com",
+                "https://fonts.gstatic.com",
+                "https://fonts.googleapis.com",
+                "https://csi.gstatic.com",
+                "https://lh3.googleusercontent.com",
+                "https://lh4.googleusercontent.com",
+                "https://lh5.googleusercontent.com",
+                "https://lh6.googleusercontent.com",
                 "https://images.openai.com",
                 "https://fastly.4sqi.net",
-                "https://*.amazonaws.com",
               ],
             },
             // Stable origin for widget sandbox — SHA256 hash of MCP server URL
@@ -365,18 +369,22 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
           "openai/widgetCSP": {
             connect_domains: [
               "https://maps.googleapis.com",
-              "https://*.googleapis.com",
-              "https://*.google.com",
+              "https://mapsresources-pa.googleapis.com",
+              "https://csi.gstatic.com",
             ],
             resource_domains: [
               "https://maps.googleapis.com",
-              "https://*.googleapis.com",
-              "https://*.gstatic.com",
-              "https://*.google.com",
-              "https://*.googleusercontent.com",
+              "https://mapsresources-pa.googleapis.com",
+              "https://maps.gstatic.com",
+              "https://fonts.gstatic.com",
+              "https://fonts.googleapis.com",
+              "https://csi.gstatic.com",
+              "https://lh3.googleusercontent.com",
+              "https://lh4.googleusercontent.com",
+              "https://lh5.googleusercontent.com",
+              "https://lh6.googleusercontent.com",
               "https://images.openai.com",
               "https://fastly.4sqi.net",
-              "https://*.amazonaws.com",
             ],
           },
         },
@@ -1469,7 +1477,7 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
     "getLocalFalconGbpProfile",
     "Retrieves the live Google Business Profile for a connected location as Local Falcon holds it: name, address, phone, categories, hours, website and open status. Reads from Google at request time, so it reflects the profile right now rather than the last scan. NOTE: this endpoint returns Google's own resource, so its field names are camelCase, unlike the snake_case used by other Local Falcon endpoints. Only works for OAuth-connected locations.",
     { placeId: z.string().describe(GBP_PLACE_ID) },
-    { title: "Get GBP Profile", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    { title: "Get GBP Profile", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     async ({ placeId }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
@@ -1511,7 +1519,7 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
     "getLocalFalconGbpAttributes",
     "Retrieves the attributes currently set on a connected business profile (e.g. wheelchair accessible, outdoor seating, women-owned). Use getLocalFalconGbpAvailableAttributes to see which attributes the profile's category permits before changing them.",
     { placeId: z.string().describe(GBP_PLACE_ID) },
-    { title: "Get GBP Attributes", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    { title: "Get GBP Attributes", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     async ({ placeId }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
@@ -1524,7 +1532,7 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
     "listLocalFalconGbpServices",
     "Lists the services listed on a connected business profile, with descriptions and prices. Services influence which queries a profile surfaces for, so review these when diagnosing weak keyword coverage.",
     { placeId: z.string().describe(GBP_PLACE_ID) },
-    { title: "List GBP Services", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    { title: "List GBP Services", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     async ({ placeId }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
@@ -1560,7 +1568,7 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
       limit: z.number().int().min(1).max(100).nullish().describe("Results per page, 1-100. Omit for the API default."),
       nextToken: z.string().nullish().describe("Page token from a previous response."),
     },
-    { title: "List GBP Posts", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    { title: "List GBP Posts", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     async ({ placeId, postId, limit, nextToken }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
@@ -1579,7 +1587,7 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
       limit: z.number().int().min(1).max(100).nullish().describe("Results per page, 1-100. Omit for the API default."),
       nextToken: z.string().nullish().describe("Page token from a previous response."),
     },
-    { title: "List GBP Media", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    { title: "List GBP Media", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     async ({ placeId, mediaId, category, limit, nextToken }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
@@ -1597,7 +1605,7 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
       limit: z.number().int().min(1).max(100).nullish().describe("Results per page, 1-100. Omit for the API default."),
       nextToken: z.string().nullish().describe("Page token from a previous response."),
     },
-    { title: "List GBP Customer Media", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    { title: "List GBP Customer Media", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     async ({ placeId, mediaId, limit, nextToken }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
@@ -1617,7 +1625,7 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
       rating: z.string().nullish().describe("Comma-separated star ratings to include, 1-5. For example '1,2' returns only one and two star reviews."),
       nextToken: z.string().nullish().describe("Page token from a previous response."),
     },
-    { title: "List GBP Reviews", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    { title: "List GBP Reviews", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     async ({ placeId, reviewId, limit, unanswered, rating, nextToken }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
@@ -1635,7 +1643,7 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
       limit: z.number().int().min(1).max(100).nullish().describe("Results per page, 1-100. Omit for the API default."),
       nextToken: z.string().nullish().describe("Page token from a previous response."),
     },
-    { title: "List GBP Action Links", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    { title: "List GBP Action Links", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     async ({ placeId, linkId, limit, nextToken }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
