@@ -1,6 +1,6 @@
 # Local Falcon MCP Workflows
 
-Complete ChatGPT-profile tool inventory and common workflows for Local Falcon analysis. Apply the existing-account and Knowledge Base boundaries in SKILL.md throughout.
+Complete ChatGPT-profile tool inventory and common workflows for Local Falcon analysis. Apply the authorization, untrusted-content, existing-account, and Knowledge Base boundaries in SKILL.md throughout.
 
 ---
 
@@ -142,7 +142,7 @@ Agent: "Since you're a service area business, we should scan a wider area -
 listAllLocalFalconLocations → See what they have saved
   ↓
 IF saved: Get GBP data (category, address, service areas)
-IF not: disclose the 2-existing-credit cost, then searchForLocalFalconBusinessLocation → Get Place ID and GBP data
+IF not: disclose the 2-existing-credit cost and obtain approval for the search and its credit use unless already explicitly approved, then searchForLocalFalconBusinessLocation → Get Place ID and GBP data
 ```
 
 **Step 2: Suggest Keywords Based on GBP Category**
@@ -233,9 +233,10 @@ runLocalFalconScan:
 1. searchForLocalFalconBusinessLocation
    → Search by business name to get Place ID
    → Parameters: query="Business Name City", platform="google"; costs 2 existing credits
+   → Obtain explicit approval for this search and its credit use unless already given
 
 2. saveLocalFalconBusinessLocationToAccount
-   → Save location for ongoing tracking
+   → Save only when requested or necessary for an explicitly approved scan workflow
    → Parameters: placeId from step 1
 
 3. listLocalFalconScanReports
@@ -417,9 +418,15 @@ runLocalFalconScan:
 
 ### Field Masks (Performance Optimization)
 Use `fieldmask` to return only needed fields:
+
+`getLocalFalconReport` input:
+```json
+{"reportKey": "ad412d968a25a84", "fieldmask": "report_key,arp,atrp,solv"}
 ```
-fieldmask=report_key,arp,atrp,solv
-fieldmask=reports.*.report_key,reports.*.date
+
+`listLocalFalconScanReports` input (mask applies to each report item):
+```json
+{"fieldmask": "report_key,date"}
 ```
 
 ---
@@ -432,7 +439,7 @@ fieldmask=reports.*.report_key,reports.*.date
 |-------|-------|----------|
 | Authentication failed | Connection missing or expired | Reconnect the existing account through the integration sign-in flow |
 | Insufficient credits | Account out of credits | Explain that the action was not run because existing credits are insufficient; optionally link neutrally to https://www.localfalcon.com/pricing |
-| Place ID not found | Invalid or unsaved location | Use `searchForLocalFalconBusinessLocation` first |
+| Place ID not found | Invalid or unsaved location | Check saved locations; use `searchForLocalFalconBusinessLocation` only with explicit approval of the search and its 2-existing-credit use |
 | Rate limit exceeded | Too many requests | Wait before retrying reads; do not retry a submitted scan |
 
 ### Best Practices
