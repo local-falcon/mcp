@@ -900,7 +900,7 @@ export async function fetchLocalFalconLocationReport(apiKey: string, reportKey: 
  * @param {string} reportKey - The report key
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconReport(apiKey: string, reportKey: string, fieldmask?: string) {
+export async function fetchLocalFalconReport(apiKey: string, reportKey: string, fieldmask?: string, includeWidgetData = false) {
   // Clean up the report key if it's a URL
   const cleanReportKey = reportKey.includes('/')
     ? reportKey.split('/').pop()
@@ -923,6 +923,9 @@ export async function fetchLocalFalconReport(apiKey: string, reportKey: string, 
     }
 
     const data = await safeParseJson(res);
+    // Report reads must never deliver an application-level denied/error payload
+    // as successful widget data, including on the normal/Claude profile.
+    if (data?.success === false) throw parseApiError(res.status, JSON.stringify(data));
     const unwrapped = unwrapWithWarnings(data);
 
     // Handle 202 Accepted — scan report is still processing
@@ -937,7 +940,7 @@ export async function fetchLocalFalconReport(apiKey: string, reportKey: string, 
 
     try {
       // Validate the response
-      if (!unwrapped) {
+      if (!unwrapped || (includeWidgetData && (typeof unwrapped !== "object" || Array.isArray(unwrapped)))) {
         throw new Error('Invalid response format from Local Falcon API');
       }
 
@@ -945,7 +948,7 @@ export async function fetchLocalFalconReport(apiKey: string, reportKey: string, 
       // (e.g. 81 grid points × 20 results each). Preserve when fieldmask explicitly requests them.
       // _warnings (if present from unwrapWithWarnings) passes through either branch.
       const wantsDataPoints = fieldmask && fieldmask.includes('data_points');
-      if (wantsDataPoints) {
+      if (wantsDataPoints || includeWidgetData) {
         return unwrapped;
       }
       const { data_points, ...cleanData } = unwrapped;
