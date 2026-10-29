@@ -527,32 +527,33 @@ async function safeParseJson(response: any) {
 /**
  * Fetches scan reports from the Local Falcon API.
  * @param {string} apiKey - Your Local Falcon API key
- * @param {string} limit - Maximum number of results to return
+ * @param {string} [limit] - Results per page (1-100); the API defaults to 10
  * @param {string} nextToken - Optional pagination token for additional results
  * @param {string} startDate - Optional start date to filter reports (format: YYYY-MM-DD)
  * @param {string} endDate - Optional end date to filter reports (format: YYYY-MM-DD)
  * @returns {Promise<LocalFalconReportsResponse>} API response
  */
-export async function fetchLocalFalconReports(apiKey: string, limit: string, nextToken?: string, startDate?: string, endDate?: string, placeId?: string, keyword?: string, gridSize?: string, campaignKey?: string, platform?: string, fieldmask?: string) {
-  const url = new URL(`${API_BASE}/reports`);
-  url.searchParams.set("limit", limit);
-  if (nextToken) url.searchParams.set("next_token", nextToken);
-  if (startDate) url.searchParams.set("start_date", startDate);
-  if (endDate) url.searchParams.set("end_date", endDate);
-  if (placeId) url.searchParams.set("place_id", placeId);
-  if (keyword) url.searchParams.set("keyword", keyword);
-  if (gridSize) url.searchParams.set("grid_size", gridSize);
-  if (campaignKey) url.searchParams.set("campaign_key", campaignKey);
-  if (platform) url.searchParams.set("platform", platform);
+export async function fetchLocalFalconReports(apiKey: string, limit?: string, nextToken?: string, startDate?: string, endDate?: string, placeId?: string, keyword?: string, gridSize?: string, campaignKey?: string, platform?: string, fieldmask?: string) {
+  const form = new FormData();
+  if (limit) form.append("limit", limit);
+  if (nextToken) form.append("next_token", nextToken);
+  if (startDate) form.append("start_date", startDate);
+  if (endDate) form.append("end_date", endDate);
+  if (placeId) form.append("place_id", placeId);
+  if (keyword) form.append("keyword", keyword);
+  if (gridSize) form.append("grid_size", gridSize);
+  if (campaignKey) form.append("campaign_key", campaignKey);
+  if (platform) form.append("platform", platform);
   // Auto-prefix fieldmask with reports.* wildcard syntax for the list endpoint
-  if (fieldmask) url.searchParams.set("fieldmask", prefixFieldmaskForList(fieldmask, 'reports'));
+  if (fieldmask) form.append("fieldmask", prefixFieldmaskForList(fieldmask, 'reports'));
 
   await rateLimiter.waitForAvailableSlot();
 
   return withRetry(async () => {
-    const res = await fetchWithTimeout(url.toString(), {
+    const res = await fetchWithTimeout(`${API_BASE}/reports/`, {
       method: "POST",
-      headers: buildHeaders(apiKey),
+      body: form,
+      headers: buildHeaders(apiKey, true),
     });
 
     if (!res.ok) {
@@ -565,13 +566,7 @@ export async function fetchLocalFalconReports(apiKey: string, limit: string, nex
 
     // When fieldmask is used, the API returns the standard structure with filtered fields
     if (fieldmask) {
-      if (unwrapped?.reports) {
-        return {
-          ...unwrapped,
-          reports: unwrapped.reports.slice(0, parseInt(limit) || unwrapped.reports.length)
-        };
-      }
-      // Fallback: return whatever the unwrap gave us (preserves _warnings if present)
+      // Return whatever the unwrap gave us (preserves _warnings if present)
       return unwrapped;
     }
 
@@ -580,40 +575,38 @@ export async function fetchLocalFalconReports(apiKey: string, limit: string, nex
       throw new Error('Invalid response format from Local Falcon API');
     }
 
-    return {
-      ...unwrapped,
-      reports: unwrapped.reports.slice(0, parseInt(limit) || unwrapped.reports.length)
-    };
+    return unwrapped;
   });
 }
 
 /**
  * Fetches trend reports from the Local Falcon API.
  * @param {string} apiKey - Your Local Falcon API key
- * @param {string} limit - Maximum number of results to return
+ * @param {string} [limit] - Results per page (1-100); the API defaults to 10
  * @param {string} nextToken - Optional pagination token for additional results
  * @param {string} placeId - Optional place ID to filter by
  * @param {string} keyword - Optional keyword to filter by
  * @returns {Promise<LocalFalconTrendReportsResponse>} API response
  */
-export async function fetchLocalFalconTrendReports(apiKey: string, limit: string, nextToken?: string, placeId?: string, keyword?: string, startDate?: string, endDate?: string, platform?: string, fieldmask?: string) {
-  const url = new URL(`${API_BASE}/trend-reports`);
-  url.searchParams.set("limit", limit);
-  if (nextToken) url.searchParams.set("next_token", nextToken);
-  if (placeId) url.searchParams.set("place_id", placeId);
-  if (keyword) url.searchParams.set("keyword", keyword);
-  if (startDate) url.searchParams.set("start_date", startDate);
-  if (endDate) url.searchParams.set("end_date", endDate);
-  if (platform) url.searchParams.set("platform", platform);
+export async function fetchLocalFalconTrendReports(apiKey: string, limit?: string, nextToken?: string, placeId?: string, keyword?: string, startDate?: string, endDate?: string, platform?: string, fieldmask?: string) {
+  const form = new FormData();
+  if (limit) form.append("limit", limit);
+  if (nextToken) form.append("next_token", nextToken);
+  if (placeId) form.append("place_id", placeId);
+  if (keyword) form.append("keyword", keyword);
+  if (startDate) form.append("start_date", startDate);
+  if (endDate) form.append("end_date", endDate);
+  if (platform) form.append("platform", platform);
   // Auto-prefix fieldmask with reports.* wildcard syntax for the list endpoint
-  if (fieldmask) url.searchParams.set("fieldmask", prefixFieldmaskForList(fieldmask, 'reports'));
+  if (fieldmask) form.append("fieldmask", prefixFieldmaskForList(fieldmask, 'reports'));
 
   await rateLimiter.waitForAvailableSlot();
 
   return withRetry(async () => {
-    const res = await fetchWithTimeout(url.toString(), {
+    const res = await fetchWithTimeout(`${API_BASE}/trend-reports/`, {
       method: "POST",
-      headers: buildHeaders(apiKey),
+      body: form,
+      headers: buildHeaders(apiKey, true),
     });
 
     if (!res.ok) {
@@ -626,12 +619,6 @@ export async function fetchLocalFalconTrendReports(apiKey: string, limit: string
 
     // When fieldmask is used, the API returns the standard structure with filtered fields
     if (fieldmask) {
-      if (unwrapped?.reports) {
-        return {
-          ...unwrapped,
-          reports: unwrapped.reports.slice(0, parseInt(limit) || unwrapped.reports.length)
-        };
-      }
       return unwrapped;
     }
 
@@ -640,10 +627,7 @@ export async function fetchLocalFalconTrendReports(apiKey: string, limit: string
       throw new Error('Invalid response format from Local Falcon API');
     }
 
-    return {
-      ...unwrapped,
-      reports: unwrapped.reports.slice(0, parseInt(limit) || unwrapped.reports.length)
-    };
+    return unwrapped;
   });
 }
 
@@ -656,26 +640,28 @@ export async function fetchLocalFalconTrendReports(apiKey: string, limit: string
  * @param {string} grid_size - Optional grid size filter
  * @param {string} frequency - Optional frequency filter
  * @param {string} status - Optional status filter
+ * @param {string} [limit] - Results per page (1-100); the API defaults to 10
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconAutoScans(apiKey: string, nextToken?: string, placeId?: string, keyword?: string, grid_size?: string, frequency?: string, status?: string, platform?: string, fieldmask?: string) {
-  const url = new URL(`${API_BASE}/autoscans`);
-
-  if (nextToken) url.searchParams.set("next_token", nextToken);
-  if (placeId) url.searchParams.set("place_id", placeId);
-  if (keyword) url.searchParams.set("keyword", keyword);
-  if (grid_size) url.searchParams.set("grid_size", grid_size);
-  if (frequency) url.searchParams.set("frequency", frequency);
-  if (status) url.searchParams.set("status", status);
-  if (platform) url.searchParams.set("platform", platform);
-  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
+export async function fetchLocalFalconAutoScans(apiKey: string, nextToken?: string, placeId?: string, keyword?: string, grid_size?: string, frequency?: string, status?: string, platform?: string, fieldmask?: string, limit?: string) {
+  const form = new FormData();
+  if (limit) form.append("limit", limit);
+  if (nextToken) form.append("next_token", nextToken);
+  if (placeId) form.append("place_id", placeId);
+  if (keyword) form.append("keyword", keyword);
+  if (grid_size) form.append("grid_size", grid_size);
+  if (frequency) form.append("frequency", frequency);
+  if (status) form.append("status", status);
+  if (platform) form.append("platform", platform);
+  if (fieldmask) form.append("fieldmask", fieldmask);
 
   await rateLimiter.waitForAvailableSlot();
 
   return withRetry(async () => {
-    const res = await fetchWithTimeout(url.toString(), {
+    const res = await fetchWithTimeout(`${API_BASE}/autoscans/`, {
       method: "POST",
-      headers: buildHeaders(apiKey),
+      body: form,
+      headers: buildHeaders(apiKey, true),
     });
 
     if (!res.ok) {
@@ -690,30 +676,30 @@ export async function fetchLocalFalconAutoScans(apiKey: string, nextToken?: stri
 /**
  * Fetches location reports from the Local Falcon API.
  * @param {string} apiKey - Your Local Falcon API key
- * @param {string} limit - Maximum number of results
+ * @param {string} [limit] - Results per page (1-100); the API defaults to 10
  * @param {string} placeId - Optional place ID filter
  * @param {string} keyword - Optional keyword filter
  * @param {string} nextToken - Optional pagination token
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconLocationReports(apiKey: string, limit: string, placeId?: string, keyword?: string, startDate?:string, endDate?: string, nextToken?: string, fieldmask?: string) {
-  const url = new URL(`${API_BASE}/location-reports`);
-  url.searchParams.set("limit", limit);
-
-  if (placeId) url.searchParams.set("place_id", placeId);
-  if (keyword) url.searchParams.set("keyword", keyword);
-  if (startDate) url.searchParams.set("start_date", startDate);
-  if (endDate) url.searchParams.set("end_date", endDate);
-  if (nextToken) url.searchParams.set("next_token", nextToken);
+export async function fetchLocalFalconLocationReports(apiKey: string, limit?: string, placeId?: string, keyword?: string, startDate?:string, endDate?: string, nextToken?: string, fieldmask?: string) {
+  const form = new FormData();
+  if (limit) form.append("limit", limit);
+  if (placeId) form.append("place_id", placeId);
+  if (keyword) form.append("keyword", keyword);
+  if (startDate) form.append("start_date", startDate);
+  if (endDate) form.append("end_date", endDate);
+  if (nextToken) form.append("next_token", nextToken);
   // Auto-prefix fieldmask with reports.* wildcard syntax for the list endpoint
-  if (fieldmask) url.searchParams.set("fieldmask", prefixFieldmaskForList(fieldmask, 'reports'));
+  if (fieldmask) form.append("fieldmask", prefixFieldmaskForList(fieldmask, 'reports'));
 
   await rateLimiter.waitForAvailableSlot();
 
   return withRetry(async () => {
-    const res = await fetchWithTimeout(url.toString(), {
+    const res = await fetchWithTimeout(`${API_BASE}/location-reports/`, {
       method: "POST",
-      headers: buildHeaders(apiKey),
+      body: form,
+      headers: buildHeaders(apiKey, true),
     });
 
     if (!res.ok) {
@@ -726,12 +712,6 @@ export async function fetchLocalFalconLocationReports(apiKey: string, limit: str
 
     // When fieldmask is used, the API returns the standard structure with filtered fields
     if (fieldmask) {
-      if (unwrapped?.reports) {
-        return {
-          ...unwrapped,
-          reports: unwrapped.reports.slice(0, parseInt(limit) || unwrapped.reports.length)
-        };
-      }
       return unwrapped;
     }
 
@@ -740,12 +720,12 @@ export async function fetchLocalFalconLocationReports(apiKey: string, limit: str
       throw new Error('Invalid response format from Local Falcon API');
     }
 
-    const limitNum = parseInt(limit) || unwrapped.reports.length;
-
     const out: any = {
+      count: unwrapped.count,
+      total: unwrapped.total,
       next_token: unwrapped.next_token,
       ai_analysis: unwrapped.ai_analysis,
-      reports: unwrapped.reports.slice(0, limitNum).map((report: any) => {
+      reports: unwrapped.reports.map((report: any) => {
         return {
           report_key: report.report_key,
           last_date: report.last_date,
@@ -797,27 +777,27 @@ export async function fetchAllLocalFalconLocations(apiKey: string, query?: strin
  * Groups may be nested: a child group carries a `parent` object identifying
  * its container; top-level groups have type `parent`.
  * @param {string} apiKey - Your Local Falcon API key
- * @param {string} limit - Maximum number of results to return
+ * @param {string} [limit] - Results per page (1-1000); the API defaults to 10
  * @param {string} [query] - Optional search query (matches group key or name)
  * @param {string} [nextToken] - Optional pagination token from a prior response
  * @param {string} [fieldmask] - Optional comma-separated list of fields to return
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconLocationGroups(apiKey: string, limit: string, query?: string, nextToken?: string, fieldmask?: string) {
-  const url = new URL(`${API_BASE}/location-groups`);
-  url.searchParams.set("limit", limit);
-
-  if (query) url.searchParams.set("query", query);
-  if (nextToken) url.searchParams.set("next_token", nextToken);
+export async function fetchLocalFalconLocationGroups(apiKey: string, limit?: string, query?: string, nextToken?: string, fieldmask?: string) {
+  const form = new FormData();
+  if (limit) form.append("limit", limit);
+  if (query) form.append("query", query);
+  if (nextToken) form.append("next_token", nextToken);
   // Auto-prefix fieldmask with groups.* wildcard syntax for the list endpoint
-  if (fieldmask) url.searchParams.set("fieldmask", prefixFieldmaskForList(fieldmask, 'groups'));
+  if (fieldmask) form.append("fieldmask", prefixFieldmaskForList(fieldmask, 'groups'));
 
   await rateLimiter.waitForAvailableSlot();
 
   return withRetry(async () => {
-    const res = await fetchWithTimeout(url.toString(), {
+    const res = await fetchWithTimeout(`${API_BASE}/location-groups/`, {
       method: "POST",
-      headers: buildHeaders(apiKey),
+      body: form,
+      headers: buildHeaders(apiKey, true),
     });
 
     if (!res.ok) {
@@ -830,12 +810,6 @@ export async function fetchLocalFalconLocationGroups(apiKey: string, limit: stri
 
     // When fieldmask is used, the API returns the standard structure with filtered fields
     if (fieldmask) {
-      if (unwrapped?.groups) {
-        return {
-          ...unwrapped,
-          groups: unwrapped.groups.slice(0, parseInt(limit) || unwrapped.groups.length)
-        };
-      }
       return unwrapped;
     }
 
@@ -844,11 +818,11 @@ export async function fetchLocalFalconLocationGroups(apiKey: string, limit: stri
       throw new Error('Invalid response format from Local Falcon API');
     }
 
-    const limitNum = parseInt(limit) || unwrapped.groups.length;
-
     const out: any = {
+      count: unwrapped.count,
+      total: unwrapped.total,
       next_token: unwrapped.next_token,
-      groups: unwrapped.groups.slice(0, limitNum).map((group: any) => {
+      groups: unwrapped.groups.map((group: any) => {
         const g: any = {
           key: group.key,
           name: group.name,
@@ -1066,28 +1040,28 @@ export async function fetchLocalFalconTrendReport(apiKey: string, reportKey: str
 /**
  * Fetches keyword reports from the Local Falcon API.
  * @param {string} apiKey - Your Local Falcon API key
- * @param {string} limit - Maximum number of results
+ * @param {string} [limit] - Results per page (1-100); the API defaults to 10
  * @param {string} nextToken - Optional pagination token
  * @param {string} keyword - Optional keyword filter
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconKeywordReports(apiKey: string, limit: string, nextToken?: string, keyword?: string, startDate?: string, endDate?: string, fieldmask?: string) {
-  const url = new URL(`${API_BASE}/keyword-reports`);
-  url.searchParams.set("limit", limit);
-
-  if (nextToken) url.searchParams.set("next_token", nextToken);
-  if (startDate) url.searchParams.set("start_date", startDate);
-  if (endDate) url.searchParams.set("end_date", endDate);
-  if (keyword) url.searchParams.set("keyword", keyword);
+export async function fetchLocalFalconKeywordReports(apiKey: string, limit?: string, nextToken?: string, keyword?: string, startDate?: string, endDate?: string, fieldmask?: string) {
+  const form = new FormData();
+  if (limit) form.append("limit", limit);
+  if (nextToken) form.append("next_token", nextToken);
+  if (startDate) form.append("start_date", startDate);
+  if (endDate) form.append("end_date", endDate);
+  if (keyword) form.append("keyword", keyword);
   // Auto-prefix fieldmask with reports.* wildcard syntax for the list endpoint
-  if (fieldmask) url.searchParams.set("fieldmask", prefixFieldmaskForList(fieldmask, 'reports'));
+  if (fieldmask) form.append("fieldmask", prefixFieldmaskForList(fieldmask, 'reports'));
 
   await rateLimiter.waitForAvailableSlot();
 
   return withRetry(async () => {
-    const res = await fetchWithTimeout(url.toString(), {
+    const res = await fetchWithTimeout(`${API_BASE}/keyword-reports/`, {
       method: "POST",
-      headers: buildHeaders(apiKey),
+      body: form,
+      headers: buildHeaders(apiKey, true),
     });
 
     if (!res.ok) {
@@ -1100,12 +1074,6 @@ export async function fetchLocalFalconKeywordReports(apiKey: string, limit: stri
 
     // When fieldmask is used, the API returns the standard structure with filtered fields
     if (fieldmask) {
-      if (unwrapped?.reports) {
-        return {
-          ...unwrapped,
-          reports: unwrapped.reports.slice(0, parseInt(limit) || unwrapped.reports.length)
-        };
-      }
       return unwrapped;
     }
 
@@ -1114,11 +1082,9 @@ export async function fetchLocalFalconKeywordReports(apiKey: string, limit: stri
       throw new Error('Invalid response format from Local Falcon API');
     }
 
-    const limitNum = parseInt(limit) || unwrapped.reports.length;
-
     return {
       ...unwrapped,
-      reports: unwrapped.reports.slice(0, limitNum).map((report: any) => {
+      reports: unwrapped.reports.map((report: any) => {
         // Remove unnecessary fields to save bandwidth
         const { last_timestamp, looker_last_date, scan_count, pdf, ...cleanReport } = report;
         return cleanReport;
@@ -1377,7 +1343,7 @@ export async function fetchLocalFalconFullGridSearch(
 /**
  * Fetches competitor reports from the Local Falcon API.
  * @param {string} apiKey - Your Local Falcon API key
- * @param {string} limit - Maximum number of results
+ * @param {string} [limit] - Results per page (1-100); the API defaults to 10
  * @param {string} startDate - Optional start date filter
  * @param {string} endDate - Optional end date filter
  * @param {string} placeId - Optional place ID filter
@@ -1386,25 +1352,25 @@ export async function fetchLocalFalconFullGridSearch(
  * @param {string} nextToken - Optional pagination token
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconCompetitorReports(apiKey: string, limit: string, startDate?: string, endDate?: string, placeId?: string, keyword?: string, gridSize?: string, nextToken?: string, fieldmask?: string) {
-  const url = new URL(`${API_BASE}/competitor-reports`);
-  url.searchParams.set("limit", limit);
-
-  if (startDate) url.searchParams.set("start_date", startDate);
-  if (endDate) url.searchParams.set("end_date", endDate);
-  if (placeId) url.searchParams.set("place_id", placeId);
-  if (keyword) url.searchParams.set("keyword", keyword);
-  if (gridSize) url.searchParams.set("grid_size", gridSize);
-  if (nextToken) url.searchParams.set("next_token", nextToken);
+export async function fetchLocalFalconCompetitorReports(apiKey: string, limit?: string, startDate?: string, endDate?: string, placeId?: string, keyword?: string, gridSize?: string, nextToken?: string, fieldmask?: string) {
+  const form = new FormData();
+  if (limit) form.append("limit", limit);
+  if (startDate) form.append("start_date", startDate);
+  if (endDate) form.append("end_date", endDate);
+  if (placeId) form.append("place_id", placeId);
+  if (keyword) form.append("keyword", keyword);
+  if (gridSize) form.append("grid_size", gridSize);
+  if (nextToken) form.append("next_token", nextToken);
   // Auto-prefix fieldmask with reports.* wildcard syntax for the list endpoint
-  if (fieldmask) url.searchParams.set("fieldmask", prefixFieldmaskForList(fieldmask, 'reports'));
+  if (fieldmask) form.append("fieldmask", prefixFieldmaskForList(fieldmask, 'reports'));
 
   await rateLimiter.waitForAvailableSlot();
 
   return withRetry(async () => {
-    const res = await fetchWithTimeout(url.toString(), {
+    const res = await fetchWithTimeout(`${API_BASE}/competitor-reports/`, {
       method: "POST",
-      headers: buildHeaders(apiKey),
+      body: form,
+      headers: buildHeaders(apiKey, true),
     });
 
     if (!res.ok) {
@@ -1417,12 +1383,6 @@ export async function fetchLocalFalconCompetitorReports(apiKey: string, limit: s
 
     // When fieldmask is used, the API returns the standard structure with filtered fields
     if (fieldmask) {
-      if (unwrapped?.reports) {
-        return {
-          ...unwrapped,
-          reports: unwrapped.reports.slice(0, parseInt(limit) || unwrapped.reports.length)
-        };
-      }
       return unwrapped;
     }
 
@@ -1431,11 +1391,9 @@ export async function fetchLocalFalconCompetitorReports(apiKey: string, limit: s
       throw new Error('Invalid response format from Local Falcon API');
     }
 
-    const limitNum = parseInt(limit) || unwrapped.reports.length;
-
     return {
       ...unwrapped,
-      reports: unwrapped.reports.slice(0, limitNum).map((report: any) => {
+      reports: unwrapped.reports.map((report: any) => {
         // Remove unnecessary fields to save bandwidth
         const {
           data_points,
@@ -1511,31 +1469,31 @@ export async function fetchLocalFalconCompetitorReport(apiKey: string, reportKey
 /**
  * Fetches campaign reports from the Local Falcon API.
  * @param {string} apiKey - Your Local Falcon API key
- * @param {string} limit - Maximum number of results
+ * @param {string} [limit] - Results per page (1-100); the API defaults to 10
  * @param {string} startDate - Optional start date filter
  * @param {string} endDate - Optional end date filter
  * @param {string} placeId - Optional place ID filter
  * @param {string} nextToken - Optional pagination token
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconCampaignReports(apiKey: string, limit: string, startDate?: string, endDate?: string, placeId?: string, runDate?: string, nextToken?: string, fieldmask?: string) {
-  const url = new URL(`${API_BASE}/campaigns`);
-  url.searchParams.set("limit", limit);
-
-  if (startDate) url.searchParams.set("start_date", startDate);
-  if (endDate) url.searchParams.set("end_date", endDate);
-  if (placeId) url.searchParams.set("place_id", placeId);
-  if (runDate) url.searchParams.set("run", runDate);
-  if (nextToken) url.searchParams.set("next_token", nextToken);
+export async function fetchLocalFalconCampaignReports(apiKey: string, limit?: string, startDate?: string, endDate?: string, placeId?: string, runDate?: string, nextToken?: string, fieldmask?: string) {
+  const form = new FormData();
+  if (limit) form.append("limit", limit);
+  if (startDate) form.append("start_date", startDate);
+  if (endDate) form.append("end_date", endDate);
+  if (placeId) form.append("place_id", placeId);
+  if (runDate) form.append("run", runDate);
+  if (nextToken) form.append("next_token", nextToken);
   // Auto-prefix fieldmask with reports.* wildcard syntax for the list endpoint
-  if (fieldmask) url.searchParams.set("fieldmask", prefixFieldmaskForList(fieldmask, 'reports'));
+  if (fieldmask) form.append("fieldmask", prefixFieldmaskForList(fieldmask, 'reports'));
 
   await rateLimiter.waitForAvailableSlot();
 
   return withRetry(async () => {
-    const res = await fetchWithTimeout(url.toString(), {
+    const res = await fetchWithTimeout(`${API_BASE}/campaigns/`, {
       method: "POST",
-      headers: buildHeaders(apiKey),
+      body: form,
+      headers: buildHeaders(apiKey, true),
     });
 
     if (!res.ok) {
@@ -1548,12 +1506,6 @@ export async function fetchLocalFalconCampaignReports(apiKey: string, limit: str
 
     // When fieldmask is used, the API returns the standard structure with filtered fields
     if (fieldmask) {
-      if (unwrapped?.reports) {
-        return {
-          ...unwrapped,
-          reports: unwrapped.reports.slice(0, parseInt(limit) || unwrapped.reports.length)
-        };
-      }
       return unwrapped;
     }
 
@@ -1562,11 +1514,9 @@ export async function fetchLocalFalconCampaignReports(apiKey: string, limit: str
       throw new Error('Invalid response format from Local Falcon API');
     }
 
-    const limitNum = parseInt(limit) || unwrapped.reports.length;
-
     return {
       ...unwrapped,
-      reports: unwrapped.reports.slice(0, limitNum).map((report: any) => {
+      reports: unwrapped.reports.map((report: any) => {
         // Remove only truly unnecessary fields
         const {
           data_points,
@@ -1615,27 +1565,27 @@ export async function fetchLocalFalconCampaignReport(apiKey: string, reportKey: 
 /**
  * Fetches guard reports from the Local Falcon API.
  * @param {string} apiKey - Your Local Falcon API key
- * @param {string} limit - Maximum number of results
+ * @param {string} [limit] - Results per page (3-100); the API defaults to 10
  * @param {string} startDate - Optional start date filter
  * @param {string} endDate - Optional end date filter
  * @returns {Promise<any>} API response
  */
-export async function fetchLocalFalconGuardReports(apiKey: string, limit: string, startDate?: string, endDate?: string, status?: string, nextToken?: string, fieldmask?: string) {
-  const url = new URL(`${API_BASE}/guard`);
-  url.searchParams.set("limit", limit);
-
-  if (startDate) url.searchParams.set("start_date", startDate);
-  if (endDate) url.searchParams.set("end_date", endDate);
-  if (status) url.searchParams.set("status", status);
-  if (nextToken) url.searchParams.set("next_token", nextToken);
+export async function fetchLocalFalconGuardReports(apiKey: string, limit?: string, startDate?: string, endDate?: string, status?: string, nextToken?: string, fieldmask?: string) {
+  const form = new FormData();
+  if (limit) form.append("limit", limit);
+  if (startDate) form.append("start_date", startDate);
+  if (endDate) form.append("end_date", endDate);
+  if (status) form.append("status", status);
+  if (nextToken) form.append("next_token", nextToken);
   // Auto-prefix fieldmask with reports.* wildcard syntax for the list endpoint
-  if (fieldmask) url.searchParams.set("fieldmask", prefixFieldmaskForList(fieldmask, 'reports'));
+  if (fieldmask) form.append("fieldmask", prefixFieldmaskForList(fieldmask, 'reports'));
   await rateLimiter.waitForAvailableSlot();
 
   return withRetry(async () => {
-    const res = await fetchWithTimeout(url.toString(), {
+    const res = await fetchWithTimeout(`${API_BASE}/guard/`, {
       method: "POST",
-      headers: buildHeaders(apiKey),
+      body: form,
+      headers: buildHeaders(apiKey, true),
     });
 
     if (!res.ok) {
@@ -1648,12 +1598,6 @@ export async function fetchLocalFalconGuardReports(apiKey: string, limit: string
 
     // When fieldmask is used, the API returns the standard structure with filtered fields
     if (fieldmask) {
-      if (unwrapped?.reports) {
-        return {
-          ...unwrapped,
-          reports: unwrapped.reports.slice(0, parseInt(limit) || unwrapped.reports.length)
-        };
-      }
       return unwrapped;
     }
 
@@ -1662,12 +1606,7 @@ export async function fetchLocalFalconGuardReports(apiKey: string, limit: string
       throw new Error('Invalid response format from Local Falcon API');
     }
 
-    const limitNum = parseInt(limit) || unwrapped.reports.length;
-
-    return {
-      ...unwrapped,
-      reports: unwrapped.reports.slice(0, limitNum)
-    };
+    return unwrapped;
   });
 }
 

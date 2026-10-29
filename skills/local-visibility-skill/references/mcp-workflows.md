@@ -408,7 +408,8 @@ runLocalFalconScan:
 
 ### Pagination
 - Result limits are tool-specific; use only fields supported by the current tool schema.
-- `nextToken` - Token from previous response for next page
+- `limit` - Results per page on list tools (defaults to 10; usually up to 100)
+- `nextToken` - Token from previous response for next page; keep the same filters and `limit`
 
 ### Filtering
 - `placeId` - Filter by Google/Apple Place ID

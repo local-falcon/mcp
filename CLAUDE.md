@@ -378,6 +378,19 @@ The Local Falcon API has two base URLs used by `localfalcon.ts`:
 
 Public API documentation: [docs.localfalcon.com](https://docs.localfalcon.com)
 
+### List Pagination
+
+The v1 list endpoints (`reports`, `trend-reports`, `autoscans`, `location-reports`,
+`location-groups`, `keyword-reports`, `competitor-reports`, `campaigns`, `guard`) read
+`limit`, `next_token` and every filter from the **POST form body**, per the OpenAPI spec
+(`docs.localfalcon.com/openapi.yaml`). These were previously sent on the query string, where
+the API ignores them: every list was stuck on the default first page of 10, and `next_token`
+had no effect. Send them as `FormData` to the trailing-slash path (`/v1/reports/`).
+
+The list tools expose `limit` (1–100; `listLocalFalconLocationGroups` allows 1000 and
+`listLocalFalconGuardReports` requires at least 3). Pages are returned whole and never
+trimmed client-side, because any rows past `limit` would be skipped by the `next_token`.
+
 ## Memory Budget
 
 The server OOM-cycled on Render roughly every 50 hours. Two causes, both measured:
@@ -493,7 +506,7 @@ npm run docker:run
 
 | Constant | Value | Location |
 |---|---|---|
-| `DEFAULT_LIMIT` | `"10"` | server.ts — default page size for list endpoints |
+| `DEFAULT_LIMIT` | `"10"` | server.ts — page size sent when a list tool's `limit` is omitted |
 | `DEFAULT_TIMEOUT_MS` | `30000` | localfalcon.ts |
 | `LONG_OPERATION_TIMEOUT_MS` | `60000` | localfalcon.ts |
 | `MAX_RETRIES` | `3` | localfalcon.ts |

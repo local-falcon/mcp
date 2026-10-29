@@ -275,7 +275,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
 4. **Omit optional parameters entirely** when you don't have a useful value. Do not pass null or empty strings.
 5. **Don't chain excessive tool calls.** If a user asks about scan reports, fetch scan reports — don't also fetch campaigns, trends, competitors, guard reports, and reviews unless specifically needed.
 6. **Use the Knowledge Base tools** (searchLocalFalconKnowledgeBase, getLocalFalconKnowledgeBaseArticle) for questions about Local Falcon features, settings, and how-to guidance. These return platform documentation, not user-specific data.
-7. **Pagination:** Most list tools return limited results per page. Use the nextToken from responses to fetch additional pages when needed.
+7. **Pagination:** List tools return 10 results per page by default; set \`limit\` (up to 100) for larger pages. When a response includes \`next_token\`, pass it as \`nextToken\` with the same filters and limit to fetch the next page.
 8. **Credit awareness:** runLocalFalconScan, runLocalFalconCampaign, and createLocalFalconCampaign consume credits. Use viewLocalFalconAccountInformation to check credit balance if relevant.
     `
   },
@@ -449,9 +449,10 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
   // Get list of Scan Reports
   registerTool(
     "listLocalFalconScanReports",
-    "Lists existing scan reports. ALWAYS check here before running new scans to avoid duplicates and save credits. Returns report metadata including date, keyword, location, ARP, ATRP, SoLV, grid size, and platform. Use filters to narrow results. If a report has a campaign_key, its data is consolidated in the campaign report — no separate trend/location/keyword reports exist for campaign scans. Use fieldmask to control returned fields. Recommended fieldmask for browsing: \"report_key,date,keyword,location.name,arp,atrp,solv,grid_size,platform\". Returns limited results per page; use nextToken for pagination.",
-    { 
-      nextToken: z.string().optional().describe("Pagination token for additional results."),
+    "Lists existing scan reports. ALWAYS check here before running new scans to avoid duplicates and save credits. Returns report metadata including date, keyword, location, ARP, ATRP, SoLV, grid size, and platform. Use filters to narrow results. If a report has a campaign_key, its data is consolidated in the campaign report — no separate trend/location/keyword reports exist for campaign scans. Use fieldmask to control returned fields. Recommended fieldmask for browsing: \"report_key,date,keyword,location.name,arp,atrp,solv,grid_size,platform\". Returns 10 results per page by default; set limit (up to 100) for larger pages and pass the returned next_token as nextToken for the next page.",
+    {
+      limit: z.coerce.number().int().min(1).max(100).optional().describe("Results per page (1-100). Defaults to 10."),
+      nextToken: z.string().optional().describe("Pass the next_token from the previous response to get the next page. Keep the same filters and limit as that request."),
       startDate: z.string().optional().describe("A lower limit date of a scan report you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
       endDate: z.string().optional().describe("Upper limit date of a scan report you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
       placeId: z.string().optional().describe("Filter only results for specific Google Place ID. Supports multiple Google Place IDs, seperated by commas."), 
@@ -462,13 +463,12 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       fieldmask: z.string().optional().describe("Comma-separated list of fields to return. Dot notation for nested paths (e.g., 'location.name'). The `.*.` wildcard works on arrays (e.g., 'scans.*.arp' on trend/campaign reports, where scans is an array) AND on dicts of objects (e.g., 'places.*.solv' on scan reports, where places is keyed by place_id with object values). For dicts of scalars like 'rankings.by_arp' (where values are numbers/strings keyed by place_id, not objects), request the whole dict by path alone — `.*.X` returns nothing because scalars can't be descended into. Omit to return all fields. STRONGLY recommended on every call: default responses can exceed 100KB."),
     },
     { title: "List Scan Reports", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-    async ({ nextToken, startDate, endDate, placeId, keyword, gridSize, campaignKey, platform, fieldmask }, ctx) => {
+    async ({ limit, nextToken, startDate, endDate, placeId, keyword, gridSize, campaignKey, platform, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
-      const limit = DEFAULT_LIMIT;
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconReports(apiKey, limit, handleNullOrUndefined(nextToken), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(gridSize), handleNullOrUndefined(campaignKey), handleNullOrUndefined(platform), handleNullOrUndefined(fieldmask));
+      const resp = await fetchLocalFalconReports(apiKey, limit?.toString() ?? DEFAULT_LIMIT, handleNullOrUndefined(nextToken), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(gridSize), handleNullOrUndefined(campaignKey), handleNullOrUndefined(platform), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -559,17 +559,17 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
     "Lists all location groups in the Local Falcon account, including the number of locations and the Place IDs contained in each group. Groups may be nested: a group with type 'child' includes a 'parent' object identifying its containing group by key and name, while top-level groups have type 'parent'. Use this to discover how saved locations are organized into groups (e.g. by region or brand) and to pull the Place IDs belonging to a group.",
     {
       query: z.string().optional().describe("Search query. Matches against the group key or name."),
-      nextToken: z.string().optional().describe("Pagination token for additional results, provided by a prior response when more results exist."),
+      limit: z.coerce.number().int().min(1).max(1000).optional().describe("Results per page (1-1000). Defaults to 10."),
+      nextToken: z.string().optional().describe("Pass the next_token from the previous response to get the next page. Keep the same filters and limit as that request."),
       fieldmask: z.string().optional().describe("Comma-separated list of fields to return from each group (e.g., 'name,place_ids'). Available fields: key, name, type, parent, location_count, place_ids, date_created. Omit to return all fields."),
     },
     { title: "List Location Groups", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-    async ({ query, nextToken, fieldmask }, ctx) => {
+    async ({ query, limit, nextToken, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
-      const limit = DEFAULT_LIMIT;
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconLocationGroups(apiKey, limit, handleNullOrUndefined(query), handleNullOrUndefined(nextToken), handleNullOrUndefined(fieldmask));
+      const resp = await fetchLocalFalconLocationGroups(apiKey, limit?.toString() ?? DEFAULT_LIMIT,handleNullOrUndefined(query), handleNullOrUndefined(nextToken), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -630,17 +630,17 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
       endDate: z.string().date().optional().describe("Upper limit date of a Campaign run or schedule you wish to retrieve. Expects date formatted as YYYY-MM-DD (ISO 8601)."),
       placeId: z.string().optional().describe("Filter only results for specific Google Place ID. Supports multiple Google Place IDs, seperated by commas."),
       runDate: z.string().date().optional().describe("Filter only results for a specific Campaign run date. Expects date formatted as YYYY-MM-DD (ISO 8601). Defaults to the last report run."),
-      nextToken: z.string().optional().describe("This parameter is used to get the next 'page' of results. The value used with the parameter is provided from a previous response by this endpoint if more 'pages' of results exist."),
+      limit: z.coerce.number().int().min(1).max(100).optional().describe("Results per page (1-100). Defaults to 10."),
+      nextToken: z.string().optional().describe("Pass the next_token from the previous response to get the next page. Keep the same filters and limit as that request."),
       fieldmask: z.string().optional().describe("Comma-separated list of fields to return. Dot notation for nested paths (e.g., 'location.name'). The `.*.` wildcard works on arrays (e.g., 'scans.*.arp' on trend/campaign reports, where scans is an array) AND on dicts of objects (e.g., 'places.*.solv' on scan reports, where places is keyed by place_id with object values). For dicts of scalars like 'rankings.by_arp' (where values are numbers/strings keyed by place_id, not objects), request the whole dict by path alone — `.*.X` returns nothing because scalars can't be descended into. Omit to return all fields. STRONGLY recommended on every call: default responses can exceed 100KB."),
     },
     { title: "List Campaign Reports", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-    async ({ startDate, endDate, placeId, runDate, nextToken, fieldmask }, ctx) => {
+    async ({ startDate, endDate, placeId, runDate, limit, nextToken, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const limit = DEFAULT_LIMIT;
-      const resp = await fetchLocalFalconCampaignReports(apiKey, limit, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(placeId), handleNullOrUndefined(runDate), handleNullOrUndefined(nextToken), handleNullOrUndefined(fieldmask));
+      const resp = await fetchLocalFalconCampaignReports(apiKey, limit?.toString() ?? DEFAULT_LIMIT, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(placeId), handleNullOrUndefined(runDate), handleNullOrUndefined(nextToken), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -928,17 +928,17 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
       startDate: z.string().date().optional().describe("A lower limit date you wish to retrieve. Expects date formatted as YYYY-MM-DD (ISO 8601)."),
       endDate: z.string().date().optional().describe("Upper limit date you wish to retrieve. Expects date formatted as YYYY-MM-DD (ISO 8601)."),
       status: z.enum(['protected', 'paused']).optional().describe("Filter results by status: protected or paused."),
-      nextToken: z.string().optional().describe("This parameter is used to get the next 'page' of results. The value used with the parameter is provided from a previous response by this endpoint if more 'pages' of results exist."),
+      limit: z.coerce.number().int().min(3).max(100).optional().describe("Results per page (3-100). Defaults to 10."),
+      nextToken: z.string().optional().describe("Pass the next_token from the previous response to get the next page. Keep the same filters and limit as that request."),
       fieldmask: z.string().optional().describe("Comma-separated list of fields to return. Dot notation for nested paths (e.g., 'location.name'). The `.*.` wildcard works on arrays (e.g., 'scans.*.arp' on trend/campaign reports, where scans is an array) AND on dicts of objects (e.g., 'places.*.solv' on scan reports, where places is keyed by place_id with object values). For dicts of scalars like 'rankings.by_arp' (where values are numbers/strings keyed by place_id, not objects), request the whole dict by path alone — `.*.X` returns nothing because scalars can't be descended into. Omit to return all fields. STRONGLY recommended on every call: default responses can exceed 100KB."),
     },
     { title: "List Falcon Guard Reports", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-    async ({ startDate, endDate, status, nextToken, fieldmask }, ctx) => {
+    async ({ startDate, endDate, status, limit, nextToken, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const limit = DEFAULT_LIMIT;
-      const resp = await fetchLocalFalconGuardReports(apiKey, limit, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(status), handleNullOrUndefined(nextToken), handleNullOrUndefined(fieldmask));
+      const resp = await fetchLocalFalconGuardReports(apiKey, limit?.toString() ?? DEFAULT_LIMIT, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(status), handleNullOrUndefined(nextToken), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -1053,7 +1053,8 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
     "listLocalFalconTrendReports",
     `Lists trend reports showing ranking changes over time. These are AUTO-GENERATED when 2+ scans are run with IDENTICAL settings (same Place ID, keyword, coordinates, grid size, radius, platform). Each trend report tracks one location + one keyword combination. Requires at least 2 matching scans to exist. NOT generated for campaign scans — that historical data is in the campaign report. Use fieldmask to control returned fields. Recommended fieldmask: "report_key,last_date,keyword,location.name,location.address,scan_count,arp,arp_move,atrp,atrp_move,solv,solv_move". Filter by placeId, keyword, platform, or date range.`,
     {
-      nextToken: z.string().optional().describe("This parameter is used to get the next 'page' of results. The value used with the parameter is provided from a previous response by this endpoint if more 'pages' of results exist."),
+      limit: z.coerce.number().int().min(1).max(100).optional().describe("Results per page (1-100). Defaults to 10."),
+      nextToken: z.string().optional().describe("Pass the next_token from the previous response to get the next page. Keep the same filters and limit as that request."),
       placeId: z.string().optional().describe("Filter only results for specific Google Place ID. Supports multiple Google Place IDs, seperated by commas."),
       keyword: z.string().optional().describe("Filter only results similar to specified keyword (loose match)."),
       startDate: z.string().optional().describe("A lower limit date of a scan report you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
@@ -1062,13 +1063,12 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
       fieldmask: z.string().optional().describe("Comma-separated list of fields to return. Dot notation for nested paths (e.g., 'location.name'). The `.*.` wildcard works on arrays (e.g., 'scans.*.arp' on trend/campaign reports, where scans is an array) AND on dicts of objects (e.g., 'places.*.solv' on scan reports, where places is keyed by place_id with object values). For dicts of scalars like 'rankings.by_arp' (where values are numbers/strings keyed by place_id, not objects), request the whole dict by path alone — `.*.X` returns nothing because scalars can't be descended into. Omit to return all fields. STRONGLY recommended on every call: default responses can exceed 100KB."),
     },
     { title: "List Trend Reports", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-    async ({ nextToken, placeId, keyword, startDate, endDate, platform, fieldmask }, ctx) => {
+    async ({ limit, nextToken, placeId, keyword, startDate, endDate, platform, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
-      const limit = DEFAULT_LIMIT;
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconTrendReports(apiKey, limit, handleNullOrUndefined(nextToken), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(platform), handleNullOrUndefined(fieldmask));
+      const resp = await fetchLocalFalconTrendReports(apiKey, limit?.toString() ?? DEFAULT_LIMIT, handleNullOrUndefined(nextToken), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(platform), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -1106,7 +1106,8 @@ Get the report_key from listLocalFalconTrendReports.`,
     "listLocalFalconAutoScans",
     "Lists ONLY individually scheduled automatic scans. NOTE: This does NOT include campaign-scheduled scans, which are the more common way to schedule recurring scans. To see campaign schedules, use listLocalFalconCampaignReports instead. Most users schedule scans through campaigns for better organization and reporting.",
     {
-      nextToken: z.string().optional().describe("Pagination token for additional results."),
+      limit: z.coerce.number().int().min(1).max(100).optional().describe("Results per page (1-100). Defaults to 10."),
+      nextToken: z.string().optional().describe("Pass the next_token from the previous response to get the next page. Keep the same filters and limit as that request."),
       placeId: z.string().optional().describe("The Place ID of the location."),
       keyword: z.string().optional().describe("The keyword to search for."),
       gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15', '17', '19', '21']).optional().describe("The grid size of the scan."),
@@ -1116,12 +1117,12 @@ Get the report_key from listLocalFalconTrendReports.`,
       fieldmask: z.string().optional().describe("Comma-separated list of fields to return. Dot notation for nested paths (e.g., 'location.name'). The `.*.` wildcard works on arrays (e.g., 'scans.*.arp' on trend/campaign reports, where scans is an array) AND on dicts of objects (e.g., 'places.*.solv' on scan reports, where places is keyed by place_id with object values). For dicts of scalars like 'rankings.by_arp' (where values are numbers/strings keyed by place_id, not objects), request the whole dict by path alone — `.*.X` returns nothing because scalars can't be descended into. Omit to return all fields. STRONGLY recommended on every call: default responses can exceed 100KB."),
     },
     { title: "List Scheduled Auto-Scans", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-    async ({ nextToken, placeId, keyword, gridSize, frequency, status, platform, fieldmask }, ctx) => {
+    async ({ limit, nextToken, placeId, keyword, gridSize, frequency, status, platform, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconAutoScans(apiKey, handleNullOrUndefined(nextToken), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(gridSize), handleNullOrUndefined(frequency), handleNullOrUndefined(status), handleNullOrUndefined(platform), handleNullOrUndefined(fieldmask));
+      const resp = await fetchLocalFalconAutoScans(apiKey, handleNullOrUndefined(nextToken), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(gridSize), handleNullOrUndefined(frequency), handleNullOrUndefined(status), handleNullOrUndefined(platform), handleNullOrUndefined(fieldmask), limit?.toString() ?? DEFAULT_LIMIT);
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -1135,17 +1136,17 @@ Get the report_key from listLocalFalconTrendReports.`,
       keyword: z.string().optional().describe("The keyword to search for."),
       startDate: z.string().optional().describe("A lower limit date of a scan report you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
       endDate: z.string().optional().describe("Upper limit date of a scan report you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
-      nextToken: z.string().optional().describe("Pagination token for additional results."),
+      limit: z.coerce.number().int().min(1).max(100).optional().describe("Results per page (1-100). Defaults to 10."),
+      nextToken: z.string().optional().describe("Pass the next_token from the previous response to get the next page. Keep the same filters and limit as that request."),
       fieldmask: z.string().optional().describe("Comma-separated list of fields to return. Dot notation for nested paths (e.g., 'location.name'). The `.*.` wildcard works on arrays (e.g., 'scans.*.arp' on trend/campaign reports, where scans is an array) AND on dicts of objects (e.g., 'places.*.solv' on scan reports, where places is keyed by place_id with object values). For dicts of scalars like 'rankings.by_arp' (where values are numbers/strings keyed by place_id, not objects), request the whole dict by path alone — `.*.X` returns nothing because scalars can't be descended into. Omit to return all fields. STRONGLY recommended on every call: default responses can exceed 100KB."),
     },
     { title: "List Location Reports", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-    async ({ placeId, keyword, startDate, endDate, nextToken, fieldmask }, ctx) => {
+    async ({ placeId, keyword, startDate, endDate, limit, nextToken, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const limit = DEFAULT_LIMIT;
-      const resp = await fetchLocalFalconLocationReports(apiKey, limit, handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(nextToken), handleNullOrUndefined(fieldmask));
+      const resp = await fetchLocalFalconLocationReports(apiKey, limit?.toString() ?? DEFAULT_LIMIT, handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(nextToken), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -1174,20 +1175,20 @@ Get the report_key from listLocalFalconTrendReports.`,
     "listLocalFalconKeywordReports",
     "Lists keyword reports that aggregate scan data across multiple locations for a specific keyword. AUTO-GENERATED after a keyword has been scanned for 2+ different locations outside of campaigns. NOT generated for campaign scans. Useful for comparing how different locations perform for the same keyword. Use fieldmask to control returned fields.",
     {
-      nextToken: z.string().optional().describe("Pagination token for additional results."),
+      limit: z.coerce.number().int().min(1).max(100).optional().describe("Results per page (1-100). Defaults to 10."),
+      nextToken: z.string().optional().describe("Pass the next_token from the previous response to get the next page. Keep the same filters and limit as that request."),
       keyword: z.string().optional().describe("The keyword to search for."),
       startDate: z.string().optional().describe("A lower limit date of a scan report you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
       endDate: z.string().optional().describe("Upper limit date of a scan report you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
       fieldmask: z.string().optional().describe("Comma-separated list of fields to return. Dot notation for nested paths (e.g., 'location.name'). The `.*.` wildcard works on arrays (e.g., 'scans.*.arp' on trend/campaign reports, where scans is an array) AND on dicts of objects (e.g., 'places.*.solv' on scan reports, where places is keyed by place_id with object values). For dicts of scalars like 'rankings.by_arp' (where values are numbers/strings keyed by place_id, not objects), request the whole dict by path alone — `.*.X` returns nothing because scalars can't be descended into. Omit to return all fields. STRONGLY recommended on every call: default responses can exceed 100KB."),
     },
     { title: "List Keyword Reports", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-    async ({ nextToken, keyword, startDate, endDate, fieldmask }, ctx) => {
+    async ({ limit, nextToken, keyword, startDate, endDate, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const limit = DEFAULT_LIMIT;
-      const resp = await fetchLocalFalconKeywordReports(apiKey, limit, handleNullOrUndefined(nextToken), handleNullOrUndefined(keyword), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(fieldmask));
+      const resp = await fetchLocalFalconKeywordReports(apiKey, limit?.toString() ?? DEFAULT_LIMIT, handleNullOrUndefined(nextToken), handleNullOrUndefined(keyword), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -1221,17 +1222,17 @@ Get the report_key from listLocalFalconTrendReports.`,
       placeId: z.string().optional().describe("Filter only results for specific Google Place ID. Supports multiple Google Place IDs, seperated by commas."),
       keyword: z.string().optional().describe("Filter only results similar to specified keyword (loose match)."),
       gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15']).optional().describe("Filter only for specific grid sizes. Expects 3, 5, 7, 9, 11, 13, or 15."),
-      nextToken: z.string().optional().describe("This parameter is used to get the next 'page' of results. The value used with the parameter is provided from a previous response by this endpoint if more 'pages' of results exist."),
+      limit: z.coerce.number().int().min(1).max(100).optional().describe("Results per page (1-100). Defaults to 10."),
+      nextToken: z.string().optional().describe("Pass the next_token from the previous response to get the next page. Keep the same filters and limit as that request."),
       fieldmask: z.string().optional().describe("Comma-separated list of fields to return. Dot notation for nested paths (e.g., 'location.name'). The `.*.` wildcard works on arrays (e.g., 'scans.*.arp' on trend/campaign reports, where scans is an array) AND on dicts of objects (e.g., 'places.*.solv' on scan reports, where places is keyed by place_id with object values). For dicts of scalars like 'rankings.by_arp' (where values are numbers/strings keyed by place_id, not objects), request the whole dict by path alone — `.*.X` returns nothing because scalars can't be descended into. Omit to return all fields. STRONGLY recommended on every call: default responses can exceed 100KB."),
     },
     { title: "List Competitor Reports", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-    async ({ startDate, endDate, placeId, keyword, gridSize, nextToken, fieldmask }, ctx) => {
+    async ({ startDate, endDate, placeId, keyword, gridSize, limit, nextToken, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const limit = DEFAULT_LIMIT;
-      const resp = await fetchLocalFalconCompetitorReports(apiKey, limit, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(gridSize), handleNullOrUndefined(nextToken), handleNullOrUndefined(fieldmask));
+      const resp = await fetchLocalFalconCompetitorReports(apiKey, limit?.toString() ?? DEFAULT_LIMIT, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(gridSize), handleNullOrUndefined(nextToken), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );

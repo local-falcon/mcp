@@ -246,7 +246,7 @@ describe("unwrapWithWarnings", () => {
 // strip data_points, and assert the final MCP shape. Functionally equivalent to
 // end-to-end testing of the wrapper-processing logic, minus the network round-trip.
 describe("fetch-function unwrap pattern (end-to-end simulation)", () => {
-  test("list-with-slicing + warnings: spread preserves _warnings through the slice", () => {
+  test("list projection + warnings: spread preserves _warnings and pagination through the map", () => {
     const apiResponse = {
       code: 200,
       success: true,
@@ -260,13 +260,13 @@ describe("fetch-function unwrap pattern (end-to-end simulation)", () => {
       field_mask_warnings: { exceptions: ["garbage.field"] },
     };
     const unwrapped = unwrapWithWarnings(apiResponse);
-    const limitNum = 2;
+    // Pages are never trimmed client-side: rows past `limit` would be skipped by next_token.
     const result = {
       ...unwrapped,
-      reports: unwrapped.reports.slice(0, limitNum),
+      reports: unwrapped.reports.map((report: any) => ({ ...report })),
     };
 
-    expect(result.reports.length).toBe(2);
+    expect(result.reports.length).toBe(3);
     expect(result.reports[0].report_key).toBe("r1");
     expect(result.count).toBe(3);
     expect(result.total).toBe(9370);
@@ -310,7 +310,7 @@ describe("fetch-function unwrap pattern (end-to-end simulation)", () => {
     const out: any = {
       next_token: unwrapped.next_token,
       ai_analysis: unwrapped.ai_analysis,
-      reports: unwrapped.reports.slice(0, 10),
+      reports: unwrapped.reports,
     };
     if (unwrapped._warnings) out._warnings = unwrapped._warnings;
 
