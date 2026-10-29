@@ -747,20 +747,27 @@ export async function fetchLocalFalconLocationReports(apiKey: string, limit?: st
  * Fetches all locations from the Local Falcon API.
  * @param {string} apiKey - Your Local Falcon API key
  * @param {string} query - Optional search query
+ * @param {string} [fieldmask] - Optional comma-separated list of fields to return
+ * @param {string} [limit] - Results per page (1-100); the API defaults to 10
+ * @param {string} [nextToken] - Optional pagination token from a prior response
+ * @param {boolean} [gbpLinked] - Only return locations connected to a Google Business Profile
  * @returns {Promise<any>} API response
  */
-export async function fetchAllLocalFalconLocations(apiKey: string, query?: string, fieldmask?: string) {
-  const url = new URL(`${API_BASE}/locations`);
-
-  if (query) url.searchParams.set("query", query);
-  if (fieldmask) url.searchParams.set("fieldmask", fieldmask);
+export async function fetchAllLocalFalconLocations(apiKey: string, query?: string, fieldmask?: string, limit?: string, nextToken?: string, gbpLinked?: boolean) {
+  const form = new FormData();
+  if (query) form.append("query", query);
+  if (fieldmask) form.append("fieldmask", fieldmask);
+  if (limit) form.append("limit", limit);
+  if (nextToken) form.append("next_token", nextToken);
+  if (gbpLinked) form.append("gbp_linked", "true");
 
   await rateLimiter.waitForAvailableSlot();
 
   return withRetry(async () => {
-    const res = await fetchWithTimeout(url.toString(), {
+    const res = await fetchWithTimeout(`${API_BASE}/locations/`, {
       method: "POST",
-      headers: buildHeaders(apiKey),
+      body: form,
+      headers: buildHeaders(apiKey, true),
     });
 
     if (!res.ok) {

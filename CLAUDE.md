@@ -175,7 +175,7 @@ reached only for `sse`/`http`/`HTTPAndSSE`. The `stdio` path builds only a
 | `getLocalFalconGuardReport` | Get a specific guard report by placeId, optional date range |
 | `listLocalFalconReviewsAnalysisReports` | List reviews analysis reports. Filter by placeId, frequency, reviewsKey |
 | `getLocalFalconReviewsAnalysisReport` | Get a specific reviews analysis report by report_key |
-| `listAllLocalFalconLocations` | List all saved locations in the account. Filter by query |
+| `listAllLocalFalconLocations` | List saved locations in the account. Filter by query, gbpLinked; paginate with limit/nextToken |
 | `listLocalFalconLocationGroups` | List saved account location groups |
 | `getLocalFalconGoogleBusinessLocations` | Normal profile only: public business search with separate metered billing |
 | `listLocalFalconAutoScans` | List individually scheduled auto-scans. Filter by placeId, keyword, gridSize, frequency, status, platform |
@@ -380,16 +380,19 @@ Public API documentation: [docs.localfalcon.com](https://docs.localfalcon.com)
 
 ### List Pagination
 
-The v1 list endpoints (`reports`, `trend-reports`, `autoscans`, `location-reports`,
-`location-groups`, `keyword-reports`, `competitor-reports`, `campaigns`, `guard`) read
-`limit`, `next_token` and every filter from the **POST form body**, per the OpenAPI spec
-(`docs.localfalcon.com/openapi.yaml`). These were previously sent on the query string, where
-the API ignores them: every list was stuck on the default first page of 10, and `next_token`
-had no effect. Send them as `FormData` to the trailing-slash path (`/v1/reports/`).
+The v1 list tools (`reports`, `trend-reports`, `autoscans`, `location-reports`,
+`location-groups`, `keyword-reports`, `competitor-reports`, `campaigns`, `guard`, `locations`) expose
+`limit` (1–100; `listLocalFalconLocationGroups` allows 1000 and
+`listLocalFalconGuardReports` requires at least 3). Before this, `limit` was hardcoded to
+`DEFAULT_LIMIT`, so every list was capped at 10 rows per call.
 
-The list tools expose `limit` (1–100; `listLocalFalconLocationGroups` allows 1000 and
-`listLocalFalconGuardReports` requires at least 3). Pages are returned whole and never
-trimmed client-side, because any rows past `limit` would be skipped by the `next_token`.
+Parameters are sent as `FormData` to the trailing-slash path (`/v1/reports/`), matching the
+OpenAPI spec (`docs.localfalcon.com/openapi.yaml`). Measured against the live API, it reads
+`limit` and `next_token` equally from the query string, a urlencoded body, or a multipart
+body; its `parameters` response field echoes what it received.
+
+Pages are returned whole and never trimmed client-side, because any rows past `limit` would
+be skipped by the `next_token`.
 
 ## Memory Budget
 

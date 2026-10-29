@@ -538,17 +538,20 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
   // Get list of Saved Locations
   registerTool(
     "listAllLocalFalconLocations",
-    "Lists all business locations already configured in the Local Falcon account. Check here BEFORE searching for a business - if the business is already in the account, you'll get the Place ID instantly without needing to search Google. Saves time and ensures consistency with previous scans.",
+    "Lists all business locations already configured in the Local Falcon account. Check here BEFORE searching for a business - if the business is already in the account, you'll get the Place ID instantly without needing to search Google. Saves time and ensures consistency with previous scans. Returns 10 locations per page by default; set limit (up to 100) for larger pages and pass the returned next_token as nextToken for the next page.",
     {
       query: z.string().optional().describe("Search query. Matches against location name, address, Place ID, or store code."),
+      gbpLinked: z.boolean().optional().describe("Only return locations connected to a Google Business Profile. Use this to find place_ids that work with the Google Business Profile tools."),
+      limit: z.coerce.number().int().min(1).max(100).optional().describe("Results per page (1-100). Defaults to 10."),
+      nextToken: z.string().optional().describe("Pass the next_token from the previous response to get the next page. Keep the same filters and limit as that request."),
     },
     { title: "List Saved Locations", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-    async ({ query }, ctx) => {
+    async ({ query, gbpLinked, limit, nextToken }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchAllLocalFalconLocations(apiKey, handleNullOrUndefined(query));
+      const resp = await fetchAllLocalFalconLocations(apiKey, handleNullOrUndefined(query), "", limit?.toString() ?? DEFAULT_LIMIT, handleNullOrUndefined(nextToken), gbpLinked ?? false);
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
