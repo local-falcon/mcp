@@ -170,7 +170,7 @@ reached only for `sse`/`http`/`HTTPAndSSE`. The `stdio` path builds only a
 | `getLocalFalconCompetitorReports` | List competitor reports. Filter by placeId, keyword, gridSize, date range |
 | `getLocalFalconCompetitorReport` | Get a specific competitor report by report_key |
 | `listLocalFalconCampaignReports` | List campaign reports. Filter by placeId, date range, runDate |
-| `getLocalFalconCampaignReport` | Get a specific campaign report by report_key, optional run date |
+| `getLocalFalconCampaignReport` | Get a specific campaign report by report_key, optional run date (YYYY-MM-DD from `runs`; MM/DD/YYYY is converted) |
 | `listLocalFalconGuardReports` | List Falcon Guard reports. Filter by status, date range |
 | `getLocalFalconGuardReport` | Get a specific guard report by placeId, optional date range |
 | `listLocalFalconReviewsAnalysisReports` | List reviews analysis reports. Filter by placeId, frequency, reviewsKey |
@@ -186,7 +186,7 @@ reached only for `sse`/`http`/`HTTPAndSSE`. The `stdio` path builds only a
 | Tool | Description |
 |---|---|
 | `runLocalFalconScan` | Run a new geo-grid scan (costs credits) |
-| `createLocalFalconCampaign` | Create a scheduled campaign |
+| `createLocalFalconCampaign` | Create a scheduled campaign; optional platforms; keywords support placeholders |
 | `updateLocalFalconCampaign` | Edit a campaign — settings, locations, or keywords (action-driven) |
 | `runLocalFalconCampaign` | Manually trigger a campaign run (costs credits) |
 | `pauseLocalFalconCampaign` | Pause a campaign schedule |
@@ -311,6 +311,23 @@ All enum values are validated via Zod schemas in `server.ts`.
 
 **`searchForLocalFalconBusinessLocation`:**
 `google`, `apple`
+
+**Campaigns (`platforms` on `createLocalFalconCampaign` and `updateLocalFalconCampaign`):**
+`native`, `google`, `apple`, `gaio`, `chatgpt`, `gemini`, `aimode` — comma-separated, validated by
+`normalizeCampaignPlatforms()` in `server.ts`. `native` is each location's own map platform (Google,
+or Apple for Apple listings) and is the API default, so a campaign created without `platforms` scans
+maps only. The campaign runner silently drops unknown values, which is why the MCP rejects them.
+Create sends the field as `platform` (singular, `LF.api methods/v2/campaigns/create.php`); update
+sends `platforms`.
+
+### Campaign Keyword Placeholders
+
+Campaign keywords may contain placeholders the runner fills per location at run time
+(`LF.internal methods/v3/campaigns/run.php`): `{category}` (first category on the profile),
+`{city}`, `{locality}`, `{state}`, `{state_code}`, `{zip}`, `{country}` (country *code*). A
+placeholder with no saved value becomes empty; a location with no category keeps the literal
+`{category}`. Keywords are split on commas, so `{category} in {city}, {state_code}` becomes two
+keywords. The shared description text is `KEYWORD_PLACEHOLDERS` in `server.ts`.
 
 ### Grid Size
 

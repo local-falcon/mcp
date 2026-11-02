@@ -28,6 +28,25 @@ dotenv.config({ path: ".env.local" });
 
 const DEFAULT_LIMIT = "10"
 
+// Platforms a campaign can scan. 'native' is each location's own map platform
+// (Google, or Apple for Apple listings). The campaign runner silently drops any
+// other value, so they are rejected here instead.
+const CAMPAIGN_PLATFORMS = ['native', 'google', 'apple', 'gaio', 'chatgpt', 'gemini', 'aimode'];
+
+function normalizeCampaignPlatforms(value: string): { platforms: string; invalid: string[] } {
+  const list = [...new Set(value.split(',').map(p => p.trim().toLowerCase()).filter(Boolean))];
+  return { platforms: list.join(','), invalid: list.filter(p => !CAMPAIGN_PLATFORMS.includes(p)) };
+}
+
+// Filled per location by the campaign runner (LF.internal v3/campaigns/run.php).
+const KEYWORD_PLACEHOLDERS = "Keywords may contain placeholders filled per location at run time: {category} (the location's first category), {city}, {locality}, {state}, {state_code}, {zip}, {country} (country code, e.g. US). A placeholder with no saved value becomes empty, and a location with no category keeps the literal {category}. Example: '{category} {city}'. Keywords are comma-separated, so never put a comma inside a keyword.";
+
+// Campaign runs are listed as YYYY-MM-DD; accept MM/DD/YYYY from older callers.
+function normalizeCampaignRun(run: string): string {
+  const us = run.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  return us ? `${us[3]}-${us[1].padStart(2, '0')}-${us[2].padStart(2, '0')}` : run;
+}
+
 function handleNullOrUndefined(value: string | null | undefined): string {
   if (value === null || value === undefined) {
     return "";
@@ -120,7 +139,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>, reque
 
 **Competitor Report** — Competitive landscape from a scan. AUTO-GENERATED with every scan. Shows top-ranking businesses with their metrics, review counts, ratings, and positioning. Available for all platforms including AI scans.
 
-**Campaign Report** — Aggregated view across multiple locations and/or keywords on a schedule. User-configured. Consolidates all data in one report — scans run from campaigns do NOT generate separate location, keyword, or trend reports.
+**Campaign Report** — Aggregated view across multiple locations and/or keywords on a schedule. User-configured. Consolidates all data in one report — scans run from campaigns do NOT generate separate location, keyword, or trend reports. Each campaign scan is still listed individually in listLocalFalconScanReports (filter by campaignKey).
 
 **Location Report** — Aggregates all scans for a specific business location across keywords. AUTO-GENERATED after 2+ keywords scanned for the same location outside of campaigns.
 
@@ -449,7 +468,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
   // Get list of Scan Reports
   registerTool(
     "listLocalFalconScanReports",
-    "Lists existing scan reports. ALWAYS check here before running new scans to avoid duplicates and save credits. Returns report metadata including date, keyword, location, ARP, ATRP, SoLV, grid size, and platform. Use filters to narrow results. If a report has a campaign_key, its data is consolidated in the campaign report — no separate trend/location/keyword reports exist for campaign scans. Use fieldmask to control returned fields. Recommended fieldmask for browsing: \"report_key,date,keyword,location.name,arp,atrp,solv,grid_size,platform\". Returns 10 results per page by default; set limit (up to 100) for larger pages and pass the returned next_token as nextToken for the next page.",
+    "Lists existing scan reports. ALWAYS check here before running new scans to avoid duplicates and save credits. Returns report metadata including date, keyword, location, ARP, ATRP, SoLV, grid size, and platform. Use filters to narrow results. Campaign scans are listed here too, one report per location, keyword and platform; filter with campaignKey. Campaigns don't generate separate trend, location or keyword reports — their rolled-up data is in the campaign report. Use fieldmask to control returned fields. Recommended fieldmask for browsing: \"report_key,date,keyword,location.name,arp,atrp,solv,grid_size,platform\". Returns 10 results per page by default; set limit (up to 100) for larger pages and pass the returned next_token as nextToken for the next page.",
     {
       limit: z.coerce.number().int().min(1).max(100).optional().describe("Results per page (1-100). Defaults to 10."),
       nextToken: z.string().optional().describe("Pass the next_token from the previous response to get the next page. Keep the same filters and limit as that request."),
@@ -651,10 +670,10 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
   // Get a Specific Campaign Report
   registerTool(
     "getLocalFalconCampaignReport",
-    `Retrieves a specific campaign report with full details: aggregated ARP, ATRP, SoLV metrics, individual scan results, performance breakdowns by keyword and location, and scheduling info. Use the 'run' parameter (MM/DD/YYYY) to retrieve a specific historical run — defaults to the latest run. STRONGLY RECOMMEND fieldmask — campaign reports with many locations/keywords can be very large. Recommended fieldmask for overview: "report_key,name,status,locations,keywords,arp,atrp,solv,frequency,last_run,next_run,scans,grid_size,radius,measurement". Note: \`arp_move\`, \`atrp_move\`, \`solv_move\` delta fields appear on list-endpoint items (listLocalFalconCampaignReports) but are not present on this single-get endpoint. Get the report_key from listLocalFalconCampaignReports.`,
+    `Retrieves a specific campaign report with full details: aggregated ARP, ATRP, SoLV metrics, individual scan results, performance breakdowns by keyword and location, and scheduling info. Use the 'run' parameter (YYYY-MM-DD, a date from the report's \`runs\` list) to retrieve a specific historical run — defaults to the latest run. STRONGLY RECOMMEND fieldmask — campaign reports with many locations/keywords can be very large. Recommended fieldmask for overview: "report_key,name,status,locations,keywords,arp,atrp,solv,frequency,last_run,next_run,scans,grid_size,radius,measurement". Note: \`arp_move\`, \`atrp_move\`, \`solv_move\` delta fields appear on list-endpoint items (listLocalFalconCampaignReports) but are not present on this single-get endpoint. Get the report_key from listLocalFalconCampaignReports.`,
     {
       reportKey: z.string().min(1).regex(/^[a-f0-9]{15}$/, "reportKey must be 15 lowercase hex characters (a-f, 0-9)").describe("The report_key of the Campaign Report you wish to retrieve. 15-character lowercase hex string."),
-      run: z.string().optional().describe("Optional specific campaign run date to retrieve (MM/DD/YYYY). Defaults to latest run."),
+      run: z.string().regex(/^(\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})$/, "run must be a date formatted as YYYY-MM-DD").optional().describe("A run date from the report's `runs` list, formatted as YYYY-MM-DD. Defaults to the latest run."),
       fieldmask: z.string().optional().describe("Comma-separated list of fields to return. Dot notation for nested paths (e.g., 'location.name'). The `.*.` wildcard works on arrays (e.g., 'scans.*.arp' on trend/campaign reports, where scans is an array) AND on dicts of objects (e.g., 'places.*.solv' on scan reports, where places is keyed by place_id with object values). For dicts of scalars like 'rankings.by_arp' (where values are numbers/strings keyed by place_id, not objects), request the whole dict by path alone — `.*.X` returns nothing because scalars can't be descended into. Omit to return all fields. STRONGLY recommended on every call: default responses can exceed 100KB."),
     },
     { title: "Get Campaign Report", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
@@ -663,7 +682,7 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconCampaignReport(apiKey, reportKey, handleNullOrUndefined(run), handleNullOrUndefined(fieldmask));
+      const resp = await fetchLocalFalconCampaignReport(apiKey, reportKey, normalizeCampaignRun(handleNullOrUndefined(run)), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     },
   );
@@ -671,7 +690,7 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
   // Create a new Campaign
   registerTool(
     "createLocalFalconCampaign",
-    "Creates a new campaign in Local Falcon. Campaigns allow you to schedule recurring scans for one or multiple locations with one or multiple keywords. Locations must already exist in your Saved Locations (use listAllLocalFalconLocations to verify).",
+    "Creates a new campaign in Local Falcon. Campaigns allow you to schedule recurring scans for one or multiple locations with one or multiple keywords. Locations must already exist in your Saved Locations (use listAllLocalFalconLocations to verify). Set platforms to scan AI platforms as well as maps; each run scans every location × keyword × platform. " + KEYWORD_PLACEHOLDERS,
     {
       name: z.string().describe("A name to give the campaign."),
       measurement: z.enum(['mi', 'km']).describe("The measurement unit of your radius (mi for miles, km for kilometers)."),
@@ -679,9 +698,10 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
       radius: z.coerce.number().min(0.1).max(100).describe("The radius of your grid from center point to outer most point (0.1 to 100)."),
       frequency: z.enum(['one-time', 'daily', 'weekly', 'biweekly', 'monthly']).describe("The specific run frequency for the campaign."),
       placeId: z.string().describe("The location(s) to include in the campaign. Supports multiple Google Place IDs separated by commas."),
-      keyword: z.string().describe("The keyword(s) to run against the campaign locations. Supports multiple keywords separated by commas."),
+      keyword: z.string().describe("The keyword(s) to run against the campaign locations. Supports multiple keywords separated by commas. " + KEYWORD_PLACEHOLDERS),
       startDate: z.string().describe("The date when your campaign runs the first time. Format: MM/DD/YYYY."),
       startTime: z.string().describe("The time of day your campaign should run. Format: friendly time like '9:00 AM'."),
+      platforms: z.string().nullish().describe(`Platforms to scan, comma-separated: ${CAMPAIGN_PLATFORMS.join(', ')}. Defaults to native, which is maps only: each location's own map platform (Google Maps, or Apple Maps for Apple listings). Each platform adds one scan per location and keyword on every run, so more platforms use more existing credits.`),
       aiAnalysis: z.boolean().optional().describe("Whether campaign scans should include AI analysis."),
       notify: z.boolean().optional().describe("Whether email notification should be enabled for the campaign."),
       emailRecipients: z.string().optional().describe("Recipients of email notification. Supports multiple email addresses separated by commas. Required if notify is true."),
@@ -689,7 +709,7 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
       emailBody: z.string().optional().describe("Email body of the email notification."),
     },
     { title: "Create Campaign", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
-    async ({ name, measurement, gridSize, radius, frequency, placeId, keyword, startDate, startTime, aiAnalysis, notify, emailRecipients, emailSubject, emailBody }, ctx) => {
+    async ({ name, measurement, gridSize, radius, frequency, placeId, keyword, startDate, startTime, platforms, aiAnalysis, notify, emailRecipients, emailSubject, emailBody }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
@@ -699,6 +719,10 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
       }
       if (notify && !emailSubject) {
         return { content: [{ type: "text", text: "emailSubject is required when notify is enabled." }] };
+      }
+      const platformList = normalizeCampaignPlatforms(handleNullOrUndefined(platforms));
+      if (platformList.invalid.length) {
+        return { isError: true, content: [{ type: "text", text: `Unsupported platform(s): ${platformList.invalid.join(', ')}. Use: ${CAMPAIGN_PLATFORMS.join(', ')}.` }] };
       }
       const resp = await createLocalFalconCampaign(apiKey, {
         name,
@@ -710,6 +734,7 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
         keyword,
         startDate,
         startTime,
+        platforms: platformList.platforms || undefined,
         aiAnalysis: aiAnalysis ?? undefined,
         notify: notify ?? undefined,
         emailRecipients: handleNullOrUndefined(emailRecipients) || undefined,
@@ -736,12 +761,12 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
         'remove-keyword',
       ]).describe("The edit action to perform on the campaign. Determines which other fields are required: 'update-settings' (no required extras); 'add-location'/'modify-location'/'remove-location' (require placeId); 'add-keyword'/'update-keyword'/'remove-keyword' (require keyword)."),
       placeId: z.string().nullish().describe("Google Place ID(s), comma-separated for multiple. REQUIRED for 'add-location', 'modify-location', and 'remove-location'. Optional for 'add-keyword'/'update-keyword' to scope keyword(s) to specific location(s) already in the campaign."),
-      keyword: z.string().nullish().describe("Keyword(s), comma-separated for multiple. REQUIRED for 'add-keyword', 'update-keyword', and 'remove-keyword'."),
+      keyword: z.string().nullish().describe("Keyword(s), comma-separated for multiple. REQUIRED for 'add-keyword', 'update-keyword', and 'remove-keyword'. " + KEYWORD_PLACEHOLDERS),
       name: z.string().nullish().describe("Updated name for the campaign. Used with 'update-settings'."),
       gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15', '17', '19', '21']).nullish().describe("Grid size for the campaign or location. Used with 'update-settings', 'add-location', or 'modify-location'."),
       radius: z.coerce.number().min(0.1).max(100).nullish().describe("Grid radius from center point to outermost point (0.1 to 100). Used with 'update-settings', 'add-location', or 'modify-location'."),
       measurement: z.enum(['mi', 'km']).nullish().describe("Measurement unit of the radius. Used with 'update-settings', 'add-location', or 'modify-location'."),
-      platforms: z.string().nullish().describe("Platforms to enable for the location. Comma-separated for multiple. Current platforms for new configuration: google, gaio, gemini, aimode, chatgpt. Used with 'add-location' or 'modify-location'."),
+      platforms: z.string().nullish().describe(`Platforms to enable for the location, comma-separated: ${CAMPAIGN_PLATFORMS.join(', ')} (native is the location's own map platform). Used with 'add-location' or 'modify-location'.`),
       keywordType: z.enum(['traditional', 'ai', 'both']).nullish().describe("Type of keyword(s). Used with 'update-settings', 'add-keyword', or 'update-keyword'."),
       aiAnalysis: z.boolean().nullish().describe("Whether campaign scans should include AI analysis. Used with 'update-settings'."),
       date: z.string().nullish().describe("Next run date for the campaign. Format: MM/DD/YYYY. Used with 'update-settings'. Must be provided together with time."),
@@ -772,6 +797,10 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
       if ((date && !time) || (time && !date)) {
         return { content: [{ type: "text", text: "date and time must be provided together." }] };
       }
+      const platformList = normalizeCampaignPlatforms(handleNullOrUndefined(platforms));
+      if (platformList.invalid.length) {
+        return { isError: true, content: [{ type: "text", text: `Unsupported platform(s): ${platformList.invalid.join(', ')}. Use: ${CAMPAIGN_PLATFORMS.join(', ')}.` }] };
+      }
       const resp = await updateLocalFalconCampaign(apiKey, {
         campaignKey,
         action,
@@ -781,7 +810,7 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
         gridSize: handleNullOrUndefined(gridSize) || undefined,
         radius: radius != null ? radius.toString() : undefined,
         measurement: measurement ?? undefined,
-        platforms: handleNullOrUndefined(platforms) || undefined,
+        platforms: platformList.platforms || undefined,
         keywordType: keywordType ?? undefined,
         aiAnalysis: aiAnalysis ?? undefined,
         date: handleNullOrUndefined(date) || undefined,

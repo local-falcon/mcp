@@ -2109,6 +2109,7 @@ export async function createLocalFalconCampaign(
     keyword: string;
     startDate: string;
     startTime: string;
+    platforms?: string;
     aiAnalysis?: boolean;
     notify?: boolean;
     emailRecipients?: string;
@@ -2120,6 +2121,8 @@ export async function createLocalFalconCampaign(
     await rateLimiter.waitForAvailableSlot();
     const form = new FormData();
     form.append('name', params.name);
+    // Singular on create; the update endpoint reads `platforms`.
+    if (params.platforms) form.append('platform', params.platforms);
     form.append('measurement', params.measurement);
     form.append('grid_size', params.gridSize);
     form.append('radius', params.radius);
