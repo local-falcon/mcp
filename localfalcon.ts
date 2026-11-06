@@ -2091,6 +2091,8 @@ export async function removeFalconGuardProtection(
   }
 }
 
+export type CampaignFrequency = 'one-time' | 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'every-2-weeks' | 'every-3-weeks' | 'every-4-weeks';
+
 /**
  * Creates a new campaign in Local Falcon.
  * @param {string} apiKey - Your Local Falcon API key
@@ -2104,12 +2106,15 @@ export async function createLocalFalconCampaign(
     measurement: 'mi' | 'km';
     gridSize: string;
     radius: string;
-    frequency: 'one-time' | 'daily' | 'weekly' | 'biweekly' | 'monthly';
+    frequency: CampaignFrequency;
     placeId: string;
     keyword: string;
     startDate: string;
     startTime: string;
     platforms?: string;
+    keywordType?: 'traditional' | 'ai' | 'both';
+    // Keyed by Place ID, values already in the API's snake_case keys (grid_size, radius, measurement, platforms).
+    locationSettings?: Record<string, Record<string, string>>;
     aiAnalysis?: boolean;
     notify?: boolean;
     emailRecipients?: string;
@@ -2131,6 +2136,8 @@ export async function createLocalFalconCampaign(
     form.append('keyword', params.keyword);
     form.append('start_date', params.startDate);
     form.append('start_time', params.startTime);
+    if (params.keywordType) form.append('keyword_type', params.keywordType);
+    if (params.locationSettings) form.append('location_settings', JSON.stringify(params.locationSettings));
     if (params.aiAnalysis !== undefined) form.append('ai_analysis', params.aiAnalysis ? '1' : '0');
     if (params.notify !== undefined) form.append('notify', params.notify ? '1' : '0');
     if (params.emailRecipients) form.append('email_recipients', params.emailRecipients);
@@ -2186,7 +2193,7 @@ export async function updateLocalFalconCampaign(
     aiAnalysis?: boolean;
     date?: string;
     time?: string;
-    frequency?: 'one-time' | 'daily' | 'weekly' | 'biweekly' | 'monthly';
+    frequency?: CampaignFrequency;
     notify?: boolean;
     recipients?: string;
     emailName?: string;

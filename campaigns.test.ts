@@ -107,6 +107,57 @@ describe("campaign platforms", () => {
   });
 });
 
+describe("campaign keyword type and per-location settings", () => {
+  test("create sends keywordType as `keyword_type`", async () => {
+    const client = await connect();
+    await client.callTool({ name: "createLocalFalconCampaign", arguments: { ...CREATE, keywordType: "traditional" } });
+    expect(requests[0].fields.keyword_type).toBe("traditional");
+  });
+
+  test("create sends locationSettings as JSON keyed by Place ID with the API's snake_case keys", async () => {
+    const client = await connect();
+    const result: any = await client.callTool({ name: "createLocalFalconCampaign", arguments: {
+      ...CREATE,
+      locationSettings: [
+        { placeId: " ChIJ-b ", gridSize: "9", radius: "2.5", platforms: "Native, chatgpt,native" },
+        { placeId: "ChIJ-a", measurement: "km" },
+      ],
+    } });
+    expect(result.isError).toBeFalsy();
+    expect(JSON.parse(requests[0].fields.location_settings)).toEqual({
+      "ChIJ-b": { grid_size: "9", radius: "2.5", platforms: "native,chatgpt" },
+      "ChIJ-a": { measurement: "km" },
+    });
+  });
+
+  test("create leaves keyword_type and location_settings out when not given", async () => {
+    const client = await connect();
+    await client.callTool({ name: "createLocalFalconCampaign", arguments: { ...CREATE, locationSettings: [] } });
+    expect(requests[0].fields.keyword_type).toBeUndefined();
+    expect(requests[0].fields.location_settings).toBeUndefined();
+  });
+
+  test("bad locationSettings are refused before any request", async () => {
+    const client = await connect();
+    const create = (locationSettings: unknown[]) => rejected(client, "createLocalFalconCampaign", { ...CREATE, locationSettings });
+    expect(await create([{ placeId: "ChIJ-zzz", gridSize: "9" }])).toBe(true);
+    expect(await create([{ placeId: "ChIJ-a", gridSize: "9" }, { placeId: "ChIJ-a", radius: 2 }])).toBe(true);
+    expect(await create([{ placeId: "ChIJ-a" }])).toBe(true);
+    expect(await create([{ placeId: "ChIJ-a", platforms: "native,grok" }])).toBe(true);
+    expect(await create([{ placeId: "ChIJ-a", gridSize: "8" }])).toBe(true);
+    expect(await create([{ placeId: "ChIJ-a", radius: 500 }])).toBe(true);
+    expect(requests).toHaveLength(0);
+  });
+
+  test("create and update accept the every-N-weeks frequencies", async () => {
+    const client = await connect();
+    await client.callTool({ name: "createLocalFalconCampaign", arguments: { ...CREATE, frequency: "every-3-weeks" } });
+    await client.callTool({ name: "updateLocalFalconCampaign", arguments: { campaignKey: "abc", action: "update-settings", frequency: "every-4-weeks" } });
+    expect(requests[0].fields.frequency).toBe("every-3-weeks");
+    expect(requests[1].fields.frequency).toBe("every-4-weeks");
+  });
+});
+
 describe("campaign tool descriptions", () => {
   test("create and update document keyword placeholders, and create offers platforms", async () => {
     const client = await connect();

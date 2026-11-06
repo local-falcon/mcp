@@ -38,6 +38,53 @@ function normalizeCampaignPlatforms(value: string): { platforms: string; invalid
   return { platforms: list.join(','), invalid: list.filter(p => !CAMPAIGN_PLATFORMS.includes(p)) };
 }
 
+const CAMPAIGN_FREQUENCIES = ['one-time', 'daily', 'weekly', 'biweekly', 'monthly', 'every-2-weeks', 'every-3-weeks', 'every-4-weeks'] as const;
+const CAMPAIGN_GRID_SIZES = ['3', '5', '7', '9', '11', '13', '15', '17', '19', '21'] as const;
+
+type CampaignLocationSetting = {
+  placeId: string;
+  gridSize?: string | null;
+  radius?: number | null;
+  measurement?: 'mi' | 'km' | null;
+  platforms?: string | null;
+};
+
+// LF.api campaigns/create reads location_settings as JSON keyed by Place ID, with exactly
+// these snake_case keys, and rejects any other key. Validated here so a bad entry never
+// leaves a half-built campaign behind.
+function buildCampaignLocationSettings(
+  placeIds: string,
+  settings: CampaignLocationSetting[],
+): { settings?: Record<string, Record<string, string>>; error?: string } {
+  const campaignPlaces = new Set(placeIds.split(',').map(p => p.trim()).filter(Boolean));
+  const out: Record<string, Record<string, string>> = {};
+  for (const setting of settings) {
+    const placeId = setting.placeId.trim();
+    if (!campaignPlaces.has(placeId)) {
+      return { error: `locationSettings includes ${placeId}, which is not in placeId.` };
+    }
+    if (out[placeId]) {
+      return { error: `locationSettings lists ${placeId} more than once.` };
+    }
+    const entry: Record<string, string> = {};
+    if (setting.gridSize) entry.grid_size = setting.gridSize;
+    if (setting.radius != null) entry.radius = setting.radius.toString();
+    if (setting.measurement) entry.measurement = setting.measurement;
+    if (setting.platforms) {
+      const platformList = normalizeCampaignPlatforms(setting.platforms);
+      if (platformList.invalid.length) {
+        return { error: `Unsupported platform(s) for ${placeId}: ${platformList.invalid.join(', ')}. Use: ${CAMPAIGN_PLATFORMS.join(', ')}.` };
+      }
+      if (platformList.platforms) entry.platforms = platformList.platforms;
+    }
+    if (!Object.keys(entry).length) {
+      return { error: `locationSettings for ${placeId} sets nothing. Give at least one of gridSize, radius, measurement or platforms.` };
+    }
+    out[placeId] = entry;
+  }
+  return { settings: out };
+}
+
 // Filled per location by the campaign runner (LF.internal v3/campaigns/run.php).
 const KEYWORD_PLACEHOLDERS = "Keywords may contain placeholders filled per location at run time: {category} (the location's first category), {city}, {locality}, {state}, {state_code}, {zip}, {country} (country code, e.g. US). A placeholder with no saved value becomes empty, and a location with no category keeps the literal {category}. Example: '{category} {city}'. Keywords are comma-separated, so never put a comma inside a keyword.";
 
@@ -690,18 +737,26 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
   // Create a new Campaign
   registerTool(
     "createLocalFalconCampaign",
-    "Creates a new campaign in Local Falcon. Campaigns allow you to schedule recurring scans for one or multiple locations with one or multiple keywords. Locations must already exist in your Saved Locations (use listAllLocalFalconLocations to verify). Set platforms to scan AI platforms as well as maps; each run scans every location × keyword × platform. " + KEYWORD_PLACEHOLDERS,
+    "Creates a new campaign in Local Falcon. Campaigns allow you to schedule recurring scans for one or multiple locations with one or multiple keywords. Locations must already exist in your Saved Locations (use listAllLocalFalconLocations to verify). Set platforms to scan AI platforms as well as maps; each run scans every location × keyword × platform. Use keywordType to run keywords on maps only, AI platforms only, or both, and locationSettings to give individual locations their own grid or platforms. " + KEYWORD_PLACEHOLDERS,
     {
       name: z.string().describe("A name to give the campaign."),
       measurement: z.enum(['mi', 'km']).describe("The measurement unit of your radius (mi for miles, km for kilometers)."),
-      gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15', '17', '19', '21']).describe("The size of your desired grid."),
+      gridSize: z.enum(CAMPAIGN_GRID_SIZES).describe("The size of your desired grid."),
       radius: z.coerce.number().min(0.1).max(100).describe("The radius of your grid from center point to outer most point (0.1 to 100)."),
-      frequency: z.enum(['one-time', 'daily', 'weekly', 'biweekly', 'monthly']).describe("The specific run frequency for the campaign."),
+      frequency: z.enum(CAMPAIGN_FREQUENCIES).describe("The specific run frequency for the campaign."),
       placeId: z.string().describe("The location(s) to include in the campaign. Supports multiple Google Place IDs separated by commas."),
       keyword: z.string().describe("The keyword(s) to run against the campaign locations. Supports multiple keywords separated by commas. " + KEYWORD_PLACEHOLDERS),
       startDate: z.string().describe("The date when your campaign runs the first time. Format: MM/DD/YYYY."),
       startTime: z.string().describe("The time of day your campaign should run. Format: friendly time like '9:00 AM'."),
       platforms: z.string().nullish().describe(`Platforms to scan, comma-separated: ${CAMPAIGN_PLATFORMS.join(', ')}. Defaults to native, which is maps only: each location's own map platform (Google Maps, or Apple Maps for Apple listings). Each platform adds one scan per location and keyword on every run, so more platforms use more existing credits.`),
+      keywordType: z.enum(['traditional', 'ai', 'both']).nullish().describe("Which platforms the keywords run on: 'traditional' = map platforms only (google, apple), 'ai' = AI platforms only (gaio, aimode, chatgpt, gemini), 'both' = every platform in the campaign. Defaults to both. A keyword only runs where its type overlaps a location's platforms, so 'ai' with the default native platform produces no scans."),
+      locationSettings: z.array(z.object({
+        placeId: z.string().describe("A Place ID that is also listed in placeId."),
+        gridSize: z.enum(CAMPAIGN_GRID_SIZES).nullish().describe("Grid size for this location."),
+        radius: z.coerce.number().min(0.1).max(100).nullish().describe("Grid radius for this location (0.1 to 100)."),
+        measurement: z.enum(['mi', 'km']).nullish().describe("Measurement unit of this location's radius."),
+        platforms: z.string().nullish().describe(`Platforms for this location, comma-separated: ${CAMPAIGN_PLATFORMS.join(', ')}.`),
+      })).nullish().describe("Per-location overrides. Each entry names one location from placeId and sets at least one of gridSize, radius, measurement or platforms; anything left out uses the campaign value. Locations without an entry use the campaign settings."),
       aiAnalysis: z.boolean().optional().describe("Whether campaign scans should include AI analysis."),
       notify: z.boolean().optional().describe("Whether email notification should be enabled for the campaign."),
       emailRecipients: z.string().optional().describe("Recipients of email notification. Supports multiple email addresses separated by commas. Required if notify is true."),
@@ -709,7 +764,7 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
       emailBody: z.string().optional().describe("Email body of the email notification."),
     },
     { title: "Create Campaign", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
-    async ({ name, measurement, gridSize, radius, frequency, placeId, keyword, startDate, startTime, platforms, aiAnalysis, notify, emailRecipients, emailSubject, emailBody }, ctx) => {
+    async ({ name, measurement, gridSize, radius, frequency, placeId, keyword, startDate, startTime, platforms, keywordType, locationSettings, aiAnalysis, notify, emailRecipients, emailSubject, emailBody }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
@@ -724,6 +779,10 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
       if (platformList.invalid.length) {
         return { isError: true, content: [{ type: "text", text: `Unsupported platform(s): ${platformList.invalid.join(', ')}. Use: ${CAMPAIGN_PLATFORMS.join(', ')}.` }] };
       }
+      const locationList = buildCampaignLocationSettings(placeId, locationSettings ?? []);
+      if (locationList.error) {
+        return { isError: true, content: [{ type: "text", text: locationList.error }] };
+      }
       const resp = await createLocalFalconCampaign(apiKey, {
         name,
         measurement,
@@ -735,6 +794,8 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
         startDate,
         startTime,
         platforms: platformList.platforms || undefined,
+        keywordType: keywordType ?? undefined,
+        locationSettings: Object.keys(locationList.settings!).length ? locationList.settings : undefined,
         aiAnalysis: aiAnalysis ?? undefined,
         notify: notify ?? undefined,
         emailRecipients: handleNullOrUndefined(emailRecipients) || undefined,
@@ -763,7 +824,7 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
       placeId: z.string().nullish().describe("Google Place ID(s), comma-separated for multiple. REQUIRED for 'add-location', 'modify-location', and 'remove-location'. Optional for 'add-keyword'/'update-keyword' to scope keyword(s) to specific location(s) already in the campaign."),
       keyword: z.string().nullish().describe("Keyword(s), comma-separated for multiple. REQUIRED for 'add-keyword', 'update-keyword', and 'remove-keyword'. " + KEYWORD_PLACEHOLDERS),
       name: z.string().nullish().describe("Updated name for the campaign. Used with 'update-settings'."),
-      gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15', '17', '19', '21']).nullish().describe("Grid size for the campaign or location. Used with 'update-settings', 'add-location', or 'modify-location'."),
+      gridSize: z.enum(CAMPAIGN_GRID_SIZES).nullish().describe("Grid size for the campaign or location. Used with 'update-settings', 'add-location', or 'modify-location'."),
       radius: z.coerce.number().min(0.1).max(100).nullish().describe("Grid radius from center point to outermost point (0.1 to 100). Used with 'update-settings', 'add-location', or 'modify-location'."),
       measurement: z.enum(['mi', 'km']).nullish().describe("Measurement unit of the radius. Used with 'update-settings', 'add-location', or 'modify-location'."),
       platforms: z.string().nullish().describe(`Platforms to enable for the location, comma-separated: ${CAMPAIGN_PLATFORMS.join(', ')} (native is the location's own map platform). Used with 'add-location' or 'modify-location'.`),
@@ -771,7 +832,7 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
       aiAnalysis: z.boolean().nullish().describe("Whether campaign scans should include AI analysis. Used with 'update-settings'."),
       date: z.string().nullish().describe("Next run date for the campaign. Format: MM/DD/YYYY. Used with 'update-settings'. Must be provided together with time."),
       time: z.string().nullish().describe("Next run time. Format: friendly time like '9:00 AM'. Used with 'update-settings'. Must be provided together with date."),
-      frequency: z.enum(['one-time', 'daily', 'weekly', 'biweekly', 'monthly']).nullish().describe("Updated run frequency for the campaign. Used with 'update-settings'."),
+      frequency: z.enum(CAMPAIGN_FREQUENCIES).nullish().describe("Updated run frequency for the campaign. Used with 'update-settings'."),
       notify: z.boolean().nullish().describe("Whether email notifications should be enabled for the campaign. Used with 'update-settings'."),
       recipients: z.string().nullish().describe("Recipients of email notifications. Supports multiple email addresses separated by commas. Used with 'update-settings'."),
       emailName: z.string().nullish().describe("From-name used on email notifications. Pass '|empty|' to clear the value. Used with 'update-settings'."),

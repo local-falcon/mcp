@@ -362,6 +362,8 @@ When user has multiple locations OR wants recurring scans:
    - startDate/startTime: [confirmed schedule]
    - gridSize, radius, measurement: [confirmed settings]
    - aiAnalysis: [confirmed choice]
+   - platforms, keywordType: [optional — maps, AI platforms, or both]
+   - locationSettings: [optional — a different grid or platforms for specific locations]
 ```
 
 **Explain the value:**

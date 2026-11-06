@@ -205,7 +205,7 @@ All tools explicitly declare the three MCP annotation hints. Hints describe beha
 ### Campaign Management
 * **listLocalFalconCampaignReports**: Lists all campaign reports. Campaigns track rankings at scale with scheduled scans.
 * **getLocalFalconCampaignReport**: Retrieves a specific campaign report (e.g., `https://www.localfalcon.com/campaigns/view/XXXXX`).
-* **createLocalFalconCampaign**: Creates a new campaign with scheduled recurring scans.
+* **createLocalFalconCampaign**: Creates a new campaign with scheduled recurring scans. Optionally sets the platforms, the keyword type (maps, AI or both) and per-location grids or platforms.
 * **updateLocalFalconCampaign**: Edits an existing campaign — settings, locations or keywords.
 * **runLocalFalconCampaign**: Manually triggers a campaign to run immediately.
 * **pauseLocalFalconCampaign**: Pauses a campaign's scheduled runs.

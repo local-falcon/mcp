@@ -5,7 +5,7 @@
 This is the **Local Falcon MCP Server** (`@local-falcon/mcp`), a Model Context Protocol server that wraps the [Local Falcon API](https://docs.localfalcon.com). It enables AI agents to run geo-grid rank tracking scans, retrieve reports, manage campaigns, monitor Google Business Profiles, and analyze competitive positioning across AI search platforms, Google Maps, and Apple Maps.
 
 **Package:** [`@local-falcon/mcp`](https://www.npmjs.com/package/@local-falcon/mcp) (npm)
-**Version:** 1.4.19
+**Version:** 1.4.20
 **License:** MIT
 **Runtime:** Node.js 18+
 **Language:** TypeScript (strict mode)
@@ -186,7 +186,7 @@ reached only for `sse`/`http`/`HTTPAndSSE`. The `stdio` path builds only a
 | Tool | Description |
 |---|---|
 | `runLocalFalconScan` | Run a new geo-grid scan (costs credits) |
-| `createLocalFalconCampaign` | Create a scheduled campaign; optional platforms; keywords support placeholders |
+| `createLocalFalconCampaign` | Create a scheduled campaign; optional platforms, keyword type and per-location settings; keywords support placeholders |
 | `updateLocalFalconCampaign` | Edit a campaign — settings, locations, or keywords (action-driven) |
 | `runLocalFalconCampaign` | Manually trigger a campaign run (costs credits) |
 | `pauseLocalFalconCampaign` | Pause a campaign schedule |
@@ -316,9 +316,21 @@ All enum values are validated via Zod schemas in `server.ts`.
 `native`, `google`, `apple`, `gaio`, `chatgpt`, `gemini`, `aimode` — comma-separated, validated by
 `normalizeCampaignPlatforms()` in `server.ts`. `native` is each location's own map platform (Google,
 or Apple for Apple listings) and is the API default, so a campaign created without `platforms` scans
-maps only. The campaign runner silently drops unknown values, which is why the MCP rejects them.
-Create sends the field as `platform` (singular, `LF.api methods/v2/campaigns/create.php`); update
-sends `platforms`.
+maps only. The campaign runner silently drops unknown values and LF.api create rejects them, so the
+MCP rejects them before any request. Create sends the field as `platform` (singular,
+`LF.api methods/v2/campaigns/create.php`); update sends `platforms`.
+
+### Campaign Keyword Type and Per-Location Settings (create)
+
+`keywordType` (`traditional`, `ai`, `both`; API default `both`) is sent as `keyword_type`.
+Traditional keywords run only on map platforms and AI keywords only on AI platforms, so a mismatch
+with the location's platforms produces no scans.
+
+`locationSettings` is an array of `{ placeId, gridSize?, radius?, measurement?, platforms? }`.
+`buildCampaignLocationSettings()` in `server.ts` validates it before any request (each placeId must be
+in `placeId`, no duplicates, at least one override, known platforms) and turns it into the JSON LF.api
+reads as `location_settings`: an object keyed by Place ID with exactly the keys `grid_size`, `radius`,
+`measurement`, `platforms`. LF.api rejects any other key, so don't rename them.
 
 ### Campaign Keyword Placeholders
 
@@ -343,8 +355,8 @@ keywords. The shared description text is `KEYWORD_PLACEHOLDERS` in `server.ts`.
 ### Measurement
 `mi`, `km`
 
-### Frequency (campaigns and auto-scans)
-`one-time`, `daily`, `weekly`, `biweekly`, `monthly`
+### Frequency (campaigns, `CAMPAIGN_FREQUENCIES` in `server.ts`)
+`one-time`, `daily`, `weekly`, `biweekly`, `monthly`, `every-2-weeks`, `every-3-weeks`, `every-4-weeks`
 
 ### Reviews Analysis Frequency
 `one_time`, `daily`, `weekly`, `two_weeks`, `three_weeks`, `four_weeks`, `monthly`
