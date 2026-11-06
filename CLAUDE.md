@@ -5,7 +5,7 @@
 This is the **Local Falcon MCP Server** (`@local-falcon/mcp`), a Model Context Protocol server that wraps the [Local Falcon API](https://docs.localfalcon.com). It enables AI agents to run geo-grid rank tracking scans, retrieve reports, manage campaigns, monitor Google Business Profiles, and analyze competitive positioning across AI search platforms, Google Maps, and Apple Maps.
 
 **Package:** [`@local-falcon/mcp`](https://www.npmjs.com/package/@local-falcon/mcp) (npm)
-**Version:** 1.4.18
+**Version:** 1.4.20
 **License:** MIT
 **Runtime:** Node.js 18+
 **Language:** TypeScript (strict mode)
@@ -16,6 +16,7 @@ This is the **Local Falcon MCP Server** (`@local-falcon/mcp`), a Model Context P
 index.ts          → Entry point. Transport selection (STDIO, SSE, HTTP), session management, OAuth 2.1
 server.ts         → MCP tool registrations. Exports getServer() with session-selected tool registration
 localfalcon.ts    → API client layer. All fetch functions, rate limiting, retry logic, timeout handling
+gbpConfirmation.ts → Human approval gate for the seven destructive GBP writes (elicitation, else preview → single-use token)
 oauth/            → OAuth 2.1 authorization server (routes, provider, config, state/client stores)
 ```
 
@@ -169,12 +170,12 @@ reached only for `sse`/`http`/`HTTPAndSSE`. The `stdio` path builds only a
 | `getLocalFalconCompetitorReports` | List competitor reports. Filter by placeId, keyword, gridSize, date range |
 | `getLocalFalconCompetitorReport` | Get a specific competitor report by report_key |
 | `listLocalFalconCampaignReports` | List campaign reports. Filter by placeId, date range, runDate |
-| `getLocalFalconCampaignReport` | Get a specific campaign report by report_key, optional run date |
+| `getLocalFalconCampaignReport` | Get a specific campaign report by report_key, optional run date (YYYY-MM-DD from `runs`; MM/DD/YYYY is converted) |
 | `listLocalFalconGuardReports` | List Falcon Guard reports. Filter by status, date range |
 | `getLocalFalconGuardReport` | Get a specific guard report by placeId, optional date range |
 | `listLocalFalconReviewsAnalysisReports` | List reviews analysis reports. Filter by placeId, frequency, reviewsKey |
 | `getLocalFalconReviewsAnalysisReport` | Get a specific reviews analysis report by report_key |
-| `listAllLocalFalconLocations` | List all saved locations in the account. Filter by query |
+| `listAllLocalFalconLocations` | List saved locations in the account. Filter by query, gbpLinked; paginate with limit/nextToken |
 | `listLocalFalconLocationGroups` | List saved account location groups |
 | `getLocalFalconGoogleBusinessLocations` | Normal profile only: public business search with separate metered billing |
 | `listLocalFalconAutoScans` | List individually scheduled auto-scans. Filter by placeId, keyword, gridSize, frequency, status, platform |
@@ -185,7 +186,7 @@ reached only for `sse`/`http`/`HTTPAndSSE`. The `stdio` path builds only a
 | Tool | Description |
 |---|---|
 | `runLocalFalconScan` | Run a new geo-grid scan (costs credits) |
-| `createLocalFalconCampaign` | Create a scheduled campaign |
+| `createLocalFalconCampaign` | Create a scheduled campaign; optional platforms, keyword type and per-location settings; keywords support placeholders |
 | `updateLocalFalconCampaign` | Edit a campaign — settings, locations, or keywords (action-driven) |
 | `runLocalFalconCampaign` | Manually trigger a campaign run (costs credits) |
 | `pauseLocalFalconCampaign` | Pause a campaign schedule |
@@ -246,10 +247,30 @@ Writes (6) — action-driven, all `{ destructiveHint: true }` because each group
 in `localfalcon.ts` flattens objects and arrays into that shape, so tool schemas accept
 ordinary objects/arrays and callers never build bracket keys by hand.
 
-**Confirmation tokens.** The API requires literal tokens on destructive calls
-(`DELETE_POST`, `DELETE_MEDIA`, `DELETE_LINK`, `DELETE_REPLY`, `REPLACE_SERVICES`,
-`SET_ATTRIBUTES`, and `CLOSED_PERMANENTLY` for status). The client layer supplies these,
-so a destructive call cannot be half-specified by the model.
+**Confirmation tokens and human approval.** The API requires literal tokens on destructive
+calls (`DELETE_POST`, `DELETE_MEDIA`, `DELETE_LINK`, `DELETE_REPLY`, `REPLACE_SERVICES`,
+`SET_ATTRIBUTES`, and `CLOSED_PERMANENTLY` for status). `localfalcon.ts` still supplies
+these — they are a wire-format detail, and asking the model for them would let a delete be
+half-specified — but on their own they left the model able to satisfy the API's gate with
+no human involved. `gbpConfirmation.ts` therefore enforces approval for exactly those seven
+operations before the client-layer call is made:
+
+| Client | Gate |
+|---|---|
+| Declares `elicitation.form` (Claude Desktop/Code, VS Code, Cursor, Inspector) | `server.server.elicitInput()` shows the user an approval dialog; the call proceeds only on `accept` with `confirm: true`. If the dialog is unanswered for the elicit timeout, or the request fails, the SDK cancels it and the gate falls back to the token row below, marking the preview `approval_prompt: timed_out|failed`. No answer is never approval. Needed because the claude.ai connector proxy in front of Claude Code advertises elicitation but never delivers the request (observed on staging 2026-09-28). |
+| No elicitation (ChatGPT today) | The tool returns `confirmation_required` with a summary, warning and a `confirmationToken` bound to a SHA-256 of the arguments. The identical call plus the token performs the action. Tokens are single-use, expire after 10 min, and live in a ≤20-entry per-session map (dropped on recovery/eviction; a fresh preview is issued). |
+
+Every write-tool schema carries `confirmationToken` (Zod v3 strips unknown keys, so it must
+be declared). Gate results never set `isError` or `success:false`, so `withProfilePolicy`
+passes them through unchanged on the ChatGPT profile. The elicitation is sent via
+`server.server.elicitInput()` and never `ctx.sendRequest()`: with `enableJsonResponse: true`
+a request tagged to the tool call's own response is never written, whereas an untagged one
+rides the standalone GET stream. The dialog timeout defaults to 10 s on the HTTP/SSE
+transports and 45 s on STDIO; `GBP_CONFIRM_TIMEOUT_MS` overrides both. Each session's
+negotiated `elicitation` capability is logged at initialize (`[session] initialized by …`)
+and every gate decision as `[gbp-confirm] …`, so two clients that behave differently can be
+compared from the logs. Ungated actions (create, update, reply, add/remove services,
+OPEN/CLOSED_TEMPORARILY) run as before.
 
 **camelCase exception.** `getLocalFalconGbpProfile` and `getLocalFalconGbpGoogleUpdates`
 return Google's own resource unchanged, so their response fields are camelCase. Every
@@ -291,6 +312,35 @@ All enum values are validated via Zod schemas in `server.ts`.
 **`searchForLocalFalconBusinessLocation`:**
 `google`, `apple`
 
+**Campaigns (`platforms` on `createLocalFalconCampaign` and `updateLocalFalconCampaign`):**
+`native`, `google`, `apple`, `gaio`, `chatgpt`, `gemini`, `aimode` — comma-separated, validated by
+`normalizeCampaignPlatforms()` in `server.ts`. `native` is each location's own map platform (Google,
+or Apple for Apple listings) and is the API default, so a campaign created without `platforms` scans
+maps only. The campaign runner silently drops unknown values and LF.api create rejects them, so the
+MCP rejects them before any request. Create sends the field as `platform` (singular,
+`LF.api methods/v2/campaigns/create.php`); update sends `platforms`.
+
+### Campaign Keyword Type and Per-Location Settings (create)
+
+`keywordType` (`traditional`, `ai`, `both`; API default `both`) is sent as `keyword_type`.
+Traditional keywords run only on map platforms and AI keywords only on AI platforms, so a mismatch
+with the location's platforms produces no scans.
+
+`locationSettings` is an array of `{ placeId, gridSize?, radius?, measurement?, platforms? }`.
+`buildCampaignLocationSettings()` in `server.ts` validates it before any request (each placeId must be
+in `placeId`, no duplicates, at least one override, known platforms) and turns it into the JSON LF.api
+reads as `location_settings`: an object keyed by Place ID with exactly the keys `grid_size`, `radius`,
+`measurement`, `platforms`. LF.api rejects any other key, so don't rename them.
+
+### Campaign Keyword Placeholders
+
+Campaign keywords may contain placeholders the runner fills per location at run time
+(`LF.internal methods/v3/campaigns/run.php`): `{category}` (first category on the profile),
+`{city}`, `{locality}`, `{state}`, `{state_code}`, `{zip}`, `{country}` (country *code*). A
+placeholder with no saved value becomes empty; a location with no category keeps the literal
+`{category}`. Keywords are split on commas, so `{category} in {city}, {state_code}` becomes two
+keywords. The shared description text is `KEYWORD_PLACEHOLDERS` in `server.ts`.
+
 ### Grid Size
 
 **`runLocalFalconScan`:**
@@ -305,8 +355,8 @@ All enum values are validated via Zod schemas in `server.ts`.
 ### Measurement
 `mi`, `km`
 
-### Frequency (campaigns and auto-scans)
-`one-time`, `daily`, `weekly`, `biweekly`, `monthly`
+### Frequency (campaigns, `CAMPAIGN_FREQUENCIES` in `server.ts`)
+`one-time`, `daily`, `weekly`, `biweekly`, `monthly`, `every-2-weeks`, `every-3-weeks`, `every-4-weeks`
 
 ### Reviews Analysis Frequency
 `one_time`, `daily`, `weekly`, `two_weeks`, `three_weeks`, `four_weeks`, `monthly`
@@ -356,6 +406,22 @@ The Local Falcon API has two base URLs used by `localfalcon.ts`:
 - **v2** (`https://api.localfalcon.com/v2`): Run scan, locations search/add, guard add/pause/resume/delete, campaigns create/update/run/pause/resume/reactivate, account, knowledge base
 
 Public API documentation: [docs.localfalcon.com](https://docs.localfalcon.com)
+
+### List Pagination
+
+The v1 list tools (`reports`, `trend-reports`, `autoscans`, `location-reports`,
+`location-groups`, `keyword-reports`, `competitor-reports`, `campaigns`, `guard`, `locations`) expose
+`limit` (1–100; `listLocalFalconLocationGroups` allows 1000 and
+`listLocalFalconGuardReports` requires at least 3). Before this, `limit` was hardcoded to
+`DEFAULT_LIMIT`, so every list was capped at 10 rows per call.
+
+Parameters are sent as `FormData` to the trailing-slash path (`/v1/reports/`), matching the
+OpenAPI spec (`docs.localfalcon.com/openapi.yaml`). Measured against the live API, it reads
+`limit` and `next_token` equally from the query string, a urlencoded body, or a multipart
+body; its `parameters` response field echoes what it received.
+
+Pages are returned whole and never trimmed client-side, because any rows past `limit` would
+be skipped by the `next_token`.
 
 ## Memory Budget
 
@@ -472,7 +538,7 @@ npm run docker:run
 
 | Constant | Value | Location |
 |---|---|---|
-| `DEFAULT_LIMIT` | `"10"` | server.ts — default page size for list endpoints |
+| `DEFAULT_LIMIT` | `"10"` | server.ts — page size sent when a list tool's `limit` is omitted |
 | `DEFAULT_TIMEOUT_MS` | `30000` | localfalcon.ts |
 | `LONG_OPERATION_TIMEOUT_MS` | `60000` | localfalcon.ts |
 | `MAX_RETRIES` | `3` | localfalcon.ts |
@@ -487,6 +553,7 @@ npm run docker:run
 | `index.ts` | Entry point — transport selection, session management, Express app, OAuth routes |
 | `server.ts` | MCP server factory — `getServer()` with session-selected tool registrations |
 | `localfalcon.ts` | API client — fetch functions, rate limiter, retry logic, types |
+| `gbpConfirmation.ts` | Human approval gate for destructive GBP writes — elicitation dialog, else preview → single-use argument-bound token |
 | `eventStore.ts` | Bounded resumability buffer — replaces the SDK's unbounded example store |
 | `requestSource.ts` | Resolves which client is calling; carries it in AsyncLocalStorage for `request_source` |
 | `oauth/` | OAuth 2.1 implementation (authorization, tokens, PKCE, client registration) |

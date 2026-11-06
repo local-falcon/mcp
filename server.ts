@@ -2,6 +2,7 @@ import { getRequestSource } from "./requestSource.js";
 import { reportFetchFieldmask, splitReportResult, REPORT_WIDGET_META_KEY } from "./reportPayload.js";
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { getMcpProfile, CHATGPT_EXCLUDED_TOOLS, withProfilePolicy, withResourceProfilePolicy, filterKnowledgeBaseSearch, isBlockedArticle, normalizeArticleId, KB_UNAVAILABLE, textError, sanitizeAccountResponse } from "./chatgptPolicy.js";
+import { createGbpConfirmationGate } from "./gbpConfirmation.js";
 import { McpServer, ResourceTemplate, type ToolCallback } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import dotenv from "dotenv";
@@ -26,6 +27,72 @@ dotenv.config({ path: ".env.local" });
 
 
 const DEFAULT_LIMIT = "10"
+
+// Platforms a campaign can scan. 'native' is each location's own map platform
+// (Google, or Apple for Apple listings). The campaign runner silently drops any
+// other value, so they are rejected here instead.
+const CAMPAIGN_PLATFORMS = ['native', 'google', 'apple', 'gaio', 'chatgpt', 'gemini', 'aimode'];
+
+function normalizeCampaignPlatforms(value: string): { platforms: string; invalid: string[] } {
+  const list = [...new Set(value.split(',').map(p => p.trim().toLowerCase()).filter(Boolean))];
+  return { platforms: list.join(','), invalid: list.filter(p => !CAMPAIGN_PLATFORMS.includes(p)) };
+}
+
+const CAMPAIGN_FREQUENCIES = ['one-time', 'daily', 'weekly', 'biweekly', 'monthly', 'every-2-weeks', 'every-3-weeks', 'every-4-weeks'] as const;
+const CAMPAIGN_GRID_SIZES = ['3', '5', '7', '9', '11', '13', '15', '17', '19', '21'] as const;
+
+type CampaignLocationSetting = {
+  placeId: string;
+  gridSize?: string | null;
+  radius?: number | null;
+  measurement?: 'mi' | 'km' | null;
+  platforms?: string | null;
+};
+
+// LF.api campaigns/create reads location_settings as JSON keyed by Place ID, with exactly
+// these snake_case keys, and rejects any other key. Validated here so a bad entry never
+// leaves a half-built campaign behind.
+function buildCampaignLocationSettings(
+  placeIds: string,
+  settings: CampaignLocationSetting[],
+): { settings?: Record<string, Record<string, string>>; error?: string } {
+  const campaignPlaces = new Set(placeIds.split(',').map(p => p.trim()).filter(Boolean));
+  const out: Record<string, Record<string, string>> = {};
+  for (const setting of settings) {
+    const placeId = setting.placeId.trim();
+    if (!campaignPlaces.has(placeId)) {
+      return { error: `locationSettings includes ${placeId}, which is not in placeId.` };
+    }
+    if (out[placeId]) {
+      return { error: `locationSettings lists ${placeId} more than once.` };
+    }
+    const entry: Record<string, string> = {};
+    if (setting.gridSize) entry.grid_size = setting.gridSize;
+    if (setting.radius != null) entry.radius = setting.radius.toString();
+    if (setting.measurement) entry.measurement = setting.measurement;
+    if (setting.platforms) {
+      const platformList = normalizeCampaignPlatforms(setting.platforms);
+      if (platformList.invalid.length) {
+        return { error: `Unsupported platform(s) for ${placeId}: ${platformList.invalid.join(', ')}. Use: ${CAMPAIGN_PLATFORMS.join(', ')}.` };
+      }
+      if (platformList.platforms) entry.platforms = platformList.platforms;
+    }
+    if (!Object.keys(entry).length) {
+      return { error: `locationSettings for ${placeId} sets nothing. Give at least one of gridSize, radius, measurement or platforms.` };
+    }
+    out[placeId] = entry;
+  }
+  return { settings: out };
+}
+
+// Filled per location by the campaign runner (LF.internal v3/campaigns/run.php).
+const KEYWORD_PLACEHOLDERS = "Keywords may contain placeholders filled per location at run time: {category} (the location's first category), {city}, {locality}, {state}, {state_code}, {zip}, {country} (country code, e.g. US). A placeholder with no saved value becomes empty, and a location with no category keeps the literal {category}. Example: '{category} {city}'. Keywords are comma-separated, so never put a comma inside a keyword.";
+
+// Campaign runs are listed as YYYY-MM-DD; accept MM/DD/YYYY from older callers.
+function normalizeCampaignRun(run: string): string {
+  const us = run.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  return us ? `${us[3]}-${us[1].padStart(2, '0')}-${us[2].padStart(2, '0')}` : run;
+}
 
 function handleNullOrUndefined(value: string | null | undefined): string {
   if (value === null || value === undefined) {
@@ -119,7 +186,7 @@ export const getServer = (sessionMapping: Map<string, { apiKey: string }>, reque
 
 **Competitor Report** — Competitive landscape from a scan. AUTO-GENERATED with every scan. Shows top-ranking businesses with their metrics, review counts, ratings, and positioning. Available for all platforms including AI scans.
 
-**Campaign Report** — Aggregated view across multiple locations and/or keywords on a schedule. User-configured. Consolidates all data in one report — scans run from campaigns do NOT generate separate location, keyword, or trend reports.
+**Campaign Report** — Aggregated view across multiple locations and/or keywords on a schedule. User-configured. Consolidates all data in one report — scans run from campaigns do NOT generate separate location, keyword, or trend reports. Each campaign scan is still listed individually in listLocalFalconScanReports (filter by campaignKey).
 
 **Location Report** — Aggregates all scans for a specific business location across keywords. AUTO-GENERATED after 2+ keywords scanned for the same location outside of campaigns.
 
@@ -269,17 +336,28 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
 ## OPERATIONAL RULES
 
 1. **Always check for existing data before running new scans.** Use listLocalFalconScanReports first. Scans cost credits.
-2. **Make settings and existing-credit use clear before scans, campaigns, AI Analysis, or business searches. Obtain confirmation if the user has not already explicitly approved the operation and settings; do not require a redundant second confirmation. Public/destructive GBP write confirmation requirements still apply.**
+2. **Make settings and existing-credit use clear before scans, campaigns, AI Analysis, or business searches. Obtain confirmation if the user has not already explicitly approved the operation and settings; do not require a redundant second confirmation. Destructive GBP writes (deletes, service replacement, attribute changes, CLOSED_PERMANENTLY) are gated by the server: the client either shows the user an approval dialog, or the tool returns confirmation_required with a confirmationToken — show that preview to the user and call again with identical arguments plus the token only after they explicitly approve.**
 3. **Always use fieldmasks** on get* and list* tools. Start narrow, expand only if needed.
 4. **Omit optional parameters entirely** when you don't have a useful value. Do not pass null or empty strings.
 5. **Don't chain excessive tool calls.** If a user asks about scan reports, fetch scan reports — don't also fetch campaigns, trends, competitors, guard reports, and reviews unless specifically needed.
 6. **Use the Knowledge Base tools** (searchLocalFalconKnowledgeBase, getLocalFalconKnowledgeBaseArticle) for questions about Local Falcon features, settings, and how-to guidance. These return platform documentation, not user-specific data.
-7. **Pagination:** Most list tools return limited results per page. Use the nextToken from responses to fetch additional pages when needed.
+7. **Pagination:** List tools return 10 results per page by default; set \`limit\` (up to 100) for larger pages. When a response includes \`next_token\`, pass it as \`nextToken\` with the same filters and limit to fetch the next page.
 8. **Credit awareness:** runLocalFalconScan, runLocalFalconCampaign, and createLocalFalconCampaign consume credits. Use viewLocalFalconAccountInformation to check credit balance if relevant.
     `
   },
   { capabilities: { extensions: { "io.modelcontextprotocol/ui": {} } } as any }
   );
+
+  // Log what each client negotiated. Elicitation support decides which approval
+  // path gbpConfirmation.ts takes, and some connector routes advertise it
+  // without being able to deliver the dialog — this is the line to compare when
+  // a destructive GBP call behaves differently across two clients. stderr only:
+  // in STDIO mode stdout is the protocol channel.
+  server.server.oninitialized = () => {
+    const client = server.server.getClientVersion();
+    const capabilities = server.server.getClientCapabilities();
+    console.error(`[session] initialized by ${client?.name ?? "unknown client"}${client?.version ? " " + client.version : ""} (request_source=${requestSource}); elicitation=${JSON.stringify(capabilities?.elicitation ?? null)}`);
+  };
 
   // ── MCP Apps: Geo-Grid Heatmap ─────────────────────────────────────────────
   const __filename = fileURLToPath(import.meta.url);
@@ -329,6 +407,10 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
   ) {
     return registerAppTool(server, name, config, withProfilePolicy(profile, handler));
   }
+
+  // Human approval for the seven destructive GBP operations. One gate per
+  // server, i.e. per session, so its small token store dies with the session.
+  const gbpGate = createGbpConfirmationGate(server);
 
   // Version the changed HTML to refresh host caches; retain the previous URI.
   const registerGeogridResource = (uiUri: string) => registerAppResource(server, "Geo-Grid Heatmap", uiUri, {}, async () => {
@@ -433,9 +515,10 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
   // Get list of Scan Reports
   registerTool(
     "listLocalFalconScanReports",
-    "Lists existing scan reports. ALWAYS check here before running new scans to avoid duplicates and save credits. Returns report metadata including date, keyword, location, ARP, ATRP, SoLV, grid size, and platform. Use filters to narrow results. If a report has a campaign_key, its data is consolidated in the campaign report — no separate trend/location/keyword reports exist for campaign scans. Use fieldmask to control returned fields. Recommended fieldmask for browsing: \"report_key,date,keyword,location.name,arp,atrp,solv,grid_size,platform\". Returns limited results per page; use nextToken for pagination.",
-    { 
-      nextToken: z.string().optional().describe("Pagination token for additional results."),
+    "Lists existing scan reports. ALWAYS check here before running new scans to avoid duplicates and save credits. Returns report metadata including date, keyword, location, ARP, ATRP, SoLV, grid size, and platform. Use filters to narrow results. Campaign scans are listed here too, one report per location, keyword and platform; filter with campaignKey. Campaigns don't generate separate trend, location or keyword reports — their rolled-up data is in the campaign report. Use fieldmask to control returned fields. Recommended fieldmask for browsing: \"report_key,date,keyword,location.name,arp,atrp,solv,grid_size,platform\". Returns 10 results per page by default; set limit (up to 100) for larger pages and pass the returned next_token as nextToken for the next page.",
+    {
+      limit: z.coerce.number().int().min(1).max(100).optional().describe("Results per page (1-100). Defaults to 10."),
+      nextToken: z.string().optional().describe("Pass the next_token from the previous response to get the next page. Keep the same filters and limit as that request."),
       startDate: z.string().optional().describe("A lower limit date of a scan report you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
       endDate: z.string().optional().describe("Upper limit date of a scan report you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
       placeId: z.string().optional().describe("Filter only results for specific Google Place ID. Supports multiple Google Place IDs, seperated by commas."), 
@@ -446,13 +529,12 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
       fieldmask: z.string().optional().describe("Comma-separated list of fields to return. Dot notation for nested paths (e.g., 'location.name'). The `.*.` wildcard works on arrays (e.g., 'scans.*.arp' on trend/campaign reports, where scans is an array) AND on dicts of objects (e.g., 'places.*.solv' on scan reports, where places is keyed by place_id with object values). For dicts of scalars like 'rankings.by_arp' (where values are numbers/strings keyed by place_id, not objects), request the whole dict by path alone — `.*.X` returns nothing because scalars can't be descended into. Omit to return all fields. STRONGLY recommended on every call: default responses can exceed 100KB."),
     },
     { title: "List Scan Reports", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-    async ({ nextToken, startDate, endDate, placeId, keyword, gridSize, campaignKey, platform, fieldmask }, ctx) => {
+    async ({ limit, nextToken, startDate, endDate, placeId, keyword, gridSize, campaignKey, platform, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
-      const limit = DEFAULT_LIMIT;
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconReports(apiKey, limit, handleNullOrUndefined(nextToken), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(gridSize), handleNullOrUndefined(campaignKey), handleNullOrUndefined(platform), handleNullOrUndefined(fieldmask));
+      const resp = await fetchLocalFalconReports(apiKey, limit?.toString() ?? DEFAULT_LIMIT, handleNullOrUndefined(nextToken), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(gridSize), handleNullOrUndefined(campaignKey), handleNullOrUndefined(platform), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -522,17 +604,20 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
   // Get list of Saved Locations
   registerTool(
     "listAllLocalFalconLocations",
-    "Lists all business locations already configured in the Local Falcon account. Check here BEFORE searching for a business - if the business is already in the account, you'll get the Place ID instantly without needing to search Google. Saves time and ensures consistency with previous scans.",
+    "Lists all business locations already configured in the Local Falcon account. Check here BEFORE searching for a business - if the business is already in the account, you'll get the Place ID instantly without needing to search Google. Saves time and ensures consistency with previous scans. Returns 10 locations per page by default; set limit (up to 100) for larger pages and pass the returned next_token as nextToken for the next page.",
     {
       query: z.string().optional().describe("Search query. Matches against location name, address, Place ID, or store code."),
+      gbpLinked: z.boolean().optional().describe("Only return locations connected to a Google Business Profile. Use this to find place_ids that work with the Google Business Profile tools."),
+      limit: z.coerce.number().int().min(1).max(100).optional().describe("Results per page (1-100). Defaults to 10."),
+      nextToken: z.string().optional().describe("Pass the next_token from the previous response to get the next page. Keep the same filters and limit as that request."),
     },
     { title: "List Saved Locations", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-    async ({ query }, ctx) => {
+    async ({ query, gbpLinked, limit, nextToken }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchAllLocalFalconLocations(apiKey, handleNullOrUndefined(query));
+      const resp = await fetchAllLocalFalconLocations(apiKey, handleNullOrUndefined(query), "", limit?.toString() ?? DEFAULT_LIMIT, handleNullOrUndefined(nextToken), gbpLinked ?? false);
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -543,17 +628,17 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
     "Lists all location groups in the Local Falcon account, including the number of locations and the Place IDs contained in each group. Groups may be nested: a group with type 'child' includes a 'parent' object identifying its containing group by key and name, while top-level groups have type 'parent'. Use this to discover how saved locations are organized into groups (e.g. by region or brand) and to pull the Place IDs belonging to a group.",
     {
       query: z.string().optional().describe("Search query. Matches against the group key or name."),
-      nextToken: z.string().optional().describe("Pagination token for additional results, provided by a prior response when more results exist."),
+      limit: z.coerce.number().int().min(1).max(1000).optional().describe("Results per page (1-1000). Defaults to 10."),
+      nextToken: z.string().optional().describe("Pass the next_token from the previous response to get the next page. Keep the same filters and limit as that request."),
       fieldmask: z.string().optional().describe("Comma-separated list of fields to return from each group (e.g., 'name,place_ids'). Available fields: key, name, type, parent, location_count, place_ids, date_created. Omit to return all fields."),
     },
     { title: "List Location Groups", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-    async ({ query, nextToken, fieldmask }, ctx) => {
+    async ({ query, limit, nextToken, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
-      const limit = DEFAULT_LIMIT;
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconLocationGroups(apiKey, limit, handleNullOrUndefined(query), handleNullOrUndefined(nextToken), handleNullOrUndefined(fieldmask));
+      const resp = await fetchLocalFalconLocationGroups(apiKey, limit?.toString() ?? DEFAULT_LIMIT,handleNullOrUndefined(query), handleNullOrUndefined(nextToken), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -614,17 +699,17 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
       endDate: z.string().date().optional().describe("Upper limit date of a Campaign run or schedule you wish to retrieve. Expects date formatted as YYYY-MM-DD (ISO 8601)."),
       placeId: z.string().optional().describe("Filter only results for specific Google Place ID. Supports multiple Google Place IDs, seperated by commas."),
       runDate: z.string().date().optional().describe("Filter only results for a specific Campaign run date. Expects date formatted as YYYY-MM-DD (ISO 8601). Defaults to the last report run."),
-      nextToken: z.string().optional().describe("This parameter is used to get the next 'page' of results. The value used with the parameter is provided from a previous response by this endpoint if more 'pages' of results exist."),
+      limit: z.coerce.number().int().min(1).max(100).optional().describe("Results per page (1-100). Defaults to 10."),
+      nextToken: z.string().optional().describe("Pass the next_token from the previous response to get the next page. Keep the same filters and limit as that request."),
       fieldmask: z.string().optional().describe("Comma-separated list of fields to return. Dot notation for nested paths (e.g., 'location.name'). The `.*.` wildcard works on arrays (e.g., 'scans.*.arp' on trend/campaign reports, where scans is an array) AND on dicts of objects (e.g., 'places.*.solv' on scan reports, where places is keyed by place_id with object values). For dicts of scalars like 'rankings.by_arp' (where values are numbers/strings keyed by place_id, not objects), request the whole dict by path alone — `.*.X` returns nothing because scalars can't be descended into. Omit to return all fields. STRONGLY recommended on every call: default responses can exceed 100KB."),
     },
     { title: "List Campaign Reports", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-    async ({ startDate, endDate, placeId, runDate, nextToken, fieldmask }, ctx) => {
+    async ({ startDate, endDate, placeId, runDate, limit, nextToken, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const limit = DEFAULT_LIMIT;
-      const resp = await fetchLocalFalconCampaignReports(apiKey, limit, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(placeId), handleNullOrUndefined(runDate), handleNullOrUndefined(nextToken), handleNullOrUndefined(fieldmask));
+      const resp = await fetchLocalFalconCampaignReports(apiKey, limit?.toString() ?? DEFAULT_LIMIT, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(placeId), handleNullOrUndefined(runDate), handleNullOrUndefined(nextToken), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -632,10 +717,10 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
   // Get a Specific Campaign Report
   registerTool(
     "getLocalFalconCampaignReport",
-    `Retrieves a specific campaign report with full details: aggregated ARP, ATRP, SoLV metrics, individual scan results, performance breakdowns by keyword and location, and scheduling info. Use the 'run' parameter (MM/DD/YYYY) to retrieve a specific historical run — defaults to the latest run. STRONGLY RECOMMEND fieldmask — campaign reports with many locations/keywords can be very large. Recommended fieldmask for overview: "report_key,name,status,locations,keywords,arp,atrp,solv,frequency,last_run,next_run,scans,grid_size,radius,measurement". Note: \`arp_move\`, \`atrp_move\`, \`solv_move\` delta fields appear on list-endpoint items (listLocalFalconCampaignReports) but are not present on this single-get endpoint. Get the report_key from listLocalFalconCampaignReports.`,
+    `Retrieves a specific campaign report with full details: aggregated ARP, ATRP, SoLV metrics, individual scan results, performance breakdowns by keyword and location, and scheduling info. Use the 'run' parameter (YYYY-MM-DD, a date from the report's \`runs\` list) to retrieve a specific historical run — defaults to the latest run. STRONGLY RECOMMEND fieldmask — campaign reports with many locations/keywords can be very large. Recommended fieldmask for overview: "report_key,name,status,locations,keywords,arp,atrp,solv,frequency,last_run,next_run,scans,grid_size,radius,measurement". Note: \`arp_move\`, \`atrp_move\`, \`solv_move\` delta fields appear on list-endpoint items (listLocalFalconCampaignReports) but are not present on this single-get endpoint. Get the report_key from listLocalFalconCampaignReports.`,
     {
       reportKey: z.string().min(1).regex(/^[a-f0-9]{15}$/, "reportKey must be 15 lowercase hex characters (a-f, 0-9)").describe("The report_key of the Campaign Report you wish to retrieve. 15-character lowercase hex string."),
-      run: z.string().optional().describe("Optional specific campaign run date to retrieve (MM/DD/YYYY). Defaults to latest run."),
+      run: z.string().regex(/^(\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})$/, "run must be a date formatted as YYYY-MM-DD").optional().describe("A run date from the report's `runs` list, formatted as YYYY-MM-DD. Defaults to the latest run."),
       fieldmask: z.string().optional().describe("Comma-separated list of fields to return. Dot notation for nested paths (e.g., 'location.name'). The `.*.` wildcard works on arrays (e.g., 'scans.*.arp' on trend/campaign reports, where scans is an array) AND on dicts of objects (e.g., 'places.*.solv' on scan reports, where places is keyed by place_id with object values). For dicts of scalars like 'rankings.by_arp' (where values are numbers/strings keyed by place_id, not objects), request the whole dict by path alone — `.*.X` returns nothing because scalars can't be descended into. Omit to return all fields. STRONGLY recommended on every call: default responses can exceed 100KB."),
     },
     { title: "Get Campaign Report", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
@@ -644,7 +729,7 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconCampaignReport(apiKey, reportKey, handleNullOrUndefined(run), handleNullOrUndefined(fieldmask));
+      const resp = await fetchLocalFalconCampaignReport(apiKey, reportKey, normalizeCampaignRun(handleNullOrUndefined(run)), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     },
   );
@@ -652,17 +737,26 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
   // Create a new Campaign
   registerTool(
     "createLocalFalconCampaign",
-    "Creates a new campaign in Local Falcon. Campaigns allow you to schedule recurring scans for one or multiple locations with one or multiple keywords. Locations must already exist in your Saved Locations (use listAllLocalFalconLocations to verify).",
+    "Creates a new campaign in Local Falcon. Campaigns allow you to schedule recurring scans for one or multiple locations with one or multiple keywords. Locations must already exist in your Saved Locations (use listAllLocalFalconLocations to verify). Set platforms to scan AI platforms as well as maps; each run scans every location × keyword × platform. Use keywordType to run keywords on maps only, AI platforms only, or both, and locationSettings to give individual locations their own grid or platforms. " + KEYWORD_PLACEHOLDERS,
     {
       name: z.string().describe("A name to give the campaign."),
       measurement: z.enum(['mi', 'km']).describe("The measurement unit of your radius (mi for miles, km for kilometers)."),
-      gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15', '17', '19', '21']).describe("The size of your desired grid."),
+      gridSize: z.enum(CAMPAIGN_GRID_SIZES).describe("The size of your desired grid."),
       radius: z.coerce.number().min(0.1).max(100).describe("The radius of your grid from center point to outer most point (0.1 to 100)."),
-      frequency: z.enum(['one-time', 'daily', 'weekly', 'biweekly', 'monthly']).describe("The specific run frequency for the campaign."),
+      frequency: z.enum(CAMPAIGN_FREQUENCIES).describe("The specific run frequency for the campaign."),
       placeId: z.string().describe("The location(s) to include in the campaign. Supports multiple Google Place IDs separated by commas."),
-      keyword: z.string().describe("The keyword(s) to run against the campaign locations. Supports multiple keywords separated by commas."),
+      keyword: z.string().describe("The keyword(s) to run against the campaign locations. Supports multiple keywords separated by commas. " + KEYWORD_PLACEHOLDERS),
       startDate: z.string().describe("The date when your campaign runs the first time. Format: MM/DD/YYYY."),
       startTime: z.string().describe("The time of day your campaign should run. Format: friendly time like '9:00 AM'."),
+      platforms: z.string().nullish().describe(`Platforms to scan, comma-separated: ${CAMPAIGN_PLATFORMS.join(', ')}. Defaults to native, which is maps only: each location's own map platform (Google Maps, or Apple Maps for Apple listings). Each platform adds one scan per location and keyword on every run, so more platforms use more existing credits.`),
+      keywordType: z.enum(['traditional', 'ai', 'both']).nullish().describe("Which platforms the keywords run on: 'traditional' = map platforms only (google, apple), 'ai' = AI platforms only (gaio, aimode, chatgpt, gemini), 'both' = every platform in the campaign. Defaults to both. A keyword only runs where its type overlaps a location's platforms, so 'ai' with the default native platform produces no scans."),
+      locationSettings: z.array(z.object({
+        placeId: z.string().describe("A Place ID that is also listed in placeId."),
+        gridSize: z.enum(CAMPAIGN_GRID_SIZES).nullish().describe("Grid size for this location."),
+        radius: z.coerce.number().min(0.1).max(100).nullish().describe("Grid radius for this location (0.1 to 100)."),
+        measurement: z.enum(['mi', 'km']).nullish().describe("Measurement unit of this location's radius."),
+        platforms: z.string().nullish().describe(`Platforms for this location, comma-separated: ${CAMPAIGN_PLATFORMS.join(', ')}.`),
+      })).nullish().describe("Per-location overrides. Each entry names one location from placeId and sets at least one of gridSize, radius, measurement or platforms; anything left out uses the campaign value. Locations without an entry use the campaign settings."),
       aiAnalysis: z.boolean().optional().describe("Whether campaign scans should include AI analysis."),
       notify: z.boolean().optional().describe("Whether email notification should be enabled for the campaign."),
       emailRecipients: z.string().optional().describe("Recipients of email notification. Supports multiple email addresses separated by commas. Required if notify is true."),
@@ -670,7 +764,7 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
       emailBody: z.string().optional().describe("Email body of the email notification."),
     },
     { title: "Create Campaign", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
-    async ({ name, measurement, gridSize, radius, frequency, placeId, keyword, startDate, startTime, aiAnalysis, notify, emailRecipients, emailSubject, emailBody }, ctx) => {
+    async ({ name, measurement, gridSize, radius, frequency, placeId, keyword, startDate, startTime, platforms, keywordType, locationSettings, aiAnalysis, notify, emailRecipients, emailSubject, emailBody }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
@@ -680,6 +774,14 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
       }
       if (notify && !emailSubject) {
         return { content: [{ type: "text", text: "emailSubject is required when notify is enabled." }] };
+      }
+      const platformList = normalizeCampaignPlatforms(handleNullOrUndefined(platforms));
+      if (platformList.invalid.length) {
+        return { isError: true, content: [{ type: "text", text: `Unsupported platform(s): ${platformList.invalid.join(', ')}. Use: ${CAMPAIGN_PLATFORMS.join(', ')}.` }] };
+      }
+      const locationList = buildCampaignLocationSettings(placeId, locationSettings ?? []);
+      if (locationList.error) {
+        return { isError: true, content: [{ type: "text", text: locationList.error }] };
       }
       const resp = await createLocalFalconCampaign(apiKey, {
         name,
@@ -691,6 +793,9 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
         keyword,
         startDate,
         startTime,
+        platforms: platformList.platforms || undefined,
+        keywordType: keywordType ?? undefined,
+        locationSettings: Object.keys(locationList.settings!).length ? locationList.settings : undefined,
         aiAnalysis: aiAnalysis ?? undefined,
         notify: notify ?? undefined,
         emailRecipients: handleNullOrUndefined(emailRecipients) || undefined,
@@ -717,17 +822,17 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
         'remove-keyword',
       ]).describe("The edit action to perform on the campaign. Determines which other fields are required: 'update-settings' (no required extras); 'add-location'/'modify-location'/'remove-location' (require placeId); 'add-keyword'/'update-keyword'/'remove-keyword' (require keyword)."),
       placeId: z.string().nullish().describe("Google Place ID(s), comma-separated for multiple. REQUIRED for 'add-location', 'modify-location', and 'remove-location'. Optional for 'add-keyword'/'update-keyword' to scope keyword(s) to specific location(s) already in the campaign."),
-      keyword: z.string().nullish().describe("Keyword(s), comma-separated for multiple. REQUIRED for 'add-keyword', 'update-keyword', and 'remove-keyword'."),
+      keyword: z.string().nullish().describe("Keyword(s), comma-separated for multiple. REQUIRED for 'add-keyword', 'update-keyword', and 'remove-keyword'. " + KEYWORD_PLACEHOLDERS),
       name: z.string().nullish().describe("Updated name for the campaign. Used with 'update-settings'."),
-      gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15', '17', '19', '21']).nullish().describe("Grid size for the campaign or location. Used with 'update-settings', 'add-location', or 'modify-location'."),
+      gridSize: z.enum(CAMPAIGN_GRID_SIZES).nullish().describe("Grid size for the campaign or location. Used with 'update-settings', 'add-location', or 'modify-location'."),
       radius: z.coerce.number().min(0.1).max(100).nullish().describe("Grid radius from center point to outermost point (0.1 to 100). Used with 'update-settings', 'add-location', or 'modify-location'."),
       measurement: z.enum(['mi', 'km']).nullish().describe("Measurement unit of the radius. Used with 'update-settings', 'add-location', or 'modify-location'."),
-      platforms: z.string().nullish().describe("Platforms to enable for the location. Comma-separated for multiple. Current platforms for new configuration: google, gaio, gemini, aimode, chatgpt. Used with 'add-location' or 'modify-location'."),
+      platforms: z.string().nullish().describe(`Platforms to enable for the location, comma-separated: ${CAMPAIGN_PLATFORMS.join(', ')} (native is the location's own map platform). Used with 'add-location' or 'modify-location'.`),
       keywordType: z.enum(['traditional', 'ai', 'both']).nullish().describe("Type of keyword(s). Used with 'update-settings', 'add-keyword', or 'update-keyword'."),
       aiAnalysis: z.boolean().nullish().describe("Whether campaign scans should include AI analysis. Used with 'update-settings'."),
       date: z.string().nullish().describe("Next run date for the campaign. Format: MM/DD/YYYY. Used with 'update-settings'. Must be provided together with time."),
       time: z.string().nullish().describe("Next run time. Format: friendly time like '9:00 AM'. Used with 'update-settings'. Must be provided together with date."),
-      frequency: z.enum(['one-time', 'daily', 'weekly', 'biweekly', 'monthly']).nullish().describe("Updated run frequency for the campaign. Used with 'update-settings'."),
+      frequency: z.enum(CAMPAIGN_FREQUENCIES).nullish().describe("Updated run frequency for the campaign. Used with 'update-settings'."),
       notify: z.boolean().nullish().describe("Whether email notifications should be enabled for the campaign. Used with 'update-settings'."),
       recipients: z.string().nullish().describe("Recipients of email notifications. Supports multiple email addresses separated by commas. Used with 'update-settings'."),
       emailName: z.string().nullish().describe("From-name used on email notifications. Pass '|empty|' to clear the value. Used with 'update-settings'."),
@@ -753,6 +858,10 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
       if ((date && !time) || (time && !date)) {
         return { content: [{ type: "text", text: "date and time must be provided together." }] };
       }
+      const platformList = normalizeCampaignPlatforms(handleNullOrUndefined(platforms));
+      if (platformList.invalid.length) {
+        return { isError: true, content: [{ type: "text", text: `Unsupported platform(s): ${platformList.invalid.join(', ')}. Use: ${CAMPAIGN_PLATFORMS.join(', ')}.` }] };
+      }
       const resp = await updateLocalFalconCampaign(apiKey, {
         campaignKey,
         action,
@@ -762,7 +871,7 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
         gridSize: handleNullOrUndefined(gridSize) || undefined,
         radius: radius != null ? radius.toString() : undefined,
         measurement: measurement ?? undefined,
-        platforms: handleNullOrUndefined(platforms) || undefined,
+        platforms: platformList.platforms || undefined,
         keywordType: keywordType ?? undefined,
         aiAnalysis: aiAnalysis ?? undefined,
         date: handleNullOrUndefined(date) || undefined,
@@ -912,17 +1021,17 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
       startDate: z.string().date().optional().describe("A lower limit date you wish to retrieve. Expects date formatted as YYYY-MM-DD (ISO 8601)."),
       endDate: z.string().date().optional().describe("Upper limit date you wish to retrieve. Expects date formatted as YYYY-MM-DD (ISO 8601)."),
       status: z.enum(['protected', 'paused']).optional().describe("Filter results by status: protected or paused."),
-      nextToken: z.string().optional().describe("This parameter is used to get the next 'page' of results. The value used with the parameter is provided from a previous response by this endpoint if more 'pages' of results exist."),
+      limit: z.coerce.number().int().min(3).max(100).optional().describe("Results per page (3-100). Defaults to 10."),
+      nextToken: z.string().optional().describe("Pass the next_token from the previous response to get the next page. Keep the same filters and limit as that request."),
       fieldmask: z.string().optional().describe("Comma-separated list of fields to return. Dot notation for nested paths (e.g., 'location.name'). The `.*.` wildcard works on arrays (e.g., 'scans.*.arp' on trend/campaign reports, where scans is an array) AND on dicts of objects (e.g., 'places.*.solv' on scan reports, where places is keyed by place_id with object values). For dicts of scalars like 'rankings.by_arp' (where values are numbers/strings keyed by place_id, not objects), request the whole dict by path alone — `.*.X` returns nothing because scalars can't be descended into. Omit to return all fields. STRONGLY recommended on every call: default responses can exceed 100KB."),
     },
     { title: "List Falcon Guard Reports", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-    async ({ startDate, endDate, status, nextToken, fieldmask }, ctx) => {
+    async ({ startDate, endDate, status, limit, nextToken, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const limit = DEFAULT_LIMIT;
-      const resp = await fetchLocalFalconGuardReports(apiKey, limit, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(status), handleNullOrUndefined(nextToken), handleNullOrUndefined(fieldmask));
+      const resp = await fetchLocalFalconGuardReports(apiKey, limit?.toString() ?? DEFAULT_LIMIT, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(status), handleNullOrUndefined(nextToken), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -1037,7 +1146,8 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
     "listLocalFalconTrendReports",
     `Lists trend reports showing ranking changes over time. These are AUTO-GENERATED when 2+ scans are run with IDENTICAL settings (same Place ID, keyword, coordinates, grid size, radius, platform). Each trend report tracks one location + one keyword combination. Requires at least 2 matching scans to exist. NOT generated for campaign scans — that historical data is in the campaign report. Use fieldmask to control returned fields. Recommended fieldmask: "report_key,last_date,keyword,location.name,location.address,scan_count,arp,arp_move,atrp,atrp_move,solv,solv_move". Filter by placeId, keyword, platform, or date range.`,
     {
-      nextToken: z.string().optional().describe("This parameter is used to get the next 'page' of results. The value used with the parameter is provided from a previous response by this endpoint if more 'pages' of results exist."),
+      limit: z.coerce.number().int().min(1).max(100).optional().describe("Results per page (1-100). Defaults to 10."),
+      nextToken: z.string().optional().describe("Pass the next_token from the previous response to get the next page. Keep the same filters and limit as that request."),
       placeId: z.string().optional().describe("Filter only results for specific Google Place ID. Supports multiple Google Place IDs, seperated by commas."),
       keyword: z.string().optional().describe("Filter only results similar to specified keyword (loose match)."),
       startDate: z.string().optional().describe("A lower limit date of a scan report you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
@@ -1046,13 +1156,12 @@ Requires a report_key from listLocalFalconScanReports. Cannot create new reports
       fieldmask: z.string().optional().describe("Comma-separated list of fields to return. Dot notation for nested paths (e.g., 'location.name'). The `.*.` wildcard works on arrays (e.g., 'scans.*.arp' on trend/campaign reports, where scans is an array) AND on dicts of objects (e.g., 'places.*.solv' on scan reports, where places is keyed by place_id with object values). For dicts of scalars like 'rankings.by_arp' (where values are numbers/strings keyed by place_id, not objects), request the whole dict by path alone — `.*.X` returns nothing because scalars can't be descended into. Omit to return all fields. STRONGLY recommended on every call: default responses can exceed 100KB."),
     },
     { title: "List Trend Reports", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-    async ({ nextToken, placeId, keyword, startDate, endDate, platform, fieldmask }, ctx) => {
+    async ({ limit, nextToken, placeId, keyword, startDate, endDate, platform, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
-      const limit = DEFAULT_LIMIT;
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconTrendReports(apiKey, limit, handleNullOrUndefined(nextToken), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(platform), handleNullOrUndefined(fieldmask));
+      const resp = await fetchLocalFalconTrendReports(apiKey, limit?.toString() ?? DEFAULT_LIMIT, handleNullOrUndefined(nextToken), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(platform), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -1090,7 +1199,8 @@ Get the report_key from listLocalFalconTrendReports.`,
     "listLocalFalconAutoScans",
     "Lists ONLY individually scheduled automatic scans. NOTE: This does NOT include campaign-scheduled scans, which are the more common way to schedule recurring scans. To see campaign schedules, use listLocalFalconCampaignReports instead. Most users schedule scans through campaigns for better organization and reporting.",
     {
-      nextToken: z.string().optional().describe("Pagination token for additional results."),
+      limit: z.coerce.number().int().min(1).max(100).optional().describe("Results per page (1-100). Defaults to 10."),
+      nextToken: z.string().optional().describe("Pass the next_token from the previous response to get the next page. Keep the same filters and limit as that request."),
       placeId: z.string().optional().describe("The Place ID of the location."),
       keyword: z.string().optional().describe("The keyword to search for."),
       gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15', '17', '19', '21']).optional().describe("The grid size of the scan."),
@@ -1100,12 +1210,12 @@ Get the report_key from listLocalFalconTrendReports.`,
       fieldmask: z.string().optional().describe("Comma-separated list of fields to return. Dot notation for nested paths (e.g., 'location.name'). The `.*.` wildcard works on arrays (e.g., 'scans.*.arp' on trend/campaign reports, where scans is an array) AND on dicts of objects (e.g., 'places.*.solv' on scan reports, where places is keyed by place_id with object values). For dicts of scalars like 'rankings.by_arp' (where values are numbers/strings keyed by place_id, not objects), request the whole dict by path alone — `.*.X` returns nothing because scalars can't be descended into. Omit to return all fields. STRONGLY recommended on every call: default responses can exceed 100KB."),
     },
     { title: "List Scheduled Auto-Scans", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-    async ({ nextToken, placeId, keyword, gridSize, frequency, status, platform, fieldmask }, ctx) => {
+    async ({ limit, nextToken, placeId, keyword, gridSize, frequency, status, platform, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const resp = await fetchLocalFalconAutoScans(apiKey, handleNullOrUndefined(nextToken), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(gridSize), handleNullOrUndefined(frequency), handleNullOrUndefined(status), handleNullOrUndefined(platform), handleNullOrUndefined(fieldmask));
+      const resp = await fetchLocalFalconAutoScans(apiKey, handleNullOrUndefined(nextToken), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(gridSize), handleNullOrUndefined(frequency), handleNullOrUndefined(status), handleNullOrUndefined(platform), handleNullOrUndefined(fieldmask), limit?.toString() ?? DEFAULT_LIMIT);
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -1119,17 +1229,17 @@ Get the report_key from listLocalFalconTrendReports.`,
       keyword: z.string().optional().describe("The keyword to search for."),
       startDate: z.string().optional().describe("A lower limit date of a scan report you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
       endDate: z.string().optional().describe("Upper limit date of a scan report you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
-      nextToken: z.string().optional().describe("Pagination token for additional results."),
+      limit: z.coerce.number().int().min(1).max(100).optional().describe("Results per page (1-100). Defaults to 10."),
+      nextToken: z.string().optional().describe("Pass the next_token from the previous response to get the next page. Keep the same filters and limit as that request."),
       fieldmask: z.string().optional().describe("Comma-separated list of fields to return. Dot notation for nested paths (e.g., 'location.name'). The `.*.` wildcard works on arrays (e.g., 'scans.*.arp' on trend/campaign reports, where scans is an array) AND on dicts of objects (e.g., 'places.*.solv' on scan reports, where places is keyed by place_id with object values). For dicts of scalars like 'rankings.by_arp' (where values are numbers/strings keyed by place_id, not objects), request the whole dict by path alone — `.*.X` returns nothing because scalars can't be descended into. Omit to return all fields. STRONGLY recommended on every call: default responses can exceed 100KB."),
     },
     { title: "List Location Reports", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-    async ({ placeId, keyword, startDate, endDate, nextToken, fieldmask }, ctx) => {
+    async ({ placeId, keyword, startDate, endDate, limit, nextToken, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const limit = DEFAULT_LIMIT;
-      const resp = await fetchLocalFalconLocationReports(apiKey, limit, handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(nextToken), handleNullOrUndefined(fieldmask));
+      const resp = await fetchLocalFalconLocationReports(apiKey, limit?.toString() ?? DEFAULT_LIMIT, handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(nextToken), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -1158,20 +1268,20 @@ Get the report_key from listLocalFalconTrendReports.`,
     "listLocalFalconKeywordReports",
     "Lists keyword reports that aggregate scan data across multiple locations for a specific keyword. AUTO-GENERATED after a keyword has been scanned for 2+ different locations outside of campaigns. NOT generated for campaign scans. Useful for comparing how different locations perform for the same keyword. Use fieldmask to control returned fields.",
     {
-      nextToken: z.string().optional().describe("Pagination token for additional results."),
+      limit: z.coerce.number().int().min(1).max(100).optional().describe("Results per page (1-100). Defaults to 10."),
+      nextToken: z.string().optional().describe("Pass the next_token from the previous response to get the next page. Keep the same filters and limit as that request."),
       keyword: z.string().optional().describe("The keyword to search for."),
       startDate: z.string().optional().describe("A lower limit date of a scan report you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
       endDate: z.string().optional().describe("Upper limit date of a scan report you wish to retrieve. Expects date formatted as MM/DD/YYYY."),
       fieldmask: z.string().optional().describe("Comma-separated list of fields to return. Dot notation for nested paths (e.g., 'location.name'). The `.*.` wildcard works on arrays (e.g., 'scans.*.arp' on trend/campaign reports, where scans is an array) AND on dicts of objects (e.g., 'places.*.solv' on scan reports, where places is keyed by place_id with object values). For dicts of scalars like 'rankings.by_arp' (where values are numbers/strings keyed by place_id, not objects), request the whole dict by path alone — `.*.X` returns nothing because scalars can't be descended into. Omit to return all fields. STRONGLY recommended on every call: default responses can exceed 100KB."),
     },
     { title: "List Keyword Reports", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-    async ({ nextToken, keyword, startDate, endDate, fieldmask }, ctx) => {
+    async ({ limit, nextToken, keyword, startDate, endDate, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const limit = DEFAULT_LIMIT;
-      const resp = await fetchLocalFalconKeywordReports(apiKey, limit, handleNullOrUndefined(nextToken), handleNullOrUndefined(keyword), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(fieldmask));
+      const resp = await fetchLocalFalconKeywordReports(apiKey, limit?.toString() ?? DEFAULT_LIMIT, handleNullOrUndefined(nextToken), handleNullOrUndefined(keyword), handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -1205,17 +1315,17 @@ Get the report_key from listLocalFalconTrendReports.`,
       placeId: z.string().optional().describe("Filter only results for specific Google Place ID. Supports multiple Google Place IDs, seperated by commas."),
       keyword: z.string().optional().describe("Filter only results similar to specified keyword (loose match)."),
       gridSize: z.enum(['3', '5', '7', '9', '11', '13', '15']).optional().describe("Filter only for specific grid sizes. Expects 3, 5, 7, 9, 11, 13, or 15."),
-      nextToken: z.string().optional().describe("This parameter is used to get the next 'page' of results. The value used with the parameter is provided from a previous response by this endpoint if more 'pages' of results exist."),
+      limit: z.coerce.number().int().min(1).max(100).optional().describe("Results per page (1-100). Defaults to 10."),
+      nextToken: z.string().optional().describe("Pass the next_token from the previous response to get the next page. Keep the same filters and limit as that request."),
       fieldmask: z.string().optional().describe("Comma-separated list of fields to return. Dot notation for nested paths (e.g., 'location.name'). The `.*.` wildcard works on arrays (e.g., 'scans.*.arp' on trend/campaign reports, where scans is an array) AND on dicts of objects (e.g., 'places.*.solv' on scan reports, where places is keyed by place_id with object values). For dicts of scalars like 'rankings.by_arp' (where values are numbers/strings keyed by place_id, not objects), request the whole dict by path alone — `.*.X` returns nothing because scalars can't be descended into. Omit to return all fields. STRONGLY recommended on every call: default responses can exceed 100KB."),
     },
     { title: "List Competitor Reports", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-    async ({ startDate, endDate, placeId, keyword, gridSize, nextToken, fieldmask }, ctx) => {
+    async ({ startDate, endDate, placeId, keyword, gridSize, limit, nextToken, fieldmask }, ctx) => {
       const apiKey = getApiKey(ctx);
       if (!apiKey) {
         return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       }
-      const limit = DEFAULT_LIMIT;
-      const resp = await fetchLocalFalconCompetitorReports(apiKey, limit, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(gridSize), handleNullOrUndefined(nextToken), handleNullOrUndefined(fieldmask));
+      const resp = await fetchLocalFalconCompetitorReports(apiKey, limit?.toString() ?? DEFAULT_LIMIT, handleNullOrUndefined(startDate), handleNullOrUndefined(endDate), handleNullOrUndefined(placeId), handleNullOrUndefined(keyword), handleNullOrUndefined(gridSize), handleNullOrUndefined(nextToken), handleNullOrUndefined(fieldmask));
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );
@@ -1741,12 +1851,22 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
   // is per-tool and must reflect the most dangerous action available.
   //
   // The API requires a literal confirmation token on its destructive calls
-  // (DELETE_POST, REPLACE_SERVICES, ...). That is supplied by the client layer
-  // rather than asked of the model, so a delete cannot be half-specified.
+  // (DELETE_POST, REPLACE_SERVICES, ...). localfalcon.ts still supplies those
+  // tokens — they are a wire-format detail, and asking the model for them would
+  // let a delete be half-specified. The safeguard they were meant to provide is
+  // instead enforced here, for the seven gated operations, by gbpConfirmation.ts:
+  // an elicitation dialog when the client supports elicitation.form, otherwise a
+  // preview → argument-bound, single-use confirmationToken round trip (also the
+  // fallback when a dialog goes unanswered: no answer is never approval). The gate
+  // runs before the client-layer call, so a declined or missing approval never
+  // reaches the API.
+
+  const GBP_CONFIRMATION_TOKEN = z.string().nullish().describe("Only for approval-gated actions (delete, replace, CLOSED_PERMANENTLY, attributes). Omit on the first call. If that call returns confirmation_required, show its summary to the user and, only after they explicitly approve, call again with identical arguments plus this token. Never invent one.");
+  const GBP_APPROVAL_NOTE = "requires the user's approval: the server either shows the user an approval dialog, or returns confirmation_required with a confirmationToken — show that preview to the user and call again with identical arguments plus the token only after they explicitly approve";
 
   registerTool(
     "manageLocalFalconGbpPosts",
-    "Creates, updates or deletes a post on a connected Google Business Profile. WRITES LIVE TO GOOGLE — always confirm with the user first. action='create' needs summary (and event/offer when topicType is EVENT/OFFER); action='update' needs postId; action='delete' needs postId and permanently removes the post. Use listLocalFalconGbpPosts to find postId values.",
+    `Creates, updates or deletes a post on a connected Google Business Profile. WRITES LIVE TO GOOGLE — act only on the user's explicit instruction. action='create' needs summary (and event/offer when topicType is EVENT/OFFER); action='update' needs postId; action='delete' needs postId, permanently removes the post and ${GBP_APPROVAL_NOTE}. Use listLocalFalconGbpPosts to find postId values.`,
     {
       action: z.enum(["create", "update", "delete"]).describe("Operation to perform."),
       placeId: z.string().describe(GBP_PLACE_ID),
@@ -1765,9 +1885,11 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
       offer: z.record(z.any()).nullish().describe("Offer details (coupon code, terms, redeem URL). Required when topicType is OFFER."),
       language: z.string().nullish().describe("Language code, 'create' only. Defaults to 'en'."),
       replace: z.string().nullish().describe("Comma-separated field names to write wholesale rather than merge, 'update' only."),
+      confirmationToken: GBP_CONFIRMATION_TOKEN,
     },
     { title: "Manage GBP Posts", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
-    async ({ action, placeId, postId, summary, topicType, callToAction, media, event, offer, language, replace }, ctx) => {
+    async (args, ctx) => {
+      const { action, placeId, postId, summary, topicType, callToAction, media, event, offer, language, replace } = args;
       const apiKey = getApiKey(ctx);
       if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       if ((action === "update" || action === "delete") && !postId) {
@@ -1794,6 +1916,8 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
           replace: replace ?? undefined,
         });
       } else {
+        const gate = await gbpGate.confirm({ tool: "manageLocalFalconGbpPosts", operation: "DELETE_POST", args, signal: ctx.signal });
+        if (!gate.approved) return gate.result;
         resp = await deleteGbpPost(apiKey, placeId, postId as string);
       }
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
@@ -1802,7 +1926,7 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
 
   registerTool(
     "manageLocalFalconGbpMedia",
-    "Adds, recategorises or deletes owner media on a connected Google Business Profile. WRITES LIVE TO GOOGLE — always confirm with the user first. action='create' needs mediaFormat, sourceUrl and category; action='update' needs mediaId and category (and cannot set COVER or PROFILE); action='delete' needs mediaId and permanently removes the item. Customer-uploaded media cannot be modified — see listLocalFalconGbpCustomerMedia.",
+    `Adds, recategorises or deletes owner media on a connected Google Business Profile. WRITES LIVE TO GOOGLE — act only on the user's explicit instruction. action='create' needs mediaFormat, sourceUrl and category; action='update' needs mediaId and category (and cannot set COVER or PROFILE); action='delete' needs mediaId, permanently removes the item and ${GBP_APPROVAL_NOTE}. Customer-uploaded media cannot be modified — see listLocalFalconGbpCustomerMedia.`,
     {
       action: z.enum(["create", "update", "delete"]).describe("Operation to perform."),
       placeId: z.string().describe(GBP_PLACE_ID),
@@ -1811,9 +1935,11 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
       sourceUrl: z.string().nullish().describe("Public URL Google can fetch the file from. Required for 'create'."),
       category: z.string().nullish().describe("Category, e.g. INTERIOR, EXTERIOR, LOGO, COVER, FOOD_AND_DRINK. Required for 'create' and 'update'. COVER and PROFILE are not valid for 'update'."),
       description: z.string().nullish().describe("Optional description, 'create' only. Cannot be changed afterwards."),
+      confirmationToken: GBP_CONFIRMATION_TOKEN,
     },
     { title: "Manage GBP Media", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
-    async ({ action, placeId, mediaId, mediaFormat, sourceUrl, category, description }, ctx) => {
+    async (args, ctx) => {
+      const { action, placeId, mediaId, mediaFormat, sourceUrl, category, description } = args;
       const apiKey = getApiKey(ctx);
       if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       if ((action === "update" || action === "delete") && !mediaId) {
@@ -1831,6 +1957,8 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
         }
         resp = await updateGbpMedia(apiKey, placeId, mediaId as string, category);
       } else {
+        const gate = await gbpGate.confirm({ tool: "manageLocalFalconGbpMedia", operation: "DELETE_MEDIA", args, signal: ctx.signal });
+        if (!gate.approved) return gate.result;
         resp = await deleteGbpMedia(apiKey, placeId, mediaId as string);
       }
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
@@ -1839,7 +1967,7 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
 
   registerTool(
     "manageLocalFalconGbpReviewReplies",
-    "Publishes or deletes owner replies to Google reviews on connected locations. WRITES LIVE TO GOOGLE and replies are publicly visible — always confirm the exact wording with the user first. action='reply' either replies to one review (reviewId + reply) or to up to 50 at once (replies array); action='delete' removes an existing reply from reviewId. Use listLocalFalconGbpReviews with unanswered=true to find reviews needing a response.",
+    `Publishes or deletes owner replies to Google reviews on connected locations. WRITES LIVE TO GOOGLE and replies are publicly visible — always confirm the exact wording with the user first. action='reply' either replies to one review (reviewId + reply) or to up to 50 at once (replies array); action='delete' removes an existing reply from reviewId and ${GBP_APPROVAL_NOTE}. Use listLocalFalconGbpReviews with unanswered=true to find reviews needing a response.`,
     {
       action: z.enum(["reply", "delete"]).describe("Operation to perform."),
       placeId: z.string().nullish().describe(GBP_PLACE_ID + " Required unless using the batch 'replies' array."),
@@ -1850,9 +1978,11 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
         review_id: z.string().describe("Review to reply to."),
         reply: z.string().describe("Reply text."),
       })).max(50).nullish().describe("Batch of up to 50 replies, used instead of placeId/reviewId/reply."),
+      confirmationToken: GBP_CONFIRMATION_TOKEN,
     },
     { title: "Manage GBP Review Replies", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
-    async ({ action, placeId, reviewId, reply, replies }, ctx) => {
+    async (args, ctx) => {
+      const { action, placeId, reviewId, reply, replies } = args;
       const apiKey = getApiKey(ctx);
       if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       let resp;
@@ -1871,6 +2001,8 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
         if (!placeId || !reviewId) {
           return { content: [{ type: "text", text: "placeId and reviewId are both required for action 'delete'." }] };
         }
+        const gate = await gbpGate.confirm({ tool: "manageLocalFalconGbpReviewReplies", operation: "DELETE_REPLY", args, signal: ctx.signal });
+        if (!gate.approved) return gate.result;
         resp = await deleteGbpReviewReply(apiKey, placeId, reviewId);
       }
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
@@ -1879,7 +2011,7 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
 
   registerTool(
     "manageLocalFalconGbpActionLinks",
-    "Adds, updates or removes action links (booking, ordering, appointment buttons) on a connected Google Business Profile. WRITES LIVE TO GOOGLE — always confirm with the user first. action='create' needs actionType; action='update' and action='delete' need linkId. Call getLocalFalconGbpAvailableActionTypes first to get a valid actionType, and listLocalFalconGbpActionLinks for linkId values.",
+    `Adds, updates or removes action links (booking, ordering, appointment buttons) on a connected Google Business Profile. WRITES LIVE TO GOOGLE — act only on the user's explicit instruction. action='create' needs actionType; action='update' and action='delete' need linkId; action='delete' removes the link and ${GBP_APPROVAL_NOTE}. Call getLocalFalconGbpAvailableActionTypes first to get a valid actionType, and listLocalFalconGbpActionLinks for linkId values.`,
     {
       action: z.enum(["create", "update", "delete"]).describe("Operation to perform."),
       placeId: z.string().describe(GBP_PLACE_ID),
@@ -1887,9 +2019,11 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
       actionType: z.string().nullish().describe("Action type, e.g. APPOINTMENT or FOOD_ORDERING. Required for 'create'. Use getLocalFalconGbpAvailableActionTypes to list valid values."),
       uri: z.string().nullish().describe("Destination URL for the button."),
       isPreferred: z.boolean().nullish().describe("Whether this is the preferred link for its type."),
+      confirmationToken: GBP_CONFIRMATION_TOKEN,
     },
     { title: "Manage GBP Action Links", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
-    async ({ action, placeId, linkId, actionType, uri, isPreferred }, ctx) => {
+    async (args, ctx) => {
+      const { action, placeId, linkId, actionType, uri, isPreferred } = args;
       const apiKey = getApiKey(ctx);
       if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       if ((action === "update" || action === "delete") && !linkId) {
@@ -1904,6 +2038,8 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
       } else if (action === "update") {
         resp = await updateGbpLink(apiKey, placeId, linkId as string, handleNullOrUndefined(uri), isPreferred ?? undefined);
       } else {
+        const gate = await gbpGate.confirm({ tool: "manageLocalFalconGbpActionLinks", operation: "DELETE_LINK", args, signal: ctx.signal });
+        if (!gate.approved) return gate.result;
         resp = await deleteGbpLink(apiKey, placeId, linkId as string);
       }
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
@@ -1912,7 +2048,7 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
 
   registerTool(
     "manageLocalFalconGbpServices",
-    "Adds, removes or wholesale-replaces the services on a connected Google Business Profile. WRITES LIVE TO GOOGLE — always confirm with the user first. action='add' appends services; action='remove' deletes the named services; action='replace' overwrites the ENTIRE service list, so anything omitted is removed — read listLocalFalconGbpServices first and only use 'replace' when the user explicitly wants a full rewrite.",
+    `Adds, removes or wholesale-replaces the services on a connected Google Business Profile. WRITES LIVE TO GOOGLE — act only on the user's explicit instruction. action='add' appends services; action='remove' deletes the named services; action='replace' overwrites the ENTIRE service list, so anything omitted is removed — read listLocalFalconGbpServices first, only use 'replace' when the user explicitly wants a full rewrite, and note that 'replace' ${GBP_APPROVAL_NOTE}.`,
     {
       action: z.enum(["add", "remove", "replace"]).describe("Operation to perform. 'replace' overwrites the whole list."),
       placeId: z.string().describe(GBP_PLACE_ID),
@@ -1923,9 +2059,11 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
         price: z.record(z.any()).nullish().describe("Optional price object."),
       })).nullish().describe("Services for 'add' and 'replace'. For 'replace' this must be the complete desired list."),
       names: z.array(z.string()).nullish().describe("Service names to remove, for action 'remove'."),
+      confirmationToken: GBP_CONFIRMATION_TOKEN,
     },
     { title: "Manage GBP Services", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
-    async ({ action, placeId, services, names }, ctx) => {
+    async (args, ctx) => {
+      const { action, placeId, services, names } = args;
       const apiKey = getApiKey(ctx);
       if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       let resp;
@@ -1944,6 +2082,10 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
           description: svc.description ?? undefined,
           price: svc.price ?? undefined,
         }));
+        if (action === "replace") {
+          const gate = await gbpGate.confirm({ tool: "manageLocalFalconGbpServices", operation: "REPLACE_SERVICES", args, signal: ctx.signal });
+          if (!gate.approved) return gate.result;
+        }
         resp = action === "add"
           ? await addGbpServices(apiKey, placeId, payload)
           : await replaceGbpServices(apiKey, placeId, payload);
@@ -1954,7 +2096,7 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
 
   registerTool(
     "updateLocalFalconGbpProfile",
-    "Updates the core details of a connected Google Business Profile. WRITES LIVE TO GOOGLE — always confirm with the user first. action='details' edits fields such as title, phone, website or categories (verify category gcid values with searchLocalFalconGbpCategories); action='hours' sets regular or special opening hours; action='status' sets OPEN, CLOSED_TEMPORARILY or CLOSED_PERMANENTLY; action='attributes' sets profile attributes (check permitted ones with getLocalFalconGbpAvailableAttributes). CLOSED_PERMANENTLY is effectively irreversible on Google — never set it without explicit user instruction.",
+    `Updates the core details of a connected Google Business Profile. WRITES LIVE TO GOOGLE — act only on the user's explicit instruction. action='details' edits fields such as title, phone, website or categories (verify category gcid values with searchLocalFalconGbpCategories); action='hours' sets regular or special opening hours; action='status' sets OPEN, CLOSED_TEMPORARILY or CLOSED_PERMANENTLY; action='attributes' sets profile attributes (check permitted ones with getLocalFalconGbpAvailableAttributes). CLOSED_PERMANENTLY is effectively irreversible on Google — never set it without explicit user instruction. Attributes set through the API currently cannot be removed through the API. Setting CLOSED_PERMANENTLY or attributes ${GBP_APPROVAL_NOTE}.`,
     {
       action: z.enum(["details", "hours", "status", "attributes"]).describe("Which part of the profile to update."),
       placeId: z.string().describe(GBP_PLACE_ID),
@@ -1977,9 +2119,11 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
       })).nullish().describe("For action 'attributes': attributes to set."),
       clear: z.string().nullish().describe("Comma-separated field names to clear. For 'hours' use 'regular' and/or 'special'."),
       replace: z.string().nullish().describe("Comma-separated field names to write wholesale rather than merge. For 'hours' use 'regular' and/or 'special'."),
+      confirmationToken: GBP_CONFIRMATION_TOKEN,
     },
     { title: "Update GBP Profile", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
-    async ({ action, placeId, updates, regular, special, status, openingDate, attributes, clear, replace }, ctx) => {
+    async (args, ctx) => {
+      const { action, placeId, updates, regular, special, status, openingDate, attributes, clear, replace } = args;
       const apiKey = getApiKey(ctx);
       if (!apiKey) return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
       let resp;
@@ -2006,6 +2150,10 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
         if (!status) {
           return { content: [{ type: "text", text: "status is required for action 'status'." }] };
         }
+        if (status === "CLOSED_PERMANENTLY") {
+          const gate = await gbpGate.confirm({ tool: "updateLocalFalconGbpProfile", operation: "CLOSED_PERMANENTLY", args, signal: ctx.signal });
+          if (!gate.approved) return gate.result;
+        }
         resp = await updateGbpStatus(apiKey, placeId, status, handleNullOrUndefined(openingDate));
       } else {
         if (!attributes || attributes.length === 0) {
@@ -2018,6 +2166,8 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
           unset_values: attr.unset_values ?? undefined,
           uris: attr.uris ?? undefined,
         }));
+        const gate = await gbpGate.confirm({ tool: "updateLocalFalconGbpProfile", operation: "SET_ATTRIBUTES", args, signal: ctx.signal });
+        if (!gate.approved) return gate.result;
         resp = await updateGbpAttributes(apiKey, placeId, payload);
       }
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };

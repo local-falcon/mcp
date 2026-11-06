@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "local-falcon-mcp",
   "display_name": "Local Falcon",
-  "version": "1.4.18",
+  "version": "1.4.20",
   "description": "Monitor and improve visibility across AI search platforms (ChatGPT, Gemini, Google AI Overviews, AI Mode) and in local search (Google Maps, Apple Maps) with tools for AI visibility tracking, geo-grid rank analysis, competitor intelligence, campaign management, and Google Business Profile monitoring.",
   "long_description": "Local Falcon is an AI visibility and local search intelligence platform that tracks business visibility across AI search platforms, Google Maps, and Apple Maps. Connect your MCP client to your Local Falcon account to track how businesses appear across AI search results and traditional map platforms.\n\nCapabilities include running geo-grid scans that check visibility from dozens of surrounding coordinates simultaneously, retrieving scan reports with AI-powered analysis, tracking visibility trends over time, managing scheduled campaigns across multiple locations and keywords, monitoring Google Business Profiles for unwanted changes with Falcon Guard, analyzing reviews with sentiment and topic breakdowns, and researching competitors to identify strategic opportunities.\n\nSupported platforms: Google Maps, Apple Maps, Google AI Overviews, Google AI Mode, ChatGPT, and Gemini.\n\nThis desktop bundle uses the normal MCP profile. The hosted MCP endpoint automatically selects a session profile using existing request-source attribution. Recognized ChatGPT sessions exclude separately metered On-Demand tools; see the repository README for submission prerequisites.",
   "author": {
@@ -102,12 +102,12 @@
     { "name": "getLocalFalconGbpAvailableActionTypes", "description": "Lists action link types the profile supports." },
     { "name": "searchLocalFalconGbpCategories", "description": "Searches Google's category taxonomy for gcid: identifiers." },
     { "name": "searchLocalFalconGbpChains", "description": "Searches Google's chain directory." },
-    { "name": "manageLocalFalconGbpPosts", "description": "Creates, updates or deletes a post. Writes live to Google." },
-    { "name": "manageLocalFalconGbpMedia", "description": "Adds, recategorises or deletes owner media. Writes live to Google." },
-    { "name": "manageLocalFalconGbpReviewReplies", "description": "Publishes or deletes public replies to reviews, singly or up to 50 at once." },
-    { "name": "manageLocalFalconGbpActionLinks", "description": "Adds, updates or removes action links." },
-    { "name": "manageLocalFalconGbpServices", "description": "Adds, removes or wholesale-replaces services. replace overwrites the entire list." },
-    { "name": "updateLocalFalconGbpProfile", "description": "Updates core details, hours, open status or attributes. CLOSED_PERMANENTLY is effectively irreversible." }
+    { "name": "manageLocalFalconGbpPosts", "description": "Creates, updates or deletes a post. Writes live to Google. Deletes require the user's approval." },
+    { "name": "manageLocalFalconGbpMedia", "description": "Adds, recategorises or deletes owner media. Writes live to Google. Deletes require the user's approval." },
+    { "name": "manageLocalFalconGbpReviewReplies", "description": "Publishes or deletes public replies to reviews, singly or up to 50 at once. Deletes require the user's approval." },
+    { "name": "manageLocalFalconGbpActionLinks", "description": "Adds, updates or removes action links. Removals require the user's approval." },
+    { "name": "manageLocalFalconGbpServices", "description": "Adds, removes or wholesale-replaces services. replace overwrites the entire list and requires the user's approval." },
+    { "name": "updateLocalFalconGbpProfile", "description": "Updates core details, hours, open status or attributes. CLOSED_PERMANENTLY is effectively irreversible; it and attribute changes require the user's approval." }
   ],
   "privacy_policies": [
     "https://www.localfalcon.com/privacy-policy"
