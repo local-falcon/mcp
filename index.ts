@@ -76,7 +76,7 @@ interface SessionData {
 
 // ── Session memory budget ────────────────────────────────────────────────
 //
-// Each live session retains its own McpServer: getServer() registers 57 or 60
+// Each live session retains its own McpServer: getServer() registers 60 or 63
 // tools with their Zod schemas and descriptions per session, measured at
 // ~1.28 MB retained. The SDK forbids sharing one instance — Protocol.connect()
 // throws "Already connected to a transport… use a separate Protocol instance
@@ -1457,7 +1457,9 @@ const startStdioServer = (): void => {
   // LOCAL_FALCON_REQUEST_SOURCE.
   setProcessRequestSource("stdio");
   const transport = new StdioServerTransport();
-  const server = getServer(new Map<string, SessionData>());
+  // Server and client share a machine only here, so only STDIO may read local
+  // files (screenshotPaths on submitLocalFalconFeedback).
+  const server = getServer(new Map<string, SessionData>(), undefined, { localFiles: true });
 
   server.connect(transport).catch((error: unknown) => {
     console.error("Error connecting stdio server:", error);

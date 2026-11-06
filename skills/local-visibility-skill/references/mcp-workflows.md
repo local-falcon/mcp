@@ -26,7 +26,7 @@ The MCP server wraps Local Falcon's API endpoints with developer-friendly tool n
 
 ## Complete ChatGPT Tool Reference
 
-The ChatGPT profile exposes 57 tools. The normal MCP profile additionally supports separately metered On-Demand lookups; those are unavailable here. This inventory includes connected GBP reads and public GBP writes. Follow the current tool input schema for exact parameter names, required fields, and supported values; examples below describe workflow intent rather than literal API payloads.
+The ChatGPT profile exposes 60 tools. The normal MCP profile additionally supports separately metered On-Demand lookups; those are unavailable here. This inventory includes connected GBP reads and public GBP writes. Follow the current tool input schema for exact parameter names, required fields, and supported values; examples below describe workflow intent rather than literal API payloads.
 
 | Tool | Purpose |
 |------|---------|
@@ -66,6 +66,9 @@ The ChatGPT profile exposes 57 tools. The normal MCP profile additionally suppor
 | `viewLocalFalconAccountInformation` | View Account Information |
 | `searchLocalFalconKnowledgeBase` | Search Knowledge Base |
 | `getLocalFalconKnowledgeBaseArticle` | Get Knowledge Base Article |
+| `submitLocalFalconFeedback` | Submit Feedback (bug report, feature request or feedback to the Local Falcon team; only when the user asks) |
+| `listLocalFalconFeedback` | List Feedback Submissions |
+| `getLocalFalconFeedback` | Get Feedback Submission |
 | `getLocalFalconGbpProfile` | Get GBP Profile |
 | `getLocalFalconGbpGoogleUpdates` | Get GBP Google Updates |
 | `getLocalFalconGbpVerificationStatus` | Get GBP Verification Status |

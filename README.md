@@ -169,7 +169,7 @@ The widget is built as a single-file HTML application using Vite and served as a
 
 ## Deployment profiles
 
-The same `https://mcp.localfalcon.com` endpoint automatically exposes **57 tools** to authenticated sessions identified as ChatGPT and **60 tools** to other MCP clients. Profile selection reuses the existing request-source attribution in `requestSource.ts`; there is no separate endpoint, deployment profile variable, or additional client detector. The profile is bound to the authenticated session, and recognized ChatGPT API calls retain `request_source=chatgpt` downstream.
+The same `https://mcp.localfalcon.com` endpoint automatically exposes **60 tools** to authenticated sessions identified as ChatGPT and **63 tools** to other MCP clients. Profile selection reuses the existing request-source attribution in `requestSource.ts`; there is no separate endpoint, deployment profile variable, or additional client detector. The profile is bound to the authenticated session, and recognized ChatGPT API calls retain `request_source=chatgpt` downstream.
 
 Session profiles are bound after authentication and ownership checks. Established ChatGPT sessions retain their attribution when later signals are missing or weaker. A later normal-to-ChatGPT change requires a fresh initialization before more tools can run. Recovery retains the profile while its credential-bound record remains in memory (up to 24 hours, bounded by capacity); after a process restart or record expiry/eviction, clients must initialize again. Legacy SSE waits for initialization before registering its tools.
 
@@ -261,6 +261,14 @@ All tools explicitly declare the three MCP annotation hints. Hints describe beha
 
 ### Account
 * **viewLocalFalconAccountInformation**: Retrieves account info including user, credits, and subscription details.
+
+### Feedback
+* **submitLocalFalconFeedback**: Sends a bug report, feature request or general feedback to the Local Falcon team. Each account can submit 20 times per hour. You can attach up to 5 screenshots (PNG, JPEG, GIF or WEBP, 8 MB each) in three ways:
+  * images uploaded in ChatGPT, which arrive automatically through `openai/fileParams`
+  * local file paths, which work only with the STDIO server
+  * base64 strings, from any client
+* **listLocalFalconFeedback**: Lists the account's submissions and their status: `new`, `triaged`, `in_progress`, `resolved`, `closed` or `wont_fix`.
+* **getLocalFalconFeedback**: Retrieves one submission in full. Its screenshot links expire after 15 minutes.
 
 ---
 

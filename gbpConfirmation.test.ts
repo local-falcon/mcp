@@ -283,11 +283,11 @@ describe("clients without elicitation get a preview and an argument-bound token"
 });
 
 describe("tool surface is unchanged apart from the token parameter", () => {
-  test("60/57 tools, every write tool accepts confirmationToken, annotations intact", async () => {
+  test("63/60 tools, every write tool accepts confirmationToken, annotations intact", async () => {
     const normal = (await (await connect("normal")).listTools()).tools;
     const chatgpt = (await (await connect("chatgpt")).listTools()).tools;
-    expect(normal).toHaveLength(60);
-    expect(chatgpt).toHaveLength(57);
+    expect(normal).toHaveLength(63);
+    expect(chatgpt).toHaveLength(60);
     for (const tools of [normal, chatgpt]) {
       for (const name of WRITE_TOOLS) {
         const tool = tools.find(t => t.name === name)!;

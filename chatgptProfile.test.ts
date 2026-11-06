@@ -63,13 +63,13 @@ function textOf(result: any): string {
 function payload(result: any): any { return JSON.parse(textOf(result)); }
 
 describe("resolved source profile and actual MCP discovery", () => {
-  test("normal retains all 60 tools and ChatGPT registers only its 57 tools", async () => {
+  test("normal retains all 63 tools and ChatGPT registers only its 60 tools", async () => {
     const normal = await connect("normal");
     const chatgpt = await connect("chatgpt");
     const full = (await normal.listTools()).tools;
     const safe = (await chatgpt.listTools()).tools;
-    expect(full).toHaveLength(60);
-    expect(safe).toHaveLength(57);
+    expect(full).toHaveLength(63);
+    expect(safe).toHaveLength(60);
     for (const name of excluded) {
       expect(full.some(t => t.name === name)).toBe(true);
       expect(safe.some(t => t.name === name)).toBe(false);
@@ -111,7 +111,7 @@ describe("resolved source profile and actual MCP discovery", () => {
   test("profile is fixed for its connection, independently of concurrent request contexts", async () => {
     const client = await connect("chatgpt");
     await runWithRequestSource({ value: "claude", tier: 4 }, async () => {
-      expect((await client.listTools()).tools).toHaveLength(57);
+      expect((await client.listTools()).tools).toHaveLength(60);
     });
   });
 
@@ -284,23 +284,23 @@ describe("authenticated HTTP session profiles", () => {
       expect(started.status).toBe(200);
       const sid = started.headers.get("mcp-session-id")!;
       await started.json();
-      expect((await (await send(list, sid)).json()).result.tools).toHaveLength(57);
+      expect((await (await send(list, sid)).json()).result.tools).toHaveLength(60);
       // Conflicting platform signals cannot change this established session's billing attribution.
       const call = { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "getLocalFalconKnowledgeBaseArticle", arguments: { articleId: "28" } } };
       await (await send(call, sid, { origin: "https://claude.ai" })).json();
       expect(requests.at(-1)).toContain("request_source=chatgpt");
       manager.remove(sid);
       const [recovered, concurrentRecovery] = await Promise.all([send(list, sid), send(list, sid)]);
-      expect((await concurrentRecovery.json()).result.tools).toHaveLength(57);
+      expect((await concurrentRecovery.json()).result.tools).toHaveLength(60);
       expect(recovered.status).toBe(200);
-      expect((await recovered.json()).result.tools).toHaveLength(57);
+      expect((await recovered.json()).result.tools).toHaveLength(60);
       const newSid = recovered.headers.get("mcp-session-id")!;
       const forbidden = await send({ ...call, params: { name: excluded[0], arguments: {} } }, newSid);
       expect((await forbidden.json()).result.isError).toBe(true);
       const normal = await init("Claude");
       const normalSid = normal.headers.get("mcp-session-id")!;
       await normal.json();
-      expect((await (await send(list, normalSid)).json()).result.tools).toHaveLength(60);
+      expect((await (await send(list, normalSid)).json()).result.tools).toHaveLength(63);
       const wrongOwner = await send(list, normalSid, { authorization: "Bearer other-fixture", origin: "https://chatgpt.com" });
       expect(wrongOwner.status).toBe(403);
       expect(manager.getSession(normalSid)?.profile).toBe("normal");
@@ -353,7 +353,7 @@ test("legacy SSE waits for authenticated initialize attribution before registeri
     let text = "";
     while (!text.includes("\n\n")) text += decoder.decode((await reader.read()).value);
     const message = JSON.parse(text.match(/data: (.+)/)![1]);
-    expect(message.result.tools).toHaveLength(57);
+    expect(message.result.tools).toHaveLength(60);
   } finally {
     controller.abort();
     await manager.cleanup();

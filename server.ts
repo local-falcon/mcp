@@ -18,7 +18,9 @@ import { fetchLocalFalconAutoScans, fetchLocalFalconFullGridSearch, fetchLocalFa
   replyToGbpReviews, deleteGbpReviewReply,
   createGbpLink, updateGbpLink, deleteGbpLink,
   addGbpServices, removeGbpServices, replaceGbpServices,
-  updateGbpLocation, updateGbpHours, updateGbpStatus, updateGbpAttributes } from "./localfalcon.js";
+  updateGbpLocation, updateGbpHours, updateGbpStatus, updateGbpAttributes,
+  submitLocalFalconFeedback, listLocalFalconFeedback, getLocalFalconFeedback } from "./localfalcon.js";
+import { resolveFeedbackScreenshots, MAX_SCREENSHOTS } from "./feedbackScreenshots.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { registerAppResource, registerAppTool } from "@modelcontextprotocol/ext-apps/server";
@@ -117,7 +119,16 @@ function readPackageVersion(): string {
 const VERSION = readPackageVersion();
 
 
-export const getServer = (sessionMapping: Map<string, { apiKey: string }>, requestSource = getRequestSource()) => {
+export interface ServerOptions {
+  /**
+   * The server can read the caller's local disk. True only for STDIO, where
+   * server and client share a machine; it exposes screenshotPaths on
+   * submitLocalFalconFeedback. Remote sessions never see that field.
+   */
+  localFiles?: boolean;
+}
+
+export const getServer = (sessionMapping: Map<string, { apiKey: string }>, requestSource = getRequestSource(), options: ServerOptions = {}) => {
   const profile = getMcpProfile(requestSource);
   const getApiKey = (ctx: any) => {
     const sessionId = ctx?.sessionId;
@@ -343,6 +354,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
 6. **Use the Knowledge Base tools** (searchLocalFalconKnowledgeBase, getLocalFalconKnowledgeBaseArticle) for questions about Local Falcon features, settings, and how-to guidance. These return platform documentation, not user-specific data.
 7. **Pagination:** List tools return 10 results per page by default; set \`limit\` (up to 100) for larger pages. When a response includes \`next_token\`, pass it as \`nextToken\` with the same filters and limit to fetch the next page.
 8. **Credit awareness:** runLocalFalconScan, runLocalFalconCampaign, and createLocalFalconCampaign consume credits. Use viewLocalFalconAccountInformation to check credit balance if relevant.
+9. **Feedback:** Use submitLocalFalconFeedback only when the user asks to send feedback, report a bug, or request a feature. Draft the subject and message, show them to the user, and submit once they're happy with it. Never file reports on your own initiative, for example because a tool call failed. Use listLocalFalconFeedback and getLocalFalconFeedback to check the status of what they've sent.
     `
   },
   { capabilities: { extensions: { "io.modelcontextprotocol/ui": {} } } as any }
@@ -395,8 +407,13 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
   function registerTool<S extends z.ZodRawShape>(
     name: string, description: string, schema: S,
     annotations: ToolAnnotations, handler: ToolCallback<S>,
+    meta?: Record<string, unknown>,
   ) {
     if (profile === "chatgpt" && CHATGPT_EXCLUDED_TOOLS.has(name)) return;
+    if (meta) {
+      // server.tool() has no _meta slot; registerTool() is the same registration with one.
+      return server.registerTool(name, { description, inputSchema: schema, annotations, _meta: meta }, withProfilePolicy(profile, handler) as any);
+    }
     return server.tool(name, description, schema, annotations, withProfilePolicy(profile, handler));
   }
 
@@ -1569,6 +1586,136 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
       const cleanId = normalizeArticleId(articleId);
       if (profile === "chatgpt" && isBlockedArticle(cleanId)) return textError(KB_UNAVAILABLE);
       const resp = await getLocalFalconKnowledgeBaseArticle(apiKey, cleanId);
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
+
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Feedback — bug reports, feature requests and feedback to the LF team
+  // ══════════════════════════════════════════════════════════════════════════
+
+  const FEEDBACK_TYPES = ["bug", "feature_request", "feedback"] as const;
+  const FEEDBACK_STATUSES = ["new", "triaged", "in_progress", "resolved", "closed", "wont_fix"] as const;
+  const FEEDBACK_CATEGORIES = ["scans", "reports", "campaigns", "falcon_guard", "locations", "gbp", "reviews", "account", "billing", "api", "mcp", "other"] as const;
+
+  // The shape ChatGPT's openai/fileParams validator requires: all four
+  // properties declared, only download_url and file_id required.
+  const feedbackFileSchema = z.object({
+    download_url: z.string(),
+    file_id: z.string(),
+    mime_type: z.string().optional(),
+    file_name: z.string().optional(),
+  });
+
+  const submitFeedbackShape: Record<string, z.ZodTypeAny> = {
+    type: z.enum(FEEDBACK_TYPES).describe("What you're sending: 'bug' (something isn't working), 'feature_request' (something you'd like Local Falcon to do) or 'feedback' (anything else)."),
+    message: z.string().min(1).max(10000).describe("The details, up to 10,000 characters. Write it in the user's words where possible."),
+    subject: z.string().max(255).optional().describe("A short summary, up to 255 characters. Defaults to the start of the message."),
+    category: z.enum(FEEDBACK_CATEGORIES).optional().describe("The part of Local Falcon this is about. Use 'mcp' when it concerns this AI integration. Defaults to 'other'."),
+    severity: z.enum(["low", "medium", "high", "critical"]).optional().describe("Bug reports only. How badly the bug affects the user. Defaults to 'medium'."),
+    stepsToReproduce: z.string().max(10000).optional().describe("Bug reports only. How to make the bug happen."),
+    expectedResult: z.string().max(10000).optional().describe("Bug reports only. What the user expected to happen."),
+    actualResult: z.string().max(10000).optional().describe("Bug reports only. What happened instead."),
+    pageUrl: z.string().max(2048).optional().describe("The Local Falcon page where this happened, if any."),
+    placeId: z.string().max(255).optional().describe("Place ID of a related location, if any."),
+    reportKey: z.string().max(64).optional().describe("Key of a related report, if any."),
+    appVersion: z.string().max(255).optional().describe("Version of the app or integration in use. Defaults to this MCP server's version."),
+    browser: z.string().max(255).optional().describe("The browser in use, if relevant."),
+    os: z.string().max(255).optional().describe("The operating system in use, if relevant."),
+    screenshotFiles: z.array(feedbackFileSchema).max(MAX_SCREENSHOTS).optional().describe("Image files the user uploaded in the chat, each { download_url, file_id }. ChatGPT fills this in automatically from uploaded images."),
+    screenshotsBase64: z.array(z.string().min(1)).max(MAX_SCREENSHOTS).optional().describe("Screenshots as base64 strings, optionally with a 'data:image/png;base64,' prefix."),
+  };
+  if (options.localFiles) {
+    submitFeedbackShape.screenshotPaths = z.array(z.string().min(1)).max(MAX_SCREENSHOTS).optional().describe("Paths to image files on the user's computer, e.g. 'C:/Users/me/Desktop/bug.png' or '~/Desktop/bug.png'. The server reads and attaches them.");
+  }
+
+  registerTool(
+    "submitLocalFalconFeedback",
+    "Sends feedback, a bug report or a feature request to the Local Falcon team, who are notified by email. Use this ONLY when the user asks to report a bug, request a feature or send feedback about Local Falcon. Never file one on your own initiative, for example because a tool call failed. Draft the subject and message from what the user said, show them, and submit once the user is happy with it. For bugs, fill in severity, stepsToReproduce, expectedResult and actualResult where known. " +
+    `Attach up to ${MAX_SCREENSHOTS} screenshots in total (PNG, JPEG, GIF or WEBP, up to 8 MB each) via screenshotFiles (images uploaded in the chat)` +
+    (options.localFiles ? ", screenshotPaths (files on the user's computer)" : "") +
+    " or screenshotsBase64. Each account can submit 20 times per hour. Returns a feedback_key; use getLocalFalconFeedback with it to check the submission's status later.",
+    submitFeedbackShape,
+    { title: "Submit Feedback", readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    async (args: Record<string, any>, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) {
+        return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      }
+
+      let screenshots: string[];
+      try {
+        screenshots = await resolveFeedbackScreenshots(
+          { files: args.screenshotFiles, base64: args.screenshotsBase64, paths: args.screenshotPaths },
+          { localFiles: options.localFiles === true },
+        );
+      } catch (error) {
+        return textError(`Feedback was not sent. ${(error as Error).message}`);
+      }
+
+      // The API ignores bug-only fields on other types; drop them so the
+      // record matches what was asked for.
+      const isBug = args.type === "bug";
+      const resp = await submitLocalFalconFeedback(apiKey, {
+        type: args.type,
+        message: args.message,
+        subject: args.subject,
+        category: args.category,
+        severity: isBug ? args.severity : undefined,
+        steps_to_reproduce: isBug ? args.stepsToReproduce : undefined,
+        expected_result: isBug ? args.expectedResult : undefined,
+        actual_result: isBug ? args.actualResult : undefined,
+        page_url: args.pageUrl,
+        place_id: args.placeId,
+        report_key: args.reportKey,
+        meta: {
+          app_version: args.appVersion || `@local-falcon/mcp ${VERSION}`,
+          browser: args.browser,
+          os: args.os,
+        },
+        screenshots_base64: screenshots,
+      });
+      // `parameters` echoes the whole message back (up to 10k characters).
+      const { parameters: _echo, ...result } = resp ?? {};
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    },
+    { "openai/fileParams": ["screenshotFiles"] },
+  );
+
+  registerTool(
+    "listLocalFalconFeedback",
+    "Lists the feedback, bug reports and feature requests this Local Falcon account has submitted, newest first, with each one's current status: new (not yet reviewed), triaged (reviewed and queued), in_progress, resolved (fixed or delivered), closed (closed without further action) or wont_fix. Message text and screenshots are left out; use getLocalFalconFeedback for a submission's full details.",
+    {
+      type: z.enum(FEEDBACK_TYPES).optional().describe("Only return submissions of this type."),
+      status: z.enum(FEEDBACK_STATUSES).optional().describe("Only return submissions with this status."),
+      limit: z.coerce.number().int().min(1).max(100).optional().describe("Results per page, from 1 to 100. Defaults to 10."),
+      nextToken: z.string().optional().describe("Pagination token from a previous response's next_token."),
+    },
+    { title: "List Feedback Submissions", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    async ({ type, status, limit, nextToken }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) {
+        return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      }
+      const resp = await listLocalFalconFeedback(apiKey, handleNullOrUndefined(type), handleNullOrUndefined(status), limit?.toString() ?? DEFAULT_LIMIT, handleNullOrUndefined(nextToken));
+      return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
+    }
+  );
+
+  registerTool(
+    "getLocalFalconFeedback",
+    "Retrieves one of this account's feedback submissions in full: message, bug details, current status, and screenshots. Screenshot URLs stop working 15 minutes after this call, so call it again for fresh links. Only submissions made by this account can be read.",
+    {
+      feedbackKey: z.string().min(1).max(64).regex(/^[A-Za-z0-9]+$/, "feedbackKey must be the alphanumeric feedback_key returned when the submission was made").describe("The feedback_key returned by submitLocalFalconFeedback or listLocalFalconFeedback."),
+    },
+    { title: "Get Feedback Submission", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    async ({ feedbackKey }, ctx) => {
+      const apiKey = getApiKey(ctx);
+      if (!apiKey) {
+        return { content: [{ type: "text", text: "Missing LOCAL_FALCON_API_KEY in environment variables or request headers" }] };
+      }
+      const resp = await getLocalFalconFeedback(apiKey, feedbackKey);
       return { content: [{ type: "text", text: JSON.stringify(resp, null, 2) }] };
     }
   );

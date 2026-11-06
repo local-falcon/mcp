@@ -72,6 +72,11 @@ export function neutralFailure(value: unknown): CallToolResult {
   if (/entitlement|subscription|plan|package|upgrade|purchase|checkout|recharge/i.test(detail)) {
     return textError(`Your current Local Falcon account does not include the entitlement required for this action, so it was not run. For information about available Local Falcon plans and credit entitlements, see ${PRICING_URL}.`);
   }
+  // Rate limits (e.g. feedback's 20 submissions per hour) are worth naming:
+  // the generic message below would invite an immediate, futile retry.
+  if (/rate limit|too many|per hour|"code":\s*429|\(429\)/i.test(detail)) {
+    return textError("Local Falcon's limit for this action has been reached, so it was not run. Wait a while before trying again.");
+  }
   if (/not found|404|expired|different account/i.test(detail)) {
     return textError("The requested Local Falcon resource is unavailable or is not accessible to this account.");
   }

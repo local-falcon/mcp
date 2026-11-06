@@ -2602,6 +2602,137 @@ export async function getLocalFalconKnowledgeBaseArticle(
   });
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// Feedback (v2 /feedback/*)
+// ════════════════════════════════════════════════════════════════════════════
+
+export type FeedbackType = "bug" | "feature_request" | "feedback";
+
+/** Snake_case fields for POST /v2/feedback/submit/. Empty values are dropped. */
+export interface FeedbackSubmissionInput {
+  type: FeedbackType;
+  message: string;
+  subject?: string;
+  category?: string;
+  severity?: string;
+  steps_to_reproduce?: string;
+  expected_result?: string;
+  actual_result?: string;
+  page_url?: string;
+  place_id?: string;
+  report_key?: string;
+  meta?: { app_version?: string; browser?: string; os?: string };
+  /** Data URIs or bare base64 strings, already validated as images. */
+  screenshots_base64?: string[];
+}
+
+/**
+ * Submits feedback, a bug report or a feature request to the Local Falcon team.
+ *
+ * Deliberately NOT wrapped in withRetry: a submission is not idempotent. Each
+ * one emails the team and counts toward the account's 20-per-hour limit, so a
+ * retry after a timeout (where the first attempt may well have landed) could
+ * file a duplicate. A 502 means a screenshot could not be stored and nothing
+ * was saved; its message reaches the caller so the agent can resend.
+ *
+ * Screenshots travel as base64 form fields rather than multipart files; the
+ * whole body can reach ~53 MB, hence the long timeout.
+ */
+export async function submitLocalFalconFeedback(
+  apiKey: string,
+  input: FeedbackSubmissionInput
+): Promise<any> {
+  const form = new FormData();
+  for (const [key, value] of Object.entries(input)) {
+    appendFormValue(form, key, value);
+  }
+
+  await rateLimiter.waitForAvailableSlot();
+
+  const res = await fetchWithTimeout(
+    `${API_BASE_V2}/feedback/submit/`,
+    { method: "POST", body: form, headers: buildHeaders(apiKey, true) },
+    LONG_OPERATION_TIMEOUT_MS
+  );
+
+  const data = await safeParseJson(res);
+  if (!res.ok) {
+    throw parseApiError(res.status, data);
+  }
+  return data;
+}
+
+/**
+ * Lists the account's feedback submissions, newest first. Message text and
+ * screenshots are omitted by the API; use getLocalFalconFeedback for those.
+ */
+export async function listLocalFalconFeedback(
+  apiKey: string,
+  type?: string,
+  status?: string,
+  limit?: string,
+  nextToken?: string
+): Promise<any> {
+  const url = new URL(`${API_BASE_V2}/feedback/`);
+
+  if (type) url.searchParams.set("type", type);
+  if (status) url.searchParams.set("status", status);
+  if (limit) url.searchParams.set("limit", limit);
+  if (nextToken) url.searchParams.set("next_token", nextToken);
+
+  await rateLimiter.waitForAvailableSlot();
+
+  return withRetry(async () => {
+    const res = await fetchWithTimeout(url.toString(), {
+      method: "GET",
+      headers: buildHeaders(apiKey),
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw parseApiError(res.status, errorText);
+    }
+
+    return await safeParseJson(res);
+  });
+}
+
+/**
+ * Retrieves one feedback submission in full. Screenshot URLs in the response
+ * are signed and expire 15 minutes after the call.
+ */
+export async function getLocalFalconFeedback(
+  apiKey: string,
+  feedbackKey: string
+): Promise<any> {
+  const url = new URL(`${API_BASE_V2}/feedback/${encodeURIComponent(feedbackKey)}/`);
+
+  await rateLimiter.waitForAvailableSlot();
+
+  return withRetry(async () => {
+    const res = await fetchWithTimeout(url.toString(), {
+      method: "GET",
+      headers: buildHeaders(apiKey),
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      // parseApiError's 404 text is written for report keys; the ChatGPT
+      // profile still gets its neutral message because parseApiError (and so
+      // rejectChatGptApiFailure) runs first.
+      const error = parseApiError(res.status, errorText);
+      if (res.status === 404) {
+        throw new Error(
+          "Feedback not found. The feedbackKey may not exist or may belong to a different account. Use listLocalFalconFeedback to find your submissions."
+        );
+      }
+      throw error;
+    }
+
+    return await safeParseJson(res);
+  });
+}
+
 /**
  * Fetches an image from a URL and returns it as base64-encoded data.
  * Used to convert image URLs in API responses to inline MCP image content.

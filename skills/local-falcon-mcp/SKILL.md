@@ -151,6 +151,12 @@ Gather all available data — do not run new scans unless explicitly requested:
 1. `viewLocalFalconAccountInformation` — retrieve credits, subscription tier, and package info.
 2. Summarize: available credits, current plan, and relevant limits. If credits are low and the user wants to run scans, flag this proactively.
 
+### 12. "Report a bug" / "Request a feature" / "Send feedback to Local Falcon"
+
+1. Draft the submission from what the user said: `type` (`bug`, `feature_request` or `feedback`), a short `subject`, and the `message`. For bugs, add `severity`, steps to reproduce, and the expected and actual results where known. Use `category: "mcp"` when it concerns this integration.
+2. Show the draft and let the user adjust it, then call `submitLocalFalconFeedback`. Attach any screenshots the user provides (up to 5 images). Only file feedback the user asked for — never on your own initiative, for example after a failed tool call.
+3. Share the returned `feedback_key`. Later, use `listLocalFalconFeedback` to see the status of everything sent, or `getLocalFalconFeedback` for one submission in full.
+
 ## Platform Differences
 
 ### Map Platforms (Google Maps, Apple Maps)

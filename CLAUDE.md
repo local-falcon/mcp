@@ -55,7 +55,7 @@ endpoints are untouched.
 
 **Carried in `AsyncLocalStorage`** (`requestSource.ts`), entered by one middleware in
 `createBaseApp`. The alternative was threading a parameter through ~100 client functions and
-all 60 tool handlers, each of which would additionally need the tool `extra`/`ctx` plumbed in.
+all 63 tool handlers, each of which would additionally need the tool `extra`/`ctx` plumbed in.
 The context survives `await`, the rate limiter's queueing and the retry backoff timers.
 
 **Resolution is tiered, best signal wins.** Recognised clients collapse to a canonical label
@@ -276,6 +276,38 @@ OPEN/CLOSED_TEMPORARILY) run as before.
 return Google's own resource unchanged, so their response fields are camelCase. Every
 other GBP endpoint returns snake_case.
 
+### Feedback (3 tools)
+
+These tools send bug reports, feature requests and feedback to the Local Falcon team, and track their status. The team is emailed for every submission. They are registered on both profiles.
+
+| Tool | Endpoint | Annotations (readOnly/openWorld/destructive) |
+|---|---|---|
+| `submitLocalFalconFeedback` | `POST /v2/feedback/submit/` (form) | false/false/false |
+| `listLocalFalconFeedback` | `GET /v2/feedback/` | true/false/false |
+| `getLocalFalconFeedback` | `GET /v2/feedback/{feedback_key}/` | true/false/false |
+
+**Submit is never retried.** It calls `fetchWithTimeout` once, with no `withRetry`. Each submission emails the team and counts toward the account's 20-per-hour limit, so a retry after a timeout could create a duplicate. A 502 means a screenshot could not be stored and nothing was saved, so it is safe to resend. When `appVersion` is omitted, `meta[app_version]` defaults to `@local-falcon/mcp <version>`. The upstream `parameters` echo, which repeats the message, is removed from the result.
+
+**Screenshots** (`feedbackScreenshots.ts`). MCP arguments are JSON, so image files arrive in three ways. Each one is converted into a data URI and sent as `screenshots_base64[]`:
+
+| Input | Who uses it | Handling |
+|---|---|---|
+| `screenshotFiles` | ChatGPT uploads, via `_meta["openai/fileParams"]` | Downloads `{download_url, file_id, mime_type?, file_name?}`. The object must declare all four fields with only the first two required, because ChatGPT's scanner rejects any other shape. |
+| `screenshotPaths` | STDIO clients only | Only in the schema when `getServer(..., { localFiles: true })` is called, which only `startStdioServer` does. Remote sessions never see the field. |
+| `screenshotsBase64` | Any client | Plain base64 or a `data:` URI. |
+
+All three sources share the API's own limits: at most 5 in total and 8 MB each. The type must be PNG, JPEG, GIF or WEBP, detected from magic bytes rather than the file name. Violations return a local `textError` before any request is made.
+
+Downloads are server-side fetches of a caller-supplied URL, and OpenAI does not document the download host. So instead of a host allowlist, downloads are limited to https on public addresses:
+- IP-literal hosts are checked up front.
+- DNS names are checked inside the `https.Agent`'s `lookup`, which defeats rebinding.
+- Redirects are followed manually, at most 3, and each hop is re-checked.
+- Downloads time out after 15 s, the body is capped at 8 MB, and no credentials are sent.
+
+On the normal profile this effectively accepts any public https image URL.
+
+**ChatGPT 429.** `neutralFailure` has a rate-limit branch, so the 20-per-hour limit reads as "limit reached, wait" rather than the generic failure.
+
 ## Tool Annotations
 
 Every registered tool declares readOnlyHint, openWorldHint, and destructiveHint explicitly. Annotations describe behavior; they do not enforce authorization or replace user confirmation.
@@ -403,7 +435,7 @@ Parameters use **camelCase** in the Zod schemas (server.ts) and are converted to
 The Local Falcon API has two base URLs used by `localfalcon.ts`:
 
 - **v1** (`https://api.localfalcon.com/v1`): Reports, trend reports, keyword reports, location reports, competitor reports, campaign list/detail, guard list/detail, grid, result, search, places, reviews, knowledge base
-- **v2** (`https://api.localfalcon.com/v2`): Run scan, locations search/add, guard add/pause/resume/delete, campaigns create/update/run/pause/resume/reactivate, account, knowledge base
+- **v2** (`https://api.localfalcon.com/v2`): Run scan, locations search/add, guard add/pause/resume/delete, campaigns create/update/run/pause/resume/reactivate, account, knowledge base, feedback submit/list/get
 
 Public API documentation: [docs.localfalcon.com](https://docs.localfalcon.com)
 
@@ -554,6 +586,7 @@ npm run docker:run
 | `server.ts` | MCP server factory — `getServer()` with session-selected tool registrations |
 | `localfalcon.ts` | API client — fetch functions, rate limiter, retry logic, types |
 | `gbpConfirmation.ts` | Human approval gate for destructive GBP writes — elicitation dialog, else preview → single-use argument-bound token |
+| `feedbackScreenshots.ts` | Validates feedback screenshots (ChatGPT uploads, STDIO paths, base64) into data URIs; public-address-only downloads |
 | `eventStore.ts` | Bounded resumability buffer — replaces the SDK's unbounded example store |
 | `requestSource.ts` | Resolves which client is calling; carries it in AsyncLocalStorage for `request_source` |
 | `oauth/` | OAuth 2.1 implementation (authorization, tokens, PKCE, client registration) |

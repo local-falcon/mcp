@@ -30,7 +30,7 @@ describe("ChatGPT skill upload bundles", () => {
   test("tool reference enumerates the entire submitted ChatGPT profile", () => {
     const content = readFileSync("skills/local-visibility-skill/references/mcp-workflows.md", "utf8");
     const tools = [...content.matchAll(/^\| `([A-Za-z]+)` \|/gm)].map(match => match[1]);
-    expect(new Set(tools).size).toBe(57);
+    expect(new Set(tools).size).toBe(60);
     expect(tools).toContain("getLocalFalconGrid");
     expect(tools).toContain("searchForLocalFalconBusinessLocation");
     expect(tools).toContain("updateLocalFalconCampaign");
