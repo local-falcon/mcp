@@ -110,6 +110,24 @@ describe("feedback tool registration", () => {
     expect([...item.required].sort()).toEqual(["download_url", "file_id"]);
   });
 
+  test("submit leads with a request for screenshots, worded for how this client can supply them", async () => {
+    const cases: Array<[Parameters<typeof connect>[0], string]> = [
+      [{ profile: "chatgpt" }, "upload the images in this chat"],
+      [{ localFiles: true }, "path to each image file"],
+      [{}, "only base64 image data"],
+    ];
+    for (const [opts, how] of cases) {
+      const client = await connect(opts);
+      const submit: any = (await client.listTools()).tools.find(t => t.name === "submitLocalFalconFeedback");
+      const ask = submit.description.indexOf("ALWAYS ASK FOR SCREENSHOTS FIRST");
+      expect(ask).toBeGreaterThan(-1);
+      expect(ask).toBeLessThan(submit.description.indexOf("draft the subject"));
+      expect(submit.description).toContain(how);
+      // The operational rules ship in the server-info description.
+      expect((client.getServerVersion() as any)?.description).toContain("always ask whether they have screenshots to attach");
+    }
+  });
+
   test("screenshotPaths is offered only when the server can read local files", async () => {
     const remote: any = (await (await connect()).listTools()).tools.find(t => t.name === "submitLocalFalconFeedback");
     expect(remote.inputSchema.properties.screenshotPaths).toBeUndefined();

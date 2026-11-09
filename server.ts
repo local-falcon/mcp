@@ -354,7 +354,7 @@ Use fieldmasks on each call to keep context manageable. Not all report types wil
 6. **Use the Knowledge Base tools** (searchLocalFalconKnowledgeBase, getLocalFalconKnowledgeBaseArticle) for questions about Local Falcon features, settings, and how-to guidance. These return platform documentation, not user-specific data.
 7. **Pagination:** List tools return 10 results per page by default; set \`limit\` (up to 100) for larger pages. When a response includes \`next_token\`, pass it as \`nextToken\` with the same filters and limit to fetch the next page.
 8. **Credit awareness:** runLocalFalconScan, runLocalFalconCampaign, and createLocalFalconCampaign consume credits. Use viewLocalFalconAccountInformation to check credit balance if relevant.
-9. **Feedback:** Use submitLocalFalconFeedback only when the user asks to send feedback, report a bug, or request a feature. Draft the subject and message, show them to the user, and submit once they're happy with it. Never file reports on your own initiative, for example because a tool call failed. Use listLocalFalconFeedback and getLocalFalconFeedback to check the status of what they've sent.
+9. **Feedback:** Use submitLocalFalconFeedback only when the user asks to send feedback, report a bug, or request a feature. **Before submitting, always ask whether they have screenshots to attach.** Screenshots are optional, up to 5, and the tool description explains how to provide them. Draft the subject and message, show them to the user, and submit once they're happy with it. Never file reports on your own initiative, for example because a tool call failed. Use listLocalFalconFeedback and getLocalFalconFeedback to check the status of what they've sent.
     `
   },
   { capabilities: { extensions: { "io.modelcontextprotocol/ui": {} } } as any }
@@ -1630,12 +1630,19 @@ Available for all platform types. Get the report_key from getLocalFalconCompetit
     submitFeedbackShape.screenshotPaths = z.array(z.string().min(1)).max(MAX_SCREENSHOTS).optional().describe("Paths to image files on the user's computer, e.g. 'C:/Users/me/Desktop/bug.png' or '~/Desktop/bug.png'. The server reads and attaches them.");
   }
 
+  // How the user can actually hand over an image differs by client, so the
+  // screenshot request is worded for the route this session supports.
+  const FEEDBACK_SCREENSHOT_HOW = profile === "chatgpt"
+    ? "Ask them to upload the images in this chat. Uploaded images arrive in screenshotFiles."
+    : options.localFiles
+      ? "Ask for the path to each image file on their computer (e.g. '~/Desktop/bug.png') and pass the paths in screenshotPaths. The server reads and attaches the files."
+      : "This connection can attach only base64 image data (screenshotsBase64). If the user shares an image you can't pass on as base64, describe what it shows in the message and tell the user it wasn't attached.";
+
   registerTool(
     "submitLocalFalconFeedback",
-    "Sends feedback, a bug report or a feature request to the Local Falcon team, who are notified by email. Use this ONLY when the user asks to report a bug, request a feature or send feedback about Local Falcon. Never file one on your own initiative, for example because a tool call failed. Draft the subject and message from what the user said, show them, and submit once the user is happy with it. For bugs, fill in severity, stepsToReproduce, expectedResult and actualResult where known. " +
-    `Attach up to ${MAX_SCREENSHOTS} screenshots in total (PNG, JPEG, GIF or WEBP, up to 8 MB each) via screenshotFiles (images uploaded in the chat)` +
-    (options.localFiles ? ", screenshotPaths (files on the user's computer)" : "") +
-    " or screenshotsBase64. Each account can submit 20 times per hour. Returns a feedback_key; use getLocalFalconFeedback with it to check the submission's status later.",
+    "Sends feedback, a bug report or a feature request to the Local Falcon team, who are notified by email. Use this ONLY when the user asks to report a bug, request a feature or send feedback about Local Falcon. Never file one on your own initiative, for example because a tool call failed.\n\n" +
+    `ALWAYS ASK FOR SCREENSHOTS FIRST. Before submitting, ask the user whether they have screenshots to attach. Screenshots are optional but they help the team a lot, especially for bugs. ${FEEDBACK_SCREENSHOT_HOW} Up to ${MAX_SCREENSHOTS} images (PNG, JPEG, GIF or WEBP, up to 8 MB each). If the user has none or declines, submit without them; ask only once.\n\n` +
+    "Then draft the subject and message from what the user said, show them with any screenshots to be attached, and submit once the user is happy with it. For bugs, fill in severity, stepsToReproduce, expectedResult and actualResult where known. Each account can submit 20 times per hour. Returns a feedback_key; use getLocalFalconFeedback with it to check the submission's status later.",
     submitFeedbackShape,
     { title: "Submit Feedback", readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     async (args: Record<string, any>, ctx) => {

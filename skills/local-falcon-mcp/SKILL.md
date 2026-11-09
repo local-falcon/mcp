@@ -153,9 +153,10 @@ Gather all available data — do not run new scans unless explicitly requested:
 
 ### 12. "Report a bug" / "Request a feature" / "Send feedback to Local Falcon"
 
-1. Draft the submission from what the user said: `type` (`bug`, `feature_request` or `feedback`), a short `subject`, and the `message`. For bugs, add `severity`, steps to reproduce, and the expected and actual results where known. Use `category: "mcp"` when it concerns this integration.
-2. Show the draft and let the user adjust it, then call `submitLocalFalconFeedback`. Attach any screenshots the user provides (up to 5 images). Only file feedback the user asked for — never on your own initiative, for example after a failed tool call.
-3. Share the returned `feedback_key`. Later, use `listLocalFalconFeedback` to see the status of everything sent, or `getLocalFalconFeedback` for one submission in full.
+1. **Ask for screenshots first.** Ask the user whether they have screenshots to attach. They're optional but especially valuable for bugs. Accept up to 5 images (PNG, JPEG, GIF or WEBP, up to 8 MB each). In ChatGPT the user uploads them in the chat; with the locally installed server they give file paths. The `submitLocalFalconFeedback` description says which route the current connection supports. If they have none, carry on without them, and ask only once.
+2. Draft the submission from what the user said: `type` (`bug`, `feature_request` or `feedback`), a short `subject`, and the `message`. For bugs, add `severity`, steps to reproduce, and the expected and actual results where known. Use `category: "mcp"` when it concerns this integration.
+3. Show the draft, including which screenshots will be attached, and let the user adjust it. Then call `submitLocalFalconFeedback`. Only file feedback the user asked for — never on your own initiative, for example after a failed tool call.
+4. Share the returned `feedback_key`. Later, use `listLocalFalconFeedback` to see the status of everything sent, or `getLocalFalconFeedback` for one submission in full.
 
 ## Platform Differences
 

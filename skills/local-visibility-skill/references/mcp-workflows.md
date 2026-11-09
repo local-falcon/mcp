@@ -66,7 +66,7 @@ The ChatGPT profile exposes 60 tools. The normal MCP profile additionally suppor
 | `viewLocalFalconAccountInformation` | View Account Information |
 | `searchLocalFalconKnowledgeBase` | Search Knowledge Base |
 | `getLocalFalconKnowledgeBaseArticle` | Get Knowledge Base Article |
-| `submitLocalFalconFeedback` | Submit Feedback (bug report, feature request or feedback to the Local Falcon team; only when the user asks) |
+| `submitLocalFalconFeedback` | Submit Feedback (bug report, feature request or feedback to the Local Falcon team; only when the user asks; always ask for optional screenshots first) |
 | `listLocalFalconFeedback` | List Feedback Submissions |
 | `getLocalFalconFeedback` | Get Feedback Submission |
 | `getLocalFalconGbpProfile` | Get GBP Profile |
