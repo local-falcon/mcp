@@ -45,7 +45,7 @@ setInterval(() => {
  * Determines if a verification error is transient (network/timeout/server)
  * vs. a genuine auth rejection (invalid API key, 401, 403).
  */
-function isTransientError(error: unknown): boolean {
+export function isTransientError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const msg = error.message.toLowerCase();
 

@@ -1426,7 +1426,7 @@ const startUnifiedServer = (app: Application, sessionManager: SessionManager, mo
       console.log(`  - HTTP: POST|GET|DELETE /mcp and /`);
     }
     console.log(`  - Health: GET /ping, GET /healthz`);
-    console.log(`  - Session inactivity timeout: ${SESSION_INACTIVITY_TIMEOUT_MS / 1000 / 60 / 60} hours`);
+    console.log(`  - Session inactivity timeout: ${SESSION_INACTIVITY_TIMEOUT_MS / 1000 / 60} minutes`);
   });
 
   process.on("SIGINT", async () => {

@@ -19,64 +19,22 @@ import {
   revokeToken,
   OAuthError,
 } from "./oauthClient.js";
-import { clearAuthCache } from "./provider.js";
+import { clearAuthCache, isTransientError } from "./provider.js";
 import { checkRedirectUri } from "./clientStore.js";
 import { resolveBaseUrl } from "./baseUrl.js";
 import { fetchLocalFalconAccountInfo } from "../localfalcon.js";
+import {
+  sealRefreshToken,
+  openRefreshToken,
+  redeemRefreshToken,
+  revokeRefreshTokensForApiKey,
+  reportRefreshTokenSecret,
+} from "./refreshToken.js";
 
-// ── Refresh Token Store ──────────────────────────────────────────────
-// Maps refresh_token -> { apiKey, createdAt }
-// Refresh tokens are long-lived (30 days) so a client can renew its
-// access token without requiring user re-authentication.
-
-const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-
-interface StoredRefreshToken {
-  apiKey: string;
-  createdAt: number;
-}
-
-const refreshTokenStore = new Map<string, StoredRefreshToken>();
-
-// Periodically clean expired refresh tokens
-setInterval(() => {
-  const now = Date.now();
-  for (const [token, data] of refreshTokenStore) {
-    if (now - data.createdAt > REFRESH_TOKEN_TTL_MS) {
-      refreshTokenStore.delete(token);
-    }
-  }
-}, 60 * 60 * 1000); // every hour
-
-function generateRefreshToken(): string {
-  return crypto.randomBytes(48).toString("hex");
-}
-
-/**
- * Issue a refresh token for an API key. If one already exists, revoke the old one.
- */
-function issueRefreshToken(apiKey: string): string {
-  // Revoke any existing refresh token for this API key to prevent accumulation
-  for (const [token, data] of refreshTokenStore) {
-    if (data.apiKey === apiKey) {
-      refreshTokenStore.delete(token);
-    }
-  }
-  const token = generateRefreshToken();
-  refreshTokenStore.set(token, { apiKey, createdAt: Date.now() });
-  return token;
-}
-
-/**
- * Revoke all refresh tokens for a given API key (used during token revocation)
- */
-export function revokeRefreshTokensForApiKey(apiKey: string): void {
-  for (const [token, data] of refreshTokenStore) {
-    if (data.apiKey === apiKey) {
-      refreshTokenStore.delete(token);
-    }
-  }
-}
+// Refresh tokens are stateless and sealed (see refreshToken.ts): they survive
+// restarts and are issued per client, so one client logging in or refreshing
+// never invalidates another's.
+export { revokeRefreshTokensForApiKey };
 
 /**
  * Whether an authorization code (or error) may still be delivered to a redirect
@@ -587,7 +545,7 @@ async function handleAuthorizationCodeGrant(req: Request, res: Response): Promis
     }
 
     // Issue a refresh token so the client can renew without re-auth
-    const refreshToken = issueRefreshToken(apiKey);
+    const refreshToken = sealRefreshToken(apiKey);
 
     // Return standard OAuth 2.1 token response with refresh token
     res.status(200).json({
@@ -629,10 +587,10 @@ async function handleRefreshTokenGrant(req: Request, res: Response): Promise<voi
     return;
   }
 
-  // Look up the refresh token
-  const stored = refreshTokenStore.get(refresh_token);
+  // Decrypt and validate (signature, secret, 30-day TTL, revocation)
+  const stored = openRefreshToken(refresh_token);
   if (!stored) {
-    console.error("[OAuth] Invalid or expired refresh token");
+    console.error("[OAuth] Invalid, expired or revoked refresh token");
     res.status(400).json({
       error: "invalid_grant",
       error_description: "Invalid or expired refresh token",
@@ -640,46 +598,55 @@ async function handleRefreshTokenGrant(req: Request, res: Response): Promise<voi
     return;
   }
 
-  // Check refresh token expiry
-  if (Date.now() - stored.createdAt > REFRESH_TOKEN_TTL_MS) {
-    refreshTokenStore.delete(refresh_token);
-    console.error("[OAuth] Refresh token expired");
-    res.status(400).json({
-      error: "invalid_grant",
-      error_description: "Refresh token has expired, please re-authenticate",
-    });
-    return;
-  }
-
   try {
-    // Verify the API key is still valid by calling the account endpoint
+    // Verify the API key is still valid by calling the account endpoint. This
+    // is the durable revocation check; the in-memory state is best-effort.
     await fetchLocalFalconAccountInfo(stored.apiKey, "subscription");
-
-    // Rotate: revoke old refresh token and issue a new one
-    refreshTokenStore.delete(refresh_token);
-    const newRefreshToken = issueRefreshToken(stored.apiKey);
-
-    // Clear the verification cache so it gets a fresh TTL
-    clearAuthCache(stored.apiKey);
-
-    console.log("[OAuth] Token refreshed successfully");
-
-    res.status(200).json({
-      access_token: stored.apiKey,
-      token_type: "Bearer",
-      expires_in: 86400, // 24 hours
-      refresh_token: newRefreshToken,
-      scope: "api offline_access",
-    });
   } catch (error) {
-    // API key is no longer valid — revoke the refresh token too
-    refreshTokenStore.delete(refresh_token);
+    // An API outage is not a revoked key: answer 503 so the client retries the
+    // same refresh rather than discarding its token and forcing a new login.
+    if (isTransientError(error)) {
+      console.error("[OAuth] Refresh liveness check failed transiently:", error);
+      res.set("Retry-After", "5");
+      res.status(503).json({
+        error: "temporarily_unavailable",
+        error_description: "Token service temporarily unavailable, please retry",
+      });
+      return;
+    }
     console.error("[OAuth] Refresh failed — API key no longer valid:", error);
     res.status(400).json({
       error: "invalid_grant",
       error_description: "The associated access token is no longer valid. Please re-authenticate.",
     });
+    return;
   }
+
+  // Rotate. A token redeemed before is a replay unless it is a retry inside
+  // the grace window (the client lost the previous response).
+  if (!redeemRefreshToken(stored)) {
+    console.error("[OAuth] Refresh token reuse after rotation rejected");
+    res.status(400).json({
+      error: "invalid_grant",
+      error_description: "Refresh token has already been used, please re-authenticate",
+    });
+    return;
+  }
+
+  const newRefreshToken = sealRefreshToken(stored.apiKey);
+
+  // Clear the verification cache so it gets a fresh TTL
+  clearAuthCache(stored.apiKey);
+
+  console.log("[OAuth] Token refreshed successfully");
+
+  res.status(200).json({
+    access_token: stored.apiKey,
+    token_type: "Bearer",
+    expires_in: 86400, // 24 hours
+    refresh_token: newRefreshToken,
+    scope: "api offline_access",
+  });
 }
 
 /**
@@ -733,6 +700,8 @@ async function handleRevoke(req: Request, res: Response): Promise<void> {
  * Set up OAuth 2.1 routes on the Express application
  */
 export function setupOAuthRoutes(app: Application): void {
+  reportRefreshTokenSecret();
+
   // Authorization endpoint - initiates OAuth flow (PKCE required)
   app.get("/oauth/authorize", (req, res) => {
     handleAuthorize(req, res).catch((err) => {

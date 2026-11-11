@@ -149,6 +149,26 @@ and must be enforced identically at all three points above. Note also that each 
 domain in the allowlist delegates trust to its whole subdomain tree, so an open redirect or
 subdomain takeover there would be a code-exfil path.
 
+**Tokens.** The access token *is* the Local Falcon API key, verified against the API
+(`oauth/provider.ts`, 1 h cache); `expires_in: 86400` is advisory. Clients that honour it (Grok)
+refresh daily, so the refresh grant must not fail spuriously. Refresh tokens
+(`oauth/refreshToken.ts`) are therefore **stateless**: AES-256-GCM over
+`{apiKey, iat, jti}` under `OAUTH_REFRESH_TOKEN_SECRET`, 30-day TTL, one per client. They were
+previously an in-memory map with one token per API key, so every deploy and every other
+client's login on the same account forced a re-login. The secret must be stable and shared by
+all instances; unset means a per-process random key (old behaviour) and a startup warning.
+
+| Refresh outcome | Response |
+|---|---|
+| Forged, wrong secret, expired, or issued before the key's revocation | `400 invalid_grant` |
+| API key rejected by the liveness check | `400 invalid_grant` |
+| Liveness check fails transiently (timeout, 5xx, 429) | `503 temporarily_unavailable` + `Retry-After` — never `invalid_grant` |
+| Token already redeemed, within 2 min | Accepted (client lost the previous response) |
+| Token already redeemed, after 2 min | `400 invalid_grant` (replay of a rotated-out token) |
+
+Redemption and revocation records are in-memory and best-effort; the liveness check is the
+durable guard, since `/oauth/revoke` also revokes the key upstream.
+
 **Not applicable to STDIO.** `/register` and the `/oauth/*` routes live in `createBaseApp`,
 reached only for `sse`/`http`/`HTTPAndSSE`. The `stdio` path builds only a
 `StdioServerTransport`, so local npm/MCPB installs never execute any of this.

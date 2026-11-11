@@ -269,3 +269,92 @@ describe("POST /register redirect_uri policy", () => {
     expect(classify([])).toBe("accept");
   });
 });
+
+// ── Refresh tokens ───────────────────────────────────────────────────────────
+// Tokens are sealed, not stored, so they must survive a restart (a fresh module
+// state with the same secret) and must not invalidate each other per API key —
+// both previously sent refresh-honouring clients (Grok) back to the login screen.
+
+import {
+  sealRefreshToken,
+  openRefreshToken,
+  redeemRefreshToken,
+  revokeRefreshTokensForApiKey,
+  resetRefreshTokenState,
+  REFRESH_TOKEN_TTL_MS,
+  REUSE_GRACE_MS,
+} from "./oauth/refreshToken";
+
+describe("refresh tokens", () => {
+  const withSecret = (secret: string) => {
+    process.env.OAUTH_REFRESH_TOKEN_SECRET = secret;
+    resetRefreshTokenState();
+  };
+  afterEach(() => {
+    delete process.env.OAUTH_REFRESH_TOKEN_SECRET;
+    resetRefreshTokenState();
+  });
+
+  test("round-trips and survives a restart with the same secret", () => {
+    withSecret("a".repeat(64));
+    const token = sealRefreshToken("api-key-1");
+    expect(token.startsWith("lfr1.")).toBe(true);
+    resetRefreshTokenState(); // simulated restart: all in-memory state gone
+    expect(openRefreshToken(token)?.apiKey).toBe("api-key-1");
+  });
+
+  test("rejects a token sealed under a different secret", () => {
+    withSecret("a".repeat(64));
+    const token = sealRefreshToken("api-key-1");
+    withSecret("b".repeat(64));
+    expect(openRefreshToken(token)).toBeNull();
+  });
+
+  test("rejects tampered and malformed tokens", () => {
+    withSecret("a".repeat(64));
+    const token = sealRefreshToken("api-key-1");
+    const body = Buffer.from(token.slice(5), "base64url");
+    body[20] ^= 1;
+    expect(openRefreshToken("lfr1." + body.toString("base64url"))).toBeNull();
+    expect(openRefreshToken("deadbeef")).toBeNull();
+    expect(openRefreshToken("lfr1.")).toBeNull();
+    expect(openRefreshToken(undefined)).toBeNull();
+  });
+
+  test("rejects a token past its TTL", () => {
+    withSecret("a".repeat(64));
+    const issued = Date.now();
+    const token = sealRefreshToken("api-key-1", issued);
+    expect(openRefreshToken(token, issued + REFRESH_TOKEN_TTL_MS - 1000)).not.toBeNull();
+    expect(openRefreshToken(token, issued + REFRESH_TOKEN_TTL_MS + 1000)).toBeNull();
+  });
+
+  test("two tokens for the same API key are both valid", () => {
+    withSecret("a".repeat(64));
+    const grok = sealRefreshToken("shared-key");
+    const claude = sealRefreshToken("shared-key");
+    expect(openRefreshToken(grok)?.apiKey).toBe("shared-key");
+    expect(openRefreshToken(claude)?.apiKey).toBe("shared-key");
+  });
+
+  test("reuse is allowed only inside the grace window", () => {
+    withSecret("a".repeat(64));
+    const opened = openRefreshToken(sealRefreshToken("api-key-1"))!;
+    const now = Date.now();
+    expect(redeemRefreshToken(opened, now)).toBe(true);
+    expect(redeemRefreshToken(opened, now + REUSE_GRACE_MS - 1)).toBe(true);
+    expect(redeemRefreshToken(opened, now + REUSE_GRACE_MS + 1)).toBe(false);
+  });
+
+  test("revoking an API key rejects tokens issued before, not after", () => {
+    withSecret("a".repeat(64));
+    const now = Date.now();
+    const before = sealRefreshToken("api-key-1", now - 1000);
+    const other = sealRefreshToken("api-key-2", now - 1000);
+    revokeRefreshTokensForApiKey("api-key-1", now);
+    const after = sealRefreshToken("api-key-1", now + 1000);
+    expect(openRefreshToken(before, now + 2000)).toBeNull();
+    expect(openRefreshToken(other, now + 2000)).not.toBeNull();
+    expect(openRefreshToken(after, now + 2000)).not.toBeNull();
+  });
+});
